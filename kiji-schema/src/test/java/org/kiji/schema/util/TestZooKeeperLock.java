@@ -23,8 +23,10 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.apache.curator.test.KillSession;
 import org.junit.Test;
 
 import org.kiji.schema.KijiIOException;
@@ -77,6 +79,21 @@ public class TestZooKeeperLock extends ZooKeeperTest {
       thread.join();
       assertEquals(5, counter.get());
 
+    } finally {
+      zkClient.release();
+    }
+  }
+
+  /** Overly basic test for ZooKeeper locks. */
+  @Test(expected = IOException.class)
+  public void testZooKeeperLockKillSession() throws Exception {
+    final File lockDir = new File("/test-zookeeper-lock-kill-session");
+    final ZooKeeperClient zkClient = ZooKeeperClient.getZooKeeperClient(getZKAddress());
+    try {
+      final Lock lock = new ZooKeeperLock(zkClient, lockDir);
+      lock.lock();
+      KillSession.kill(zkClient.getZKClient(), getZKAddress());
+      lock.unlock();
     } finally {
       zkClient.release();
     }

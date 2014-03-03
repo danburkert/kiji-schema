@@ -57,7 +57,7 @@ public final class Versions {
   public static final ProtocolVersion MIN_SYS_VER_FOR_LAYOUT_VALIDATION = SYSTEM_2_0;
 
   /** Minimum system version supported by this Kiji client. */
-  public static final ProtocolVersion MIN_SYSTEM_VERSION = SYSTEM_1_0;
+  public static final ProtocolVersion MIN_SYSTEM_VERSION = SYSTEM_2_0;
 
   // -----------------------------------------------------------------------------------------------
   // Table layout versions

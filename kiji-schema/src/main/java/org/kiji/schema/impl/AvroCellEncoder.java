@@ -38,7 +38,6 @@ import org.apache.avro.io.DatumWriter;
 import org.apache.avro.io.Encoder;
 import org.apache.avro.io.EncoderFactory;
 import org.apache.avro.specific.SpecificDatumWriter;
-import org.apache.zookeeper.KeeperException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -512,16 +511,11 @@ public final class AvroCellEncoder implements KijiCellEncoder {
             }
           };
 
+      final HBaseTableLayoutUpdater updater = new HBaseTableLayoutUpdater(kiji, columnURI, update);
       try {
-        final HBaseTableLayoutUpdater updater =
-            new HBaseTableLayoutUpdater(kiji, columnURI, update);
-        try {
-          updater.update();
-        } finally {
-          updater.close();
-        }
-      } catch (KeeperException ke) {
-        throw new IOException(ke);
+        updater.update();
+      } finally {
+        updater.close();
       }
     } finally {
       kiji.release();

@@ -53,6 +53,7 @@ import org.slf4j.LoggerFactory;
 import org.kiji.schema.KijiClientTest;
 import org.kiji.schema.KijiSchemaTable;
 import org.kiji.schema.avro.AvroSchema;
+import org.kiji.schema.avro.TableUserRegistrationDesc;
 import org.kiji.schema.util.AvroUtils.SchemaCompatibilityType;
 import org.kiji.schema.util.AvroUtils.SchemaPairCompatibility;
 
@@ -825,5 +826,18 @@ public class TestAvroUtils extends KijiClientTest {
     assertFalse(AvroUtils.avroSchemaCollectionContains(schemaTable, intList, stringUIDAS));
     assertTrue(AvroUtils.avroSchemaCollectionContains(schemaTable, bothList, stringJSONAS));
     assertTrue(AvroUtils.avroSchemaCollectionContains(schemaTable, bothList, intUIDAS));
+  }
+
+  @Test
+  public void testToBytesSpecific() throws Exception {
+    final TableUserRegistrationDesc tableUser = TableUserRegistrationDesc
+        .newBuilder()
+        .setLayoutId("layout-id")
+        .setUserId("user-id")
+        .build();
+
+    assertEquals(tableUser,
+        AvroUtils.fromBytesSpecific(AvroUtils.toBytesSpecific(tableUser),
+            tableUser.getClass().asSubclass(TableUserRegistrationDesc.class)));
   }
 }

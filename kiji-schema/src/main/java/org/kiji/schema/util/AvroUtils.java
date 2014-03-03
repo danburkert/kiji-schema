@@ -19,6 +19,8 @@
 
 package org.kiji.schema.util;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.Iterator;
@@ -32,9 +34,18 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
-import org.apache.avro.Schema;
 import org.apache.avro.Schema.Field;
 import org.apache.avro.Schema.Type;
+import org.apache.avro.Schema;
+import org.apache.avro.io.BinaryDecoder;
+import org.apache.avro.io.BinaryEncoder;
+import org.apache.avro.io.DatumReader;
+import org.apache.avro.io.DatumWriter;
+import org.apache.avro.io.DecoderFactory;
+import org.apache.avro.io.EncoderFactory;
+import org.apache.avro.specific.SpecificDatumReader;
+import org.apache.avro.specific.SpecificDatumWriter;
+import org.apache.avro.specific.SpecificRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -699,5 +710,76 @@ public final class AvroUtils {
     public int hashCode() {
       return Objects.hashCode(mType, mReader, mWriter, mDescription);
     }
+  }
+
+  // TODO: Check with @tfc if providing the following utilities is sane
+
+  /**
+   * Encode an Avro value to a byte array with the provided DatumWriter.
+   *
+   * @param value Avro value to be encoded to bytes.
+   * @param writer to use to encode to bytes.
+   * @param <T> type of value.
+   * @return a byte array containing the encoded Avro value.
+   * @throws IOException if unable to encode the value.
+   */
+  public static <T> byte[] toBytes(
+      final T value,
+      final DatumWriter<T> writer
+  ) throws IOException {
+    final ByteArrayOutputStream baos = new ByteArrayOutputStream();
+    final BinaryEncoder encoder = EncoderFactory.get().directBinaryEncoder(baos, null);
+    writer.write(value, encoder);
+
+    // Flushing is not necessary with ByteArrayOutputStream or DirectBinaryEncoder
+    return baos.toByteArray();
+  }
+
+  /**
+   * Decode an Avro value from a byte array with the provided DatumReader.
+   *
+   * @param bytes to be decoded into an Avro value.
+   * @param reader to use to decode the value.
+   * @param <T> type of value.
+   * @return the decoded Avro value.
+   * @throws IOException if unable to decode the value.
+   */
+  public static <T> T fromBytes(
+      final byte[] bytes,
+      final DatumReader<T> reader
+  ) throws IOException {
+    final ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
+    final BinaryDecoder decoder = DecoderFactory.get().directBinaryDecoder(bais, null);
+    return reader.read(null, decoder);
+  }
+
+  /**
+   * Encode a specific record into a byte array.
+   * @param value the specific record.
+   * @param <T> class of the specific record.
+   * @return a byte array containing the encoded Avro record.
+   * @throws IOException if unable to encode the record.
+   */
+  @SuppressWarnings("unchecked")
+  public static <T extends SpecificRecord> byte[] toBytesSpecific(final T value)
+      throws IOException {
+    final DatumWriter writer = new SpecificDatumWriter<T>((Class<T>) value.getClass());
+    return toBytes(value, writer);
+  }
+
+  /**
+   * Decode a specific record from a byte array.
+   *
+   * @param bytes to be decoded into a specific record.
+   * @param klass of the specific record.
+   * @param <T> type of the specific record.
+   * @return the decoded specific record.
+   * @throws IOException if unable to decode the specific record.
+   */
+  public static <T extends SpecificRecord> T fromBytesSpecific(
+      final byte[] bytes,
+      final Class<T> klass) throws IOException {
+    final DatumReader<T> reader = new SpecificDatumReader<T>(klass);
+    return fromBytes(bytes, reader);
   }
 }

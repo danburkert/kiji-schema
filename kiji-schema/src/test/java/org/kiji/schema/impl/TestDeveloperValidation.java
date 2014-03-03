@@ -91,12 +91,12 @@ public class TestDeveloperValidation extends KijiClientTest {
       final KijiTableWriter writer = table.getWriterFactory().openTableWriter();
       try {
         // Registers writer schema 'long':
-        writer.put(eid, "info", "user_id", (Long) 1L);
+        writer.put(eid, "info", "user_id", 1L);
 
         // Should not need to register writer schema 'long':
         {
           final String layoutIdBefore = table.getLayout().getDesc().getLayoutId();
-          writer.put(eid, "info", "user_id", (Long) 2L);
+          writer.put(eid, "info", "user_id", 2L);
           final String layoutIdAfter = table.getLayout().getDesc().getLayoutId();
           Assert.assertEquals(layoutIdBefore, layoutIdAfter);
         }
@@ -156,12 +156,12 @@ public class TestDeveloperValidation extends KijiClientTest {
       final KijiTableWriter writer = table.getWriterFactory().openTableWriter();
       try {
         // Registering 'long' as a writer schema: compatible with 'long' reader schema:
-        writer.put(eid, "info", "user_id", (Long) 1L);
+        writer.put(eid, "info", "user_id", 1L);
 
         // Should not require additional registration:
         {
           final String layoutIdBefore = table.getLayout().getDesc().getLayoutId();
-          writer.put(eid, "info", "user_id", (Long) 2L);
+          writer.put(eid, "info", "user_id", 2L);
           final String layoutIdAfter = table.getLayout().getDesc().getLayoutId();
           Assert.assertEquals(layoutIdBefore, layoutIdAfter);
         }

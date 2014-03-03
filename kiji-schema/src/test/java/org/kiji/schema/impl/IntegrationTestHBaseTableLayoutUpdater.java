@@ -21,27 +21,22 @@ package org.kiji.schema.impl;
 import java.util.List;
 
 import com.google.common.collect.Lists;
-import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.curator.framework.CuratorFramework;
 import org.junit.Assert;
 import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.kiji.schema.avro.TableUserRegistrationDesc;
 
 import org.kiji.schema.Kiji;
 import org.kiji.schema.KijiTable;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.avro.TableLayoutDesc;
 import org.kiji.schema.layout.KijiTableLayouts;
-import org.kiji.schema.layout.impl.ZooKeeperClient;
 import org.kiji.schema.layout.impl.ZooKeeperMonitor;
-import org.kiji.schema.layout.impl.ZooKeeperMonitor.LayoutTracker;
-import org.kiji.schema.layout.impl.ZooKeeperMonitor.LayoutUpdateHandler;
+import org.kiji.schema.layout.impl.ZooKeeperMonitor.*;
 import org.kiji.schema.testutil.AbstractKijiIntegrationTest;
 import org.kiji.schema.util.ProtocolVersion;
 
 public class IntegrationTestHBaseTableLayoutUpdater extends AbstractKijiIntegrationTest {
-  private static final Logger LOG =
-      LoggerFactory.getLogger(IntegrationTestHBaseTableLayoutUpdater.class);
 
   private static final String LAYOUT_V1 = "org/kiji/schema/layout/layout-updater-v1.json";
   private static final String LAYOUT_V2 = "org/kiji/schema/layout/layout-updater-v2.json";
@@ -70,28 +65,36 @@ public class IntegrationTestHBaseTableLayoutUpdater extends AbstractKijiIntegrat
 
     final Kiji kiji = Kiji.Factory.open(uri);
     try {
-      final ZooKeeperClient zkClient = ((HBaseKiji) kiji).getZKClient();  // owned by kiji
-      final ZooKeeperMonitor monitor = new ZooKeeperMonitor(zkClient);
-      try {
-        kiji.createTable(layout1);
+      final CuratorFramework zkClient = ((HBaseKiji) kiji).getZKClient();  // owned by kiji
+      kiji.createTable(layout1);
 
-        final KijiTable table = kiji.openTable("table_name");  // currently not registered as a user
+      final KijiTable table = kiji.openTable("table_name");  // currently not registered as a user
+      try {
+        TableUserRegistration registration =
+            ZooKeeperMonitor.newTableUserRegistration(zkClient, uri);
+        registration.start(
+            TableUserRegistrationDesc
+                .newBuilder()
+                .setUserId("user-id-1")
+                .setLayoutId("1")
+                .build());
         try {
-          monitor.registerTableUser(table.getURI(), "user-id-1", "1");
           final List<String> layoutIDs = Lists.newArrayList();
 
-          final LayoutTracker tracker = monitor.newTableLayoutTracker(table.getURI(),
+          final LayoutTracker tracker = ZooKeeperMonitor.newTableLayoutTracker(
+              zkClient,
+              table.getURI(),
               new LayoutUpdateHandler() {
                 /** {@inheritDoc} */
                 @Override
-                public void update(byte[] layout) {
+                public void update(String layout) {
                   synchronized (layoutIDs) {
-                    layoutIDs.add(Bytes.toString(layout));
+                    layoutIDs.add(layout);
                     layoutIDs.notifyAll();
                   }
                 }
               });
-          tracker.open();
+          tracker.start();
 
           synchronized (layoutIDs) {
             while ((layoutIDs.size() < 1))  {
@@ -99,6 +102,8 @@ public class IntegrationTestHBaseTableLayoutUpdater extends AbstractKijiIntegrat
             }
             Assert.assertEquals("1", layoutIDs.get(0));
           }
+
+          Assert.assertEquals("1", tracker.getLayoutID());
 
           final HBaseTableLayoutUpdater updater =
               new HBaseTableLayoutUpdater((HBaseKiji) kiji, table.getURI(), layout2);
@@ -124,19 +129,21 @@ public class IntegrationTestHBaseTableLayoutUpdater extends AbstractKijiIntegrat
             }
             tracker.close();
 
-            monitor.registerTableUser(table.getURI(), "user-id-1", "2");
-            monitor.unregisterTableUser(table.getURI(), "user-id-1", "1");
-
+            registration.update(
+                TableUserRegistrationDesc
+                    .newBuilder()
+                    .setUserId("user-id-1")
+                    .setLayoutId("2")
+                    .build());
             thread.join();
-
           } finally {
             updater.close();
           }
         } finally {
-          table.release();
+          registration.close();
         }
       } finally {
-        monitor.close();
+        table.release();
       }
       kiji.deleteTable("table_name");
     } finally {

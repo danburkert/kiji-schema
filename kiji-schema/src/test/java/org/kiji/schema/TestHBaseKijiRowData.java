@@ -55,10 +55,10 @@ import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.impl.AvroCellEncoder;
 import org.kiji.schema.impl.HBaseKijiRowData;
 import org.kiji.schema.impl.HBaseKijiTable;
-import org.kiji.schema.impl.HBaseKijiTable.LayoutCapsule;
 import org.kiji.schema.layout.CellSpec;
 import org.kiji.schema.layout.KijiTableLayouts;
 import org.kiji.schema.layout.impl.ColumnNameTranslator;
+import org.kiji.schema.layout.impl.TableLayoutMonitor.LayoutCapsule;
 import org.kiji.schema.util.InstanceBuilder;
 
 public class TestHBaseKijiRowData extends KijiClientTest {

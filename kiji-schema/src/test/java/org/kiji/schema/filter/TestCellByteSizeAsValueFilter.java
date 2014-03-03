@@ -66,13 +66,13 @@ public class TestCellByteSizeAsValueFilter extends KijiClientTest {
       final KijiColumnName column = new KijiColumnName("family", "column");
       final Map<KijiColumnName, CellSpec> overrides =
           ImmutableMap.<KijiColumnName, CellSpec>builder()
-          .put(column, layout.getCellSpec(column)
-              .setCellSchema(CellSchema.newBuilder()
-                  .setType(SchemaType.INLINE)
-                  .setStorage(SchemaStorage.FINAL)
-                  .setValue("{\"type\": \"fixed\", \"size\": 4, \"name\": \"Int32\"}")
-                  .build()))
-          .build();
+              .put(column, layout.getCellSpec(column)
+                  .setCellSchema(CellSchema.newBuilder()
+                      .setType(SchemaType.INLINE)
+                      .setStorage(SchemaStorage.FINAL)
+                      .setValue("{\"type\": \"fixed\", \"size\": 4, \"name\": \"Int32\"}")
+                      .build()))
+              .build();
 
       final KijiTableReader reader = table.getReaderFactory().openTableReader(overrides);
       try {

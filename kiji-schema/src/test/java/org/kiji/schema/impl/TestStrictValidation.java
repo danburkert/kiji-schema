@@ -115,14 +115,14 @@ public class TestStrictValidation extends KijiClientTest {
           new TableLayoutBuilder(table.getLayout().getDesc(), kiji)
               .withReader(new KijiColumnName("info",  "gender"), readerEnum)
               .build();
-      LOG.debug("Applying update with enum reader: %s", updateWithReader);
+      LOG.debug("Applying update with enum reader: {}.", updateWithReader);
       kiji.modifyTableLayout(updateWithReader);
 
-      final TableLayoutDesc updateWithWriter=
+      final TableLayoutDesc updateWithWriter =
           new TableLayoutBuilder(table.getLayout().getDesc(), kiji)
               .withWriter(new KijiColumnName("info",  "gender"), writerEnum)
               .build();
-      LOG.debug("Applying update with enum writer: %s", updateWithWriter);
+      LOG.debug("Applying update with enum writer: {}.", updateWithWriter);
       try {
         kiji.modifyTableLayout(updateWithWriter);
         Assert.fail();
@@ -140,5 +140,4 @@ public class TestStrictValidation extends KijiClientTest {
       table.release();
     }
   }
-
 }

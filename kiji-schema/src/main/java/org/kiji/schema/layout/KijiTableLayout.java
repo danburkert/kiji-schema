@@ -27,6 +27,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 import com.google.common.base.Joiner;
 import com.google.common.base.Objects;
@@ -898,7 +899,8 @@ public final class KijiTableLayout {
    * Optional schema table that allows resolution of Avro schemas.
    * The schema table is injected in the CellSpec instances created from this layout.
    */
-  private KijiSchemaTable mSchemaTable;
+  private final AtomicReference<KijiSchemaTable> mSchemaTable =
+      new AtomicReference<KijiSchemaTable>(null);
 
   /**
    * Ensure a row key format (version 1) specified in a layout file is sane.
@@ -1436,7 +1438,7 @@ public final class KijiTableLayout {
    */
   public CellSpec getCellSpec(KijiColumnName column) throws IOException {
     return CellSpec.fromCellSchema(getCellSchema(column))
-        .setSchemaTable(mSchemaTable);
+        .setSchemaTable(mSchemaTable.get());
   }
 
   /**
@@ -1502,8 +1504,9 @@ public final class KijiTableLayout {
    * @return this layout.
    */
   public KijiTableLayout setSchemaTable(KijiSchemaTable schemaTable) {
-    Preconditions.checkState(mSchemaTable == null);
-    mSchemaTable = schemaTable;
+    boolean result = mSchemaTable.compareAndSet(null, schemaTable);
+    Preconditions.checkState(result,
+        "Cannot set schema table on KijiTableLayout with existing schema table.");
     return this;
   }
 
@@ -1512,7 +1515,7 @@ public final class KijiTableLayout {
    * @return the schema table bound to this table layout. Null means unbound.
    */
   public KijiSchemaTable getSchemaTable() {
-    return mSchemaTable;
+    return mSchemaTable.get();
   }
 
   // -----------------------------------------------------------------------------------------------

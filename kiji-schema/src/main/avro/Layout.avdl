@@ -669,4 +669,20 @@ protocol KijiTableLayoutRecords {
     MetaTableBackup meta_table;
   }
 
+  /** A registration for an open Kiji instance to be stored in ZooKeeper. */
+  record InstanceUserRegistrationDesc {
+    /** User ID of instance user. */
+    string user_id;
+
+    /** System Version of instance. */
+    string system_version;
+  }
+
+  record TableUserRegistrationDesc {
+    /** UserID of table user. */
+    string user_id;
+
+    /** Layout ID used by table user. */
+    string layout_id;
+  }
 }

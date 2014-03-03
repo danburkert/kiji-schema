@@ -52,11 +52,11 @@ import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiTableNotFoundException;
 import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.hbase.HBaseColumnName;
-import org.kiji.schema.impl.HBaseKijiTable.LayoutCapsule;
 import org.kiji.schema.impl.HBaseKijiTableWriter.WriterLayoutCapsule;
-import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout;
 import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout.ColumnLayout;
+import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
+import org.kiji.schema.layout.impl.TableLayoutMonitor.LayoutCapsule;
 import org.kiji.schema.platform.SchemaPlatformBridge;
 
 /**

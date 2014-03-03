@@ -27,6 +27,7 @@ import java.util.Set;
 
 import org.junit.Before;
 import org.junit.Test;
+import org.kiji.schema.avro.TableLayoutDesc;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -133,9 +134,10 @@ public class TestLayoutConsumer extends KijiClientTest {
         }
 
         // Update the table layout.
-        final KijiTableLayout newLayout =
-            KijiTableLayout.newLayout(KijiTableLayouts.getLayout(KijiTableLayouts.SIMPLE));
-        htable.updateLayoutConsumers(newLayout);
+        final TableLayoutDesc tableDesc =
+            KijiTableLayout.newLayout(KijiTableLayouts.getLayout(KijiTableLayouts.SIMPLE)).getDesc();
+        tableDesc.setName("user");
+        mKiji.modifyTableLayout(tableDesc);
 
         // Now we can write to family:column, but not info:name.
         writer.put(table.getEntityId("foo"), "family", "column", "foo-val");

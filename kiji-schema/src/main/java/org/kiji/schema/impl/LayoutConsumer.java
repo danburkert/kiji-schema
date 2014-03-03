@@ -20,7 +20,7 @@ package org.kiji.schema.impl;
 
 import java.io.IOException;
 
-import org.kiji.schema.impl.HBaseKijiTable.LayoutCapsule;
+import org.kiji.schema.layout.impl.TableLayoutMonitor;
 
 /**
  * Interface for classes which hold table layout references which must be updated in response to a
@@ -34,8 +34,7 @@ public interface LayoutConsumer {
    * response to an update to the table layout before the table should report that its update was
    * successful.
    *
-   * @param capsule a container representing a snapshot of the layout dependent state of a table.
    * @throws IOException in case of an error updating.
    */
-  void update(LayoutCapsule capsule) throws IOException;
+  void update(TableLayoutMonitor.LayoutCapsule capsule) throws IOException;
 }

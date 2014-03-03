@@ -50,12 +50,12 @@ import org.kiji.schema.KijiTableWriter;
 import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.avro.SchemaType;
 import org.kiji.schema.hbase.HBaseColumnName;
-import org.kiji.schema.impl.HBaseKijiTable.LayoutCapsule;
-import org.kiji.schema.layout.KijiTableLayout;
-import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout;
 import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout.ColumnLayout;
+import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout;
+import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
 import org.kiji.schema.layout.impl.ColumnNameTranslator;
+import org.kiji.schema.layout.impl.TableLayoutMonitor.LayoutCapsule;
 import org.kiji.schema.platform.SchemaPlatformBridge;
 
 /**
@@ -94,7 +94,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
    * All state which should be modified atomically to reflect an update to the underlying table's
    * layout.
    */
-  private volatile WriterLayoutCapsule mWriterLayoutCapsule = null;
+  private volatile WriterLayoutCapsule mWriterLayoutCapsule;
 
   /**
    * A container for all writer state which should be modified atomically to reflect an update to
@@ -196,6 +196,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
   public HBaseKijiTableWriter(HBaseKijiTable table) throws IOException {
     mTable = table;
     mTable.registerLayoutConsumer(mInnerLayoutUpdater);
+
     Preconditions.checkState(mWriterLayoutCapsule != null,
         "KijiTableWriter for table: %s failed to initialize.", mTable.getURI());
 
