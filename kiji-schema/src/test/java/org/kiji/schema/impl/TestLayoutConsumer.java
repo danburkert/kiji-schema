@@ -40,6 +40,7 @@ import org.kiji.schema.KijiTableWriter;
 import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayouts;
+import org.kiji.schema.layout.impl.TableLayoutMonitor;
 import org.kiji.schema.util.InstanceBuilder;
 
 public class TestLayoutConsumer extends KijiClientTest {
@@ -72,15 +73,16 @@ public class TestLayoutConsumer extends KijiClientTest {
     final KijiTable table = mKiji.openTable("user");
     try {
       final HBaseKijiTable htable = HBaseKijiTable.downcast(table);
-      assertTrue(htable.getLayoutConsumers().isEmpty());
+      final TableLayoutMonitor monitor = htable.getTableLayoutMonitor();
+      assertTrue(monitor.getLayoutConsumers().isEmpty());
       // Readers should register with the table as they open.
       final KijiTableReader reader = table.openTableReader();
       // Check that all readers are accounted for.
-      assertTrue(htable.getLayoutConsumers().size() == 1);
+      assertTrue(monitor.getLayoutConsumers().size() == 1);
       // Readers should unregister as they close.
       reader.close();
       // Check that no readers remain.
-      assertTrue(htable.getLayoutConsumers().isEmpty());
+      assertTrue(monitor.getLayoutConsumers().isEmpty());
     } finally {
       table.release();
     }
@@ -91,14 +93,15 @@ public class TestLayoutConsumer extends KijiClientTest {
     final KijiTable table = mKiji.openTable("user");
     try {
       final HBaseKijiTable htable = HBaseKijiTable.downcast(table);
-      assertTrue(htable.getLayoutConsumers().isEmpty());
+      final TableLayoutMonitor monitor = htable.getTableLayoutMonitor();
+      assertTrue(monitor.getLayoutConsumers().isEmpty());
       // Writers should register with the table as they open.
       final KijiTableWriter writer = table.openTableWriter();
       final KijiBufferedWriter bufferedWriter = table.getWriterFactory().openBufferedWriter();
       final AtomicKijiPutter atomicPutter = table.getWriterFactory().openAtomicPutter();
 
       // Check that all writers are accounted for.
-      final Set<LayoutConsumer> consumers = htable.getLayoutConsumers();
+      final Set<LayoutConsumer> consumers = monitor.getLayoutConsumers();
       assertTrue(consumers.size() == 3);
 
       // Writers should unregister as they close.
@@ -107,7 +110,7 @@ public class TestLayoutConsumer extends KijiClientTest {
       atomicPutter.close();
 
       // Check that no writers remain.
-      assertTrue(htable.getLayoutConsumers().isEmpty());
+      assertTrue(monitor.getLayoutConsumers().isEmpty());
     } finally {
       table.release();
     }
@@ -118,10 +121,11 @@ public class TestLayoutConsumer extends KijiClientTest {
     final KijiTable table = mKiji.openTable("user");
     try {
       final HBaseKijiTable htable = HBaseKijiTable.downcast(table);
-      assertTrue(htable.getLayoutConsumers().isEmpty());
+      final TableLayoutMonitor monitor = htable.getTableLayoutMonitor();
+      assertTrue(monitor.getLayoutConsumers().isEmpty());
       final KijiTableWriter writer = table.openTableWriter();
       try {
-        assertTrue(htable.getLayoutConsumers().size() == 1);
+        assertTrue(monitor.getLayoutConsumers().size() == 1);
 
         // We can write to info:name, but not family:column.
         writer.put(table.getEntityId("foo"), "info", "name", "new-val");
@@ -135,7 +139,7 @@ public class TestLayoutConsumer extends KijiClientTest {
         // Update the table layout.
         final KijiTableLayout newLayout =
             KijiTableLayout.newLayout(KijiTableLayouts.getLayout(KijiTableLayouts.SIMPLE));
-        htable.updateLayoutConsumers(newLayout);
+        monitor.updateLayoutConsumers(newLayout);
 
         // Now we can write to family:column, but not info:name.
         writer.put(table.getEntityId("foo"), "family", "column", "foo-val");
