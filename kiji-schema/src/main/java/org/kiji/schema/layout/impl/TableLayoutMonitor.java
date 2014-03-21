@@ -20,6 +20,8 @@ package org.kiji.schema.layout.impl;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.lang.ref.PhantomReference;
+import java.lang.ref.ReferenceQueue;
 import java.util.Collections;
 import java.util.Set;
 import java.util.WeakHashMap;
@@ -30,15 +32,16 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.zookeeper.KeeperException;
-import org.kiji.schema.RuntimeInterruptedException;
+import org.kiji.schema.KijiMetaTable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.kiji.schema.layout.KijiTableLayout;
-import org.kiji.schema.Kiji;
 import org.kiji.schema.KijiIOException;
+import org.kiji.schema.KijiSchemaTable;
 import org.kiji.schema.KijiURI;
+import org.kiji.schema.RuntimeInterruptedException;
 import org.kiji.schema.impl.LayoutConsumer;
+import org.kiji.schema.layout.KijiTableLayout;
 
 public class TableLayoutMonitor implements Closeable {
   private static final Logger LOG = LoggerFactory.getLogger(TableLayoutMonitor.class);
@@ -47,7 +50,9 @@ public class TableLayoutMonitor implements Closeable {
 
   private final KijiURI mTableURI;
 
-  private final Kiji mKiji;
+  private final KijiSchemaTable mSchemaTable;
+
+  private final KijiMetaTable mMetaTable;
 
   private final ZooKeeperMonitor mZKMonitor;
 
@@ -74,11 +79,13 @@ public class TableLayoutMonitor implements Closeable {
   public TableLayoutMonitor(
       String userID,
       KijiURI tableURI,
-      Kiji kiji,
+      KijiSchemaTable schemaTable,
+      KijiMetaTable metaTable,
       ZooKeeperMonitor zkMonitor) {
     mUserID = userID;
     mTableURI = tableURI;
-    mKiji = kiji;
+    mSchemaTable = schemaTable;
+    mMetaTable = metaTable;
     mZKMonitor = zkMonitor;
     if (zkMonitor == null) {
       mLayoutTracker = null;
@@ -106,6 +113,15 @@ public class TableLayoutMonitor implements Closeable {
   public void close() throws IOException {
     if (mLayoutTracker != null) {
       mLayoutTracker.close();
+    }
+    try {
+      mZKMonitor.unregisterTableUser(
+          mTableURI,
+          mUserID,
+          getLayoutCapsule().getLayout().getDesc().getLayoutId());
+    } catch (KeeperException ke) {
+      // TODO(SCHEMA-505): Handle exceptions decently
+      throw new KijiIOException(ke);
     }
   }
 
@@ -169,7 +185,7 @@ public class TableLayoutMonitor implements Closeable {
    * @throws IOException in case of an error updating LayoutConsumers.
    */
   public void updateLayoutConsumers(KijiTableLayout layout) throws IOException {
-    layout.setSchemaTable(mKiji.getSchemaTable());
+    layout.setSchemaTable(mSchemaTable);
     final LayoutCapsule capsule = new LayoutCapsule(layout, new ColumnNameTranslator(layout));
     for (LayoutConsumer consumer : getLayoutConsumers()) {
       consumer.update(capsule);
@@ -183,10 +199,7 @@ public class TableLayoutMonitor implements Closeable {
    */
   private LayoutCapsule createCapsule() throws IOException {
     final KijiTableLayout layout =
-        mKiji
-            .getMetaTable()
-            .getTableLayout(mTableURI.getTable())
-            .setSchemaTable(mKiji.getSchemaTable());
+        mMetaTable.getTableLayout(mTableURI.getTable()).setSchemaTable(mSchemaTable);
     return new LayoutCapsule(layout, new ColumnNameTranslator(layout));
   }
 
@@ -242,6 +255,75 @@ public class TableLayoutMonitor implements Closeable {
       }
 
       initializationLatch.countDown();
+    }
+  }
+
+  /*
+    Lifecycle Notes:
+
+    This class has two seperate mechanisms for cleaning up the resources allocated to it:
+
+      1) It implements Closeable.  Call #close, and the resources will be cleaned up, and the
+         instance can be safely garbage collected.
+
+      2) It will return a PhantomReference which implements Closeable from #getCloseablePhantomRef.
+         This PhantomReference can be used to clean up the resources using a ReferenceQueue and a
+         thread which is taking references off the queue and calling close on them.
+
+    Either method is sufficient for cleaning up owned resources.
+   */
+
+  /**
+   * Retrieve a PhantomReference to this TableLayoutMonitor which implements Closeable and is able
+   * to cleanup the resources held by this TableLayoutMonitor.
+   *
+   * @param queue which will own the PhantomReference.
+   * @return a PhantomReference which implements Closeable.
+   */
+  LayoutMonitorPhantomRef getCloseablePhantomRef(ReferenceQueue<? super TableLayoutMonitor> queue) {
+    return new LayoutMonitorPhantomRef(this, queue, mLayoutTracker);
+  }
+
+  /**
+   * A PhantomReference for TableLayoutMonitor which will close the resources held by the
+   * TableLayoutMonitor in the case that it gets garbage collected.
+   */
+  static final class LayoutMonitorPhantomRef extends PhantomReference<TableLayoutMonitor>
+      implements Closeable {
+
+    private static final Logger LOG = LoggerFactory.getLogger(LayoutMonitorPhantomRef.class);
+
+    private final Closeable[] mCloseables;
+
+    private final KijiURI mTableURI;
+
+    private final Set<LayoutConsumer> mConsumers;
+
+    private LayoutMonitorPhantomRef(
+        TableLayoutMonitor value,
+        ReferenceQueue<? super TableLayoutMonitor> queue,
+        Closeable... closeables) {
+      super(value, queue);
+      mCloseables = closeables;
+      mTableURI = value.mTableURI;
+      mConsumers = value.mConsumers;
+    }
+
+    @Override
+    public void close() {
+      LOG.debug("Closing TableLayoutMonitor for table {}.", mTableURI);
+      if (!mConsumers.isEmpty()) {
+        // This can only happen if registered layout consumers fail to hold a strong reference to
+        // the TableLayoutMonitor.
+        LOG.error("Closing TableLayoutMonitor with registed layout consumers: {}", mConsumers);
+      }
+      for (Closeable closeable : mCloseables) {
+        try {
+          closeable.close();
+        } catch (IOException ioe) {
+          LOG.warn("Unable to close resource:", ioe);
+        }
+      }
     }
   }
 }

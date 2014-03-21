@@ -22,7 +22,6 @@ package org.kiji.schema.impl;
 import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.google.common.base.Objects;
@@ -41,7 +40,6 @@ import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.HTableInterface;
 import org.apache.hadoop.hbase.mapreduce.LoadIncrementalHFiles;
-import org.apache.zookeeper.KeeperException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -69,12 +67,13 @@ import org.kiji.schema.layout.impl.ZooKeeperClient;
 import org.kiji.schema.layout.impl.ColumnNameTranslator;
 import org.kiji.schema.layout.impl.LayoutCapsule;
 import org.kiji.schema.layout.impl.TableLayoutMonitor;
->>>>>>> SCHEMA-677. consolidate layout tracking in Kiji layer
 import org.kiji.schema.layout.impl.ZooKeeperMonitor;
 import org.kiji.schema.util.Debug;
 import org.kiji.schema.util.DebugResourceTracker;
 import org.kiji.schema.util.JvmId;
 import org.kiji.schema.util.ResourceUtils;
+import org.kiji.schema.util.Debug;
+import org.kiji.schema.util.DebugResourceTracker;
 import org.kiji.schema.util.VersionInfo;
 
 /**
@@ -92,8 +91,6 @@ public final class HBaseKijiTable implements KijiTable {
   private static final String ENABLE_CONSTRUCTOR_STACK_LOGGING_MESSAGE = String.format(
       "Enable DEBUG log level for logger: %s for a stack trace of the construction of this object.",
       CLEANUP_LOG.getName());
-
-  private static final AtomicLong TABLE_COUNTER = new AtomicLong(0);
 
   /** The kiji instance this table belongs to. */
   private final HBaseKiji mKiji;
@@ -153,13 +150,6 @@ public final class HBaseKijiTable implements KijiTable {
   /** Name of the HBase table backing this Kiji table. */
   private final String mHBaseTableName;
 
-  /** Unique identifier for this KijiTable instance as a live Kiji client. */
-  private final String mKijiClientId =
-      String.format("%s;HBaseKijiTable@%s", JvmId.get(), TABLE_COUNTER.getAndIncrement());
-
-  /** ZooKeeper monitor. */
-  private final ZooKeeperMonitor mZKMonitor;
-
   /** Monitor for the layout of this table. */
   private final TableLayoutMonitor mLayoutMonitor;
 
@@ -178,7 +168,8 @@ public final class HBaseKijiTable implements KijiTable {
       HBaseKiji kiji,
       String name,
       Configuration conf,
-      HTableInterfaceFactory htableFactory)
+      HTableInterfaceFactory htableFactory,
+      TableLayoutMonitor layoutMonitor)
       throws IOException {
     mConstructorStack = (CLEANUP_LOG.isDebugEnabled())
         ? Debug.getStackTrace()
@@ -201,24 +192,10 @@ public final class HBaseKijiTable implements KijiTable {
       throw new KijiTableNotFoundException(mTableURI);
     }
 
-    // TODO(SCHEMA-504): Add a manual switch to disable ZooKeeper on system-2.0 instances:
-    if (mKiji.getSystemTable().getDataVersion().compareTo(Versions.SYSTEM_2_0) >= 0) {
-      // system-2.0 clients retrieve the table layout from ZooKeeper notifications:
-      try {
-        mZKMonitor = new ZooKeeperMonitor(mKiji.getZKClient());
-      } catch (KeeperException ke) {
-        throw new IOException(ke);
-      }
-    } else {
-      // system-1.x clients retrieve the table layout from the meta-table:
-      mZKMonitor = null;
-    }
-    mLayoutMonitor = new TableLayoutMonitor(mKijiClientId, mTableURI, mKiji, mZKMonitor);
-    mLayoutMonitor.start();
-
     mWriterFactory = new HBaseKijiWriterFactory(this);
     mReaderFactory = new HBaseKijiReaderFactory(this);
 
+    mLayoutMonitor = layoutMonitor;
     mEntityIdFactory = createEntityIdFactory(mLayoutMonitor.getLayoutCapsule());
 
     mHTablePool = new KijiHTablePool(mName, (HBaseKiji)getKiji(), mHTableFactory);

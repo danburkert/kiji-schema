@@ -485,7 +485,6 @@ public final class ZooKeeperMonitor implements Closeable {
         }
       };
       thread.start();
-//      registerWatcher();
     }
 
     /**

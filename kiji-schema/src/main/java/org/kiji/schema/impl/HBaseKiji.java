@@ -36,6 +36,8 @@ import org.apache.hadoop.hbase.TableNotFoundException;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.zookeeper.KeeperException;
+import org.kiji.schema.KijiTableNotFoundException;
+import org.kiji.schema.layout.impl.InstanceMonitor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -142,6 +144,8 @@ public final class HBaseKiji implements Kiji {
   /** Monitor to register Kiji instance users. */
   private final ZooKeeperMonitor mMonitor;
 
+  private final InstanceMonitor mInstanceMonitor;
+
   /** Unique identifier for this Kiji instance as a live Kiji client. */
   private final String mKijiClientId =
       String.format("%s;HBaseKiji@%s", JvmId.get(), INSTANCE_COUNTER.getAndIncrement());
@@ -157,13 +161,13 @@ public final class HBaseKiji implements Kiji {
   /** HBase admin interface. Lazily initialized through {@link #getHBaseAdmin()}. */
   private HBaseAdmin mAdmin = null;
 
-  /** The schema table for this kiji instance, or null if it has not been opened yet. */
-  private HBaseSchemaTable mSchemaTable;
+  /** The schema table for this kiji instance. */
+  private final HBaseSchemaTable mSchemaTable;
 
   /** The system table for this kiji instance. The system table is always open. */
   private final HBaseSystemTable mSystemTable;
 
-  /** The meta table for this kiji instance, or null if it has not been opened yet. */
+  /** The meta table for this kiji instance. */
   private HBaseMetaTable mMetaTable;
 
   /**
@@ -214,11 +218,6 @@ public final class HBaseKiji implements Kiji {
           mURI, VersionInfo.getSoftwareVersion(), VersionInfo.getClientDataVersion());
     }
 
-    // Load these lazily.
-    mSchemaTable = null;
-    mMetaTable = null;
-    mSecurityManager = null;
-
     try {
       mSystemTable = new HBaseSystemTable(mURI, mConf, mHTableFactory);
     } catch (KijiNotInstalledException kie) {
@@ -226,6 +225,11 @@ public final class HBaseKiji implements Kiji {
       close();
       throw kie;
     }
+    mSchemaTable = new HBaseSchemaTable(mURI, mConf, mHTableFactory, mLockFactory);
+    mMetaTable = new HBaseMetaTable(mURI, mConf, mSchemaTable, mHTableFactory);
+
+    // Load this lazily.
+    mSecurityManager = null;
 
     LOG.debug("Kiji instance '{}' is now opened.", mURI);
 
@@ -263,6 +267,13 @@ public final class HBaseKiji implements Kiji {
       mZKClient = null;
       mMonitor = null;
     }
+    mInstanceMonitor = new InstanceMonitor(
+        mKijiClientId,
+        mSystemVersion,
+        mURI,
+        mSchemaTable,
+        mMetaTable,
+        mMonitor);
 
     mRetainCount.set(1);
     final State oldState = mState.getAndSet(State.OPEN);
@@ -331,9 +342,6 @@ public final class HBaseKiji implements Kiji {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot get schema table for Kiji instance %s in state %s.", this, state);
-    if (null == mSchemaTable) {
-      mSchemaTable = new HBaseSchemaTable(mURI, mConf, mHTableFactory, mLockFactory);
-    }
     return mSchemaTable;
   }
 
@@ -352,9 +360,6 @@ public final class HBaseKiji implements Kiji {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot get meta table for Kiji instance %s in state %s.", this, state);
-    if (null == mMetaTable) {
-      mMetaTable = new HBaseMetaTable(mURI, mConf, getSchemaTable(), mHTableFactory);
-    }
     return mMetaTable;
   }
 
@@ -406,7 +411,18 @@ public final class HBaseKiji implements Kiji {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot open table in Kiji instance %s in state %s.", this, state);
-    return new HBaseKijiTable(this, tableName, mConf, mHTableFactory);
+
+    if (!getTableNames().contains(tableName)) {
+      throw new KijiTableNotFoundException(
+          KijiURI.newBuilder(mURI).withTableName(tableName).build());
+    }
+
+    return new HBaseKijiTable(
+        this,
+        tableName,
+        mConf,
+        mHTableFactory,
+        mInstanceMonitor.getTableLayoutMonitor(tableName));
   }
 
   /** {@inheritDoc} */
@@ -759,6 +775,8 @@ public final class HBaseKiji implements Kiji {
     Preconditions.checkState(oldState == State.OPEN || oldState == State.UNINITIALIZED,
         "Cannot close Kiji instance %s in state %s.", this, oldState);
 
+    ResourceUtils.closeOrLog(mInstanceMonitor);
+
     LOG.debug("Closing {}.", this);
     if (mMonitor != null) {
       try {
@@ -778,7 +796,6 @@ public final class HBaseKiji implements Kiji {
     ResourceUtils.closeOrLog(mSchemaTable);
     ResourceUtils.closeOrLog(mSecurityManager);
     ResourceUtils.closeOrLog(mAdmin);
-    mSchemaTable = null;
     mMetaTable = null;
     mAdmin = null;
     mSecurityManager = null;
