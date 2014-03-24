@@ -36,7 +36,6 @@ import com.google.common.cache.LoadingCache;
 import com.google.common.cache.RemovalListener;
 import com.google.common.cache.RemovalNotification;
 import com.google.common.util.concurrent.UncheckedExecutionException;
-import org.apache.zookeeper.KeeperException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -63,8 +62,6 @@ public class InstanceMonitor implements Closeable {
 
   private final String mUserID;
 
-  private final ProtocolVersion mSystemVersion;
-
   private final KijiURI mInstanceURI;
 
   private final KijiSchemaTable mSchemaTable;
@@ -74,6 +71,8 @@ public class InstanceMonitor implements Closeable {
   private final ZooKeeperMonitor mZKMonitor;
 
   private final LoadingCache<String, TableLayoutMonitor> mTableLayoutMonitors;
+
+  private final ZooKeeperMonitor.InstanceUserRegistration mUserRegistration;
 
 
   public InstanceMonitor(
@@ -85,7 +84,6 @@ public class InstanceMonitor implements Closeable {
       ZooKeeperMonitor zkMonitor) {
 
     mUserID = userID;
-    mSystemVersion = systemVersion;
     mInstanceURI = instanceURI;
     mSchemaTable = schemaTable;
     mMetaTable = metaTable;
@@ -98,6 +96,13 @@ public class InstanceMonitor implements Closeable {
         .weakValues()
         .removalListener(new TableLayoutMonitorRemovalListener())
         .build(new TableLayoutMonitorCacheLoader());
+
+    if (zkMonitor != null) {
+      mUserRegistration = zkMonitor.newInstanceUserRegistration(
+          userID, systemVersion.toCanonicalString(), instanceURI);
+    } else {
+      mUserRegistration = null;
+    }
 }
 
   public TableLayoutMonitor getTableLayoutMonitor(String tableName) throws IOException {
@@ -118,12 +123,8 @@ public class InstanceMonitor implements Closeable {
 
   public InstanceMonitor start() throws IOException {
     Preconditions.checkState(!mIsClosed, "InstanceMonitor is closed.");
-    if (mZKMonitor != null) {
-      try {
-        mZKMonitor.registerInstanceUser(mInstanceURI, mUserID, mSystemVersion.toCanonicalString());
-      } catch (KeeperException e) {
-        throw new IOException(e);
-      }
+    if (mUserRegistration != null) {
+      mUserRegistration.start();
     }
     mExecutor.execute(new PhantomRefCloser(mRefQueue, mReferences));
     return this;
@@ -131,15 +132,11 @@ public class InstanceMonitor implements Closeable {
 
   @Override
   public void close() throws IOException {
-    LOG.info("Closing InstanceMonitor for instance {}.", mInstanceURI);
+    LOG.debug("Closing InstanceMonitor for instance {}.", mInstanceURI);
     mIsClosed = true;
 
-    if (mZKMonitor != null) {
-      try {
-        mZKMonitor.unregisterInstanceUser(mInstanceURI, mUserID, mSystemVersion.toCanonicalString());
-      } catch (KeeperException e) {
-        throw new IOException(e);
-      }
+    if (mUserRegistration != null) {
+      mUserRegistration.close();
     }
 
     mTableLayoutMonitors.invalidateAll();
@@ -171,8 +168,7 @@ public class InstanceMonitor implements Closeable {
       TableLayoutMonitor monitor = notification.getValue();
       if (monitor != null) {
         // Cleanup the TableLayoutMonitor if it hasn't been collected
-        // TODO: change to debug
-        LOG.info("Cleaning up TableLayoutMonitor for table {}.", notification.getKey());
+        LOG.debug("Cleaning up TableLayoutMonitor for table {}.", notification.getKey());
         try {
           monitor.close();
         } catch(IOException ioe) {

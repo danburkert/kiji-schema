@@ -27,6 +27,7 @@ import com.google.common.collect.Queues;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.Assert;
 import org.junit.Test;
+import org.kiji.schema.util.Time;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -115,43 +116,45 @@ public class TestTableLayoutMonitor extends ZooKeeperTest {
               }
             });
         tracker.open();
+        final ZooKeeperMonitor.TableUserRegistration userRegistration1 =
+            monitor.newTableUserRegistration("user-id-1", tableURI);
+        final ZooKeeperMonitor.TableUserRegistration userRegistration2 =
+            monitor.newTableUserRegistration("user-id-2", tableURI);
         try {
           final Multimap<String, String> umap1 = queue.take();
           Assert.assertTrue(umap1.isEmpty());
 
-          monitor.registerTableUser(tableURI, "user-id-1", "layout-id-1");
+          userRegistration1.updateRegisteredLayout("layout-id-1");
           final Multimap<String, String> umap2 = queue.take();
           Assert.assertEquals(ImmutableSetMultimap.of("user-id-1", "layout-id-1"), umap2);
 
-          monitor.registerTableUser(tableURI, "user-id-1", "layout-id-2");
-          final Multimap<String, String> umap3 = queue.take();
+          userRegistration1.updateRegisteredLayout("layout-id-2");
           Assert.assertEquals(
-              ImmutableSetMultimap.of(
-                  "user-id-1", "layout-id-1",
-                  "user-id-1", "layout-id-2"),
-              umap3);
+              ImmutableSetMultimap.of(), // unregistration event
+              queue.take());
+          Assert.assertEquals(
+              ImmutableSetMultimap.of("user-id-1", "layout-id-2"), // re-registration event
+              queue.take());
 
-          monitor.registerTableUser(tableURI, "user-id-2", "layout-id-1");
+          userRegistration2.updateRegisteredLayout("layout-id-1");
           final Multimap<String, String> umap4 = queue.take();
           Assert.assertEquals(
               ImmutableSetMultimap.of(
-                  "user-id-1", "layout-id-1",
                   "user-id-1", "layout-id-2",
                   "user-id-2", "layout-id-1"),
               umap4);
 
-          monitor.unregisterTableUser(tableURI, "user-id-1", "layout-id-1");
+          userRegistration1.close();
           final Multimap<String, String> umap5 = queue.take();
           Assert.assertEquals(
-              ImmutableSetMultimap.of(
-                  "user-id-1", "layout-id-2",
-                  "user-id-2", "layout-id-1"),
+              ImmutableSetMultimap.of("user-id-2", "layout-id-1"),
               umap5);
 
         } finally {
           LOG.info("Closing tracker");
           tracker.close();
           LOG.info("Tracker closed");
+          userRegistration2.close();
         }
       } finally {
         monitor.close();
@@ -160,5 +163,4 @@ public class TestTableLayoutMonitor extends ZooKeeperTest {
       zkClient.release();
     }
   }
-
 }

@@ -46,17 +46,15 @@ import org.kiji.schema.layout.KijiTableLayout;
 public class TableLayoutMonitor implements Closeable {
   private static final Logger LOG = LoggerFactory.getLogger(TableLayoutMonitor.class);
 
-  private final String mUserID;
-
   private final KijiURI mTableURI;
 
   private final KijiSchemaTable mSchemaTable;
 
   private final KijiMetaTable mMetaTable;
 
-  private final ZooKeeperMonitor mZKMonitor;
-
   private final ZooKeeperMonitor.LayoutTracker mLayoutTracker;
+
+  private final ZooKeeperMonitor.TableUserRegistration mUserRegistration;
 
   private final CountDownLatch initializationLatch = new CountDownLatch(1);
 
@@ -82,15 +80,15 @@ public class TableLayoutMonitor implements Closeable {
       KijiSchemaTable schemaTable,
       KijiMetaTable metaTable,
       ZooKeeperMonitor zkMonitor) {
-    mUserID = userID;
     mTableURI = tableURI;
     mSchemaTable = schemaTable;
     mMetaTable = metaTable;
-    mZKMonitor = zkMonitor;
     if (zkMonitor == null) {
       mLayoutTracker = null;
+      mUserRegistration = null;
     } else {
-      mLayoutTracker = mZKMonitor.newTableLayoutTracker(mTableURI, new InnerLayoutUpdater());
+      mLayoutTracker = zkMonitor.newTableLayoutTracker(mTableURI, new InnerLayoutUpdater());
+      mUserRegistration = zkMonitor.newTableUserRegistration(userID, tableURI);
     }
   }
 
@@ -114,14 +112,8 @@ public class TableLayoutMonitor implements Closeable {
     if (mLayoutTracker != null) {
       mLayoutTracker.close();
     }
-    try {
-      mZKMonitor.unregisterTableUser(
-          mTableURI,
-          mUserID,
-          getLayoutCapsule().getLayout().getDesc().getLayoutId());
-    } catch (KeeperException ke) {
-      // TODO(SCHEMA-505): Handle exceptions decently
-      throw new KijiIOException(ke);
+    if (mUserRegistration != null) {
+      mUserRegistration.close();
     }
   }
 
@@ -245,13 +237,9 @@ public class TableLayoutMonitor implements Closeable {
       // Registers this KijiTable in ZooKeeper as a user of the new table layout,
       // and unregisters as a user of the former table layout.
       try {
-        mZKMonitor.registerTableUser(mTableURI, mUserID, newLayoutId);
-        if (currentLayoutId != null) {
-          mZKMonitor.unregisterTableUser(mTableURI, mUserID, currentLayoutId);
-        }
-      } catch (KeeperException ke) {
-        // TODO(SCHEMA-505): Handle exceptions decently
-        throw new KijiIOException(ke);
+        mUserRegistration.updateRegisteredLayout(newLayoutId);
+      } catch (IOException ioe) {
+        throw new KijiIOException(ioe.getCause());
       }
 
       initializationLatch.countDown();
@@ -281,7 +269,7 @@ public class TableLayoutMonitor implements Closeable {
    * @return a PhantomReference which implements Closeable.
    */
   LayoutMonitorPhantomRef getCloseablePhantomRef(ReferenceQueue<? super TableLayoutMonitor> queue) {
-    return new LayoutMonitorPhantomRef(this, queue, mLayoutTracker);
+    return new LayoutMonitorPhantomRef(this, queue, mLayoutTracker, mUserRegistration);
   }
 
   /**

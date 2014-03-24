@@ -257,7 +257,6 @@ public final class HBaseKiji implements Kiji {
       mZKClient = HBaseFactory.Provider.get().getZooKeeperClient(mURI);
       try {
         mMonitor = new ZooKeeperMonitor(mZKClient);
-        mMonitor.registerInstanceUser(mURI, mKijiClientId, mSystemVersion.toString());
       } catch (KeeperException ke) {
         // Unrecoverable KeeperException:
         throw new IOException(ke);
@@ -274,6 +273,7 @@ public final class HBaseKiji implements Kiji {
         mSchemaTable,
         mMetaTable,
         mMonitor);
+    mInstanceMonitor.start();
 
     mRetainCount.set(1);
     final State oldState = mState.getAndSet(State.OPEN);
@@ -779,12 +779,6 @@ public final class HBaseKiji implements Kiji {
 
     LOG.debug("Closing {}.", this);
     if (mMonitor != null) {
-      try {
-        mMonitor.unregisterInstanceUser(mURI, mKijiClientId, mSystemVersion.toString());
-      } catch (KeeperException ke) {
-        // Unrecoverable ZooKeeper error:
-        throw new IOException(ke);
-      }
       mMonitor.close();
     }
     if (mZKClient != null) {

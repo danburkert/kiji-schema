@@ -19,8 +19,10 @@
 package org.kiji.schema.impl;
 
 import java.util.List;
+import java.util.concurrent.BlockingQueue;
 
 import com.google.common.collect.Lists;
+import com.google.common.collect.Queues;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.Assert;
 import org.junit.Test;
@@ -77,7 +79,9 @@ public class IntegrationTestHBaseTableLayoutUpdater extends AbstractKijiIntegrat
 
         final KijiTable table = kiji.openTable("table_name");  // currently not registered as a user
         try {
-          monitor.registerTableUser(table.getURI(), "user-id-1", "1");
+          final ZooKeeperMonitor.TableUserRegistration userRegistration1 =
+              monitor.newTableUserRegistration("user-id-1", table.getURI());
+          userRegistration1.updateRegisteredLayout("1");
           final List<String> layoutIDs = Lists.newArrayList();
 
           final LayoutTracker tracker = monitor.newTableLayoutTracker(table.getURI(),
@@ -114,7 +118,6 @@ public class IntegrationTestHBaseTableLayoutUpdater extends AbstractKijiIntegrat
                 }
               }
             };
-            thread.start();
 
             synchronized (layoutIDs) {
               while ((layoutIDs.size() < 2))  {
@@ -124,10 +127,13 @@ public class IntegrationTestHBaseTableLayoutUpdater extends AbstractKijiIntegrat
             }
             tracker.close();
 
-            monitor.registerTableUser(table.getURI(), "user-id-1", "2");
-            monitor.unregisterTableUser(table.getURI(), "user-id-1", "1");
+            final ZooKeeperMonitor.TableUserRegistration userRegistration2 =
+                monitor.newTableUserRegistration("user-id-1", table.getURI());
+            userRegistration2.updateRegisteredLayout("2");
+            userRegistration1.close();
 
             thread.join();
+            userRegistration2.close();
 
           } finally {
             updater.close();

@@ -266,82 +266,33 @@ public final class ZooKeeperMonitor implements Closeable {
   }
 
   /**
-   * Registers a new user of a table.
+   * Creates a registration for a table user.
    *
-   * @param tableURI Registers a user for the table with this URI.
-   * @param userId ID of the user to register.
-   * @param layoutId ID of the layout.
-   * @throws KeeperException on unrecoverable ZooKeeper error.
+   * <p> The registration must be started and closed. </p>
+   *
+   * @param userID of user to be registered.
+   * @param tableURI of table the user is using.
+   * @return a new table user registration for the user and table.
    */
-  public void registerTableUser(KijiURI tableURI, String userId, String layoutId)
-      throws KeeperException {
-
-    LOG.debug("Registering user '{}' for Kiji table '{}' with layout ID '{}'.",
-        userId, tableURI, layoutId);
-    final File usersDir = getTableUsersDir(tableURI);
-    this.mZKClient.createNodeRecursively(usersDir);
-    final String nodeName = makeZKNodeName(userId, layoutId);
-    final File nodePath = new File(usersDir, nodeName);
-    final byte[] data = EMPTY_BYTES;
-    this.mZKClient.create(nodePath, data, Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+  public TableUserRegistration newTableUserRegistration(String userID, KijiURI tableURI) {
+    return new TableUserRegistration(userID, tableURI);
   }
 
   /**
-   * Unregisters an existing user of a table.
+   * Creates a registration for an instance user.
    *
-   * @param tableURI Registers a user for the table with this URI.
-   * @param userId ID of the user to unregister.
-   * @param layoutId ID of the layout.
-   * @throws KeeperException on unrecoverable ZooKeeper error.
-   */
-  public void unregisterTableUser(KijiURI tableURI, String userId, String layoutId)
-      throws KeeperException {
-
-    final File usersDir = getTableUsersDir(tableURI);
-    final String nodeName = makeZKNodeName(userId, layoutId);
-    final File nodePath = new File(usersDir, nodeName);
-    if (this.mZKClient.exists(nodePath) != null) {
-      this.mZKClient.delete(nodePath, -1);
-    }
-  }
-
-  /**
-   * Registers a new user of a Kiji instance.
+   * <p> The registration must be started and closed. </p>
    *
-   * @param kijiURI Registers a user for the Kiji instance with this URI.
-   * @param userId ID of the user to register.
-   * @param systemVersion System version used by the Kiji instance user.
-   * @throws KeeperException on unrecoverable ZooKeeper error.
+   * @param userID of user to be registered.
+   * @param systemVersion of user to be registered.
+   * @param instanceURI of instance the user is using.
+   * @return a new table user registration for the user and table.
    */
-  public void registerInstanceUser(KijiURI kijiURI, String userId, String systemVersion)
-      throws KeeperException {
-
-    LOG.debug("Registering user '{}' for Kiji instance '{}' with system version '{}'.",
-        userId, kijiURI, systemVersion);
-    final File usersDir = getInstanceUsersDir(kijiURI);
-    this.mZKClient.createNodeRecursively(usersDir);
-    final String nodeName = makeZKNodeName(userId, systemVersion);
-    final File nodePath = new File(usersDir, nodeName);
-    final byte[] data = EMPTY_BYTES;
-    this.mZKClient.create(nodePath, data, Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
-  }
-
-  /**
-   * Unregisters an existing user of a Kiji instance.
-   *
-   * @param kijiURI Registers a user for the Kiji instance with this URI.
-   * @param userId ID of the user to unregister.
-   * @param systemVersion System version used by the Kiji instance user.
-   * @throws KeeperException on unrecoverable ZooKeeper error.
-   */
-  public void unregisterInstanceUser(KijiURI kijiURI, String userId, String systemVersion)
-      throws KeeperException {
-    final File usersDir = getInstanceUsersDir(kijiURI);
-    final String nodeName = makeZKNodeName(userId, systemVersion);
-    final File nodePath = new File(usersDir, nodeName);
-    if (this.mZKClient.exists(nodePath) != null) {
-      this.mZKClient.delete(nodePath, -1);
-    }
+  public InstanceUserRegistration newInstanceUserRegistration(
+      String userID,
+      String systemVersion,
+      KijiURI instanceURI) {
+    return new InstanceUserRegistration(userID, systemVersion, instanceURI);
   }
 
   /**
@@ -661,4 +612,114 @@ public final class ZooKeeperMonitor implements Closeable {
     }
   }
 
+  public final class TableUserRegistration implements Closeable {
+    private final String mUserID;
+    private final KijiURI mTableURI;
+    private final Object mMonitor = new Object();
+    /** protected by mMonitor. */
+    private File mCurrentNode;
+
+    public TableUserRegistration(String userID, KijiURI tableURI) {
+      mUserID = userID;
+      mTableURI = tableURI;
+    }
+
+    private void unregister() throws IOException {
+      synchronized (mMonitor) {
+        if (mCurrentNode != null) {
+          try {
+            if (ZooKeeperMonitor.this.mZKClient.exists(mCurrentNode) != null) {
+              ZooKeeperMonitor.this.mZKClient.delete(mCurrentNode, -1);
+            }
+          } catch (KeeperException e) {
+            throw new IOException(e);
+          }
+        }
+      }
+    }
+
+    private void register(String layoutID) throws IOException {
+      synchronized (mMonitor) {
+        try {
+          final File usersDir = getTableUsersDir(mTableURI);
+          LOG.debug("Registering user '{}' for Kiji table '{}' with layout ID '{}'.",
+              mUserID, mTableURI, layoutID);
+
+          ZooKeeperMonitor.this.mZKClient.createNodeRecursively(usersDir);
+          final String nodeName = makeZKNodeName(mUserID, layoutID);
+          final File nodePath = new File(usersDir, nodeName);
+          final byte[] data = EMPTY_BYTES;
+          mCurrentNode = ZooKeeperMonitor.this.mZKClient.create(
+              nodePath, data, Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+        } catch (KeeperException e) {
+          throw new IOException(e);
+        }
+      }
+    }
+
+    /**
+     * Update this TableUserRegistration with the supplied layout ID.
+     */
+    public void updateRegisteredLayout(String layoutID) throws IOException {
+      synchronized (mMonitor) {
+        unregister();
+        register(layoutID);
+      }
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void close() throws IOException {
+      unregister();
+    }
+  }
+
+  public final class InstanceUserRegistration implements Closeable {
+    private final String mUserID;
+    private final String mSystemVersion;
+    private final KijiURI mInstanceURI;
+    private final Object mMonitor = new Object();
+    /** protected by mMonitor. */
+    private File mCurrentNode;
+
+    public InstanceUserRegistration(String userID, String systemVersion, KijiURI instanceURI) {
+      mUserID = userID;
+      mSystemVersion = systemVersion;
+      mInstanceURI = instanceURI;
+    }
+
+    public void start() throws IOException {
+      synchronized (mMonitor) {
+        try {
+          final File usersDir = getInstanceUsersDir(mInstanceURI);
+          LOG.debug("Registering user '{}' for Kiji instance '{}' with system version '{}'.",
+              mUserID, mInstanceURI, mSystemVersion);
+
+          ZooKeeperMonitor.this.mZKClient.createNodeRecursively(usersDir);
+          final String nodeName = makeZKNodeName(mUserID, mSystemVersion);
+          final File nodePath = new File(usersDir, nodeName);
+          mCurrentNode = ZooKeeperMonitor.this.mZKClient.create(
+              nodePath, EMPTY_BYTES, Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+        } catch (KeeperException e) {
+          throw new IOException(e);
+        }
+      }
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void close() throws IOException {
+      synchronized (mMonitor) {
+        if (mCurrentNode != null) {
+          try {
+            if (ZooKeeperMonitor.this.mZKClient.exists(mCurrentNode) != null) {
+              ZooKeeperMonitor.this.mZKClient.delete(mCurrentNode, -1);
+            }
+          } catch (KeeperException e) {
+            throw new IOException(e);
+          }
+        }
+      }
+    }
+  }
 }
