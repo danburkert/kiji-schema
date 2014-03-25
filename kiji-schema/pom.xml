@@ -258,6 +258,13 @@
       <scope>test</scope>
     </dependency>
 
+    <dependency>
+      <groupId>org.apache.curator</groupId>
+      <artifactId>curator-test</artifactId>
+      <version>2.4.1</version>
+      <scope>test</scope>
+    </dependency>
+
     <!-- All platform bridge implementations that should be bundled with the redistributable. -->
     <dependency>
       <groupId>${project.groupId}</groupId>
