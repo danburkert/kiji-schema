@@ -27,7 +27,6 @@ import com.google.common.collect.Queues;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.Assert;
 import org.junit.Test;
-import org.kiji.schema.util.Time;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

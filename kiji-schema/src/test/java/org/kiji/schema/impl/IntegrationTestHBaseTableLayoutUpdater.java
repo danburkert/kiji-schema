@@ -19,10 +19,8 @@
 package org.kiji.schema.impl;
 
 import java.util.List;
-import java.util.concurrent.BlockingQueue;
 
 import com.google.common.collect.Lists;
-import com.google.common.collect.Queues;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.Assert;
 import org.junit.Test;

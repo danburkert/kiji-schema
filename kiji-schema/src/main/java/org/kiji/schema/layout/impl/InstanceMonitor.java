@@ -46,6 +46,10 @@ import org.kiji.schema.KijiURI;
 import org.kiji.schema.layout.impl.TableLayoutMonitor.LayoutMonitorPhantomRef;
 import org.kiji.schema.util.ProtocolVersion;
 
+/**
+ * A Kiji instance monitors. Registers a client as an instance user in ZooKeeper, and provides
+ * table layout monitors.
+ */
 public class InstanceMonitor implements Closeable {
 
   private static final Logger LOG = LoggerFactory.getLogger(InstanceMonitor.class);
@@ -55,6 +59,7 @@ public class InstanceMonitor implements Closeable {
   private final ReferenceQueue<TableLayoutMonitor> mRefQueue =
       new ReferenceQueue<TableLayoutMonitor>();
 
+  /** Ensures PhantomRef's are not garbage collected prematurely. */
   private final Set<LayoutMonitorPhantomRef> mReferences =
       Collections.newSetFromMap(new ConcurrentHashMap<LayoutMonitorPhantomRef, Boolean>());
 
@@ -74,7 +79,16 @@ public class InstanceMonitor implements Closeable {
 
   private final ZooKeeperMonitor.InstanceUserRegistration mUserRegistration;
 
-
+  /**
+   * Create an instance monitor for a Kiji instance.
+   *
+   * @param userID of instance user.
+   * @param systemVersion of instance user.
+   * @param instanceURI uri of instance to monitor.
+   * @param schemaTable of instance.
+   * @param metaTable of instance.
+   * @param zkMonitor ZooKeeper connection to use for monitoring.
+   */
   public InstanceMonitor(
       String userID,
       ProtocolVersion systemVersion,
@@ -103,8 +117,16 @@ public class InstanceMonitor implements Closeable {
     } else {
       mUserRegistration = null;
     }
-}
+  }
 
+  /**
+   * Get a table layout monitor for the provided table.  Table layout monitors are cached for as
+   * long as they are in use.
+   *
+   * @param tableName of table layout monitor to retrieve.
+   * @return a table layout monitor for the table.
+   * @throws IOException if unrecoverable ZooKeeper exception.
+   */
   public TableLayoutMonitor getTableLayoutMonitor(String tableName) throws IOException {
     Preconditions.checkState(!mIsClosed, "InstanceMonitor is closed.");
     try {
@@ -121,6 +143,12 @@ public class InstanceMonitor implements Closeable {
     }
   }
 
+  /**
+   * Start this InstanceMonitor.  Must be called before any other method is valid.
+   *
+   * @return this.
+   * @throws IOException on unrecoverable ZooKeeper exception.
+   */
   public InstanceMonitor start() throws IOException {
     Preconditions.checkState(!mIsClosed, "InstanceMonitor is closed.");
     if (mUserRegistration != null) {
@@ -130,6 +158,12 @@ public class InstanceMonitor implements Closeable {
     return this;
   }
 
+  /**
+   * Close this InstanceMonitor.  Should be called when this instance monitor is no longer needed.
+   * All table monitor objects owned by this instance monitor will also be closed.
+   *
+   * @throws IOException on unrecoverable ZooKeeper exception.
+   */
   @Override
   public void close() throws IOException {
     LOG.debug("Closing InstanceMonitor for instance {}.", mInstanceURI);
@@ -161,6 +195,10 @@ public class InstanceMonitor implements Closeable {
     }
   }
 
+  /**
+   * Listens for table layout monitors being removed from a cache and closes them, if they have not
+   * already been garbage collected.
+   */
   private static class TableLayoutMonitorRemovalListener
       implements RemovalListener<String, TableLayoutMonitor> {
     @Override
@@ -171,17 +209,29 @@ public class InstanceMonitor implements Closeable {
         LOG.debug("Cleaning up TableLayoutMonitor for table {}.", notification.getKey());
         try {
           monitor.close();
-        } catch(IOException ioe) {
+        } catch (IOException ioe) {
           LOG.warn("Unable to cleanup TableLayoutMonitor for table {}.", notification.getKey());
         }
       }
     }
   }
 
+  /**
+   * Runnable that polls a ReferenceQueue for TableLayoutMonitor PhantomReferences, and calls
+   * {@link Closeable#close} on them.
+   */
   private static final class PhantomRefCloser implements Runnable {
     private final ReferenceQueue<TableLayoutMonitor> mRefQueue;
     private final Set<LayoutMonitorPhantomRef> mReferences;
 
+    /**
+     *
+     * Create a phantom reference closer for table layout monitor instances.
+     *
+     * @param refQueue reference queue which phantom references will be registered with.
+     * @param references set which holds a strong reference to phantom references to prevent their
+     *                   garbage collection.
+     */
     private PhantomRefCloser(
         ReferenceQueue<TableLayoutMonitor> refQueue,
         Set<LayoutMonitorPhantomRef> references) {
@@ -189,6 +239,7 @@ public class InstanceMonitor implements Closeable {
       mReferences = references;
     }
 
+    /** {@inheritDoc}. */
     @Override
     public void run() {
       while (true) {

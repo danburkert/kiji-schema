@@ -31,18 +31,33 @@ import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.apache.zookeeper.KeeperException;
-import org.kiji.schema.KijiMetaTable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.kiji.schema.KijiIOException;
+import org.kiji.schema.KijiMetaTable;
 import org.kiji.schema.KijiSchemaTable;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.RuntimeInterruptedException;
 import org.kiji.schema.impl.LayoutConsumer;
 import org.kiji.schema.layout.KijiTableLayout;
 
+/**
+ * TableLayoutMonitor provides three services for users of table layouts:
+ *
+ *  1) it acts as a KijiTableLayout cache which is automatically refreshed when the table layout is
+ *     updated.
+ *  2) it allows LayoutConsumer instances to register to recieve a callback when the table layout
+ *     changes.
+ *  3) it registers as a table user in ZooKeeper, and keeps that registration up-to-date with the
+ *     oldest version of table layout being used by registered LayoutConsumers.
+ *
+ * This class is thread-safe with the following caveat:
+ *  * LayoutConsumer instances who register to receive callbacks *must* keep a strong reference to
+ *    this TableLayoutMonitor for as long as the registration should remain active. This is either
+ *    for the life of the object if it is never unregistered, or until
+ *    {@link #unregisterLayoutConsumer(LayoutConsumer)} is called.
+ */
 public class TableLayoutMonitor implements Closeable {
   private static final Logger LOG = LoggerFactory.getLogger(TableLayoutMonitor.class);
 
@@ -56,7 +71,7 @@ public class TableLayoutMonitor implements Closeable {
 
   private final ZooKeeperMonitor.TableUserRegistration mUserRegistration;
 
-  private final CountDownLatch initializationLatch = new CountDownLatch(1);
+  private final CountDownLatch mInitializationLatch = new CountDownLatch(1);
 
   /**
    * Capsule containing all objects which should be mutated in response to a table layout update.
@@ -74,6 +89,15 @@ public class TableLayoutMonitor implements Closeable {
           Collections.newSetFromMap(
               new WeakHashMap<LayoutConsumer, Boolean>()));
 
+  /**
+   * Create a new table layout monitor for the provided user and table.
+   *
+   * @param userID of user to register as a table user.
+   * @param tableURI of table being registered.
+   * @param schemaTable of Kiji table.
+   * @param metaTable of Kiji table.
+   * @param zkMonitor ZooKeeper connection to register monitor with.
+   */
   public TableLayoutMonitor(
       String userID,
       KijiURI tableURI,
@@ -92,11 +116,17 @@ public class TableLayoutMonitor implements Closeable {
     }
   }
 
+  /**
+   * Start this table layout monitor.  Must be called before any other method.
+   *
+   * @return this table layout monitor.
+   * @throws IOException on unrecoverable ZooKeeper error.
+   */
   public TableLayoutMonitor start() throws IOException {
     if (mLayoutTracker != null) {
       mLayoutTracker.open();
       try {
-        initializationLatch.await();
+        mInitializationLatch.await();
       } catch (InterruptedException e) {
         throw new RuntimeInterruptedException(e);
       }
@@ -188,6 +218,7 @@ public class TableLayoutMonitor implements Closeable {
    * Reads the most recent layout of this Kiji table from the Kiji instance meta-table.
    *
    * @return the most recent layout of this Kiji table from the Kiji instance meta-table.
+   * @throws IOException if unable to retrieve table layout.
    */
   private LayoutCapsule createCapsule() throws IOException {
     final KijiTableLayout layout =
@@ -195,7 +226,9 @@ public class TableLayoutMonitor implements Closeable {
     return new LayoutCapsule(layout, new ColumnNameTranslator(layout));
   }
 
-  /** Updates the layout of this table in response to a layout update pushed from ZooKeeper. */
+  /**
+   * Updates the layout of this table in response to a layout update pushed from ZooKeeper.
+   */
   private final class InnerLayoutUpdater implements ZooKeeperMonitor.LayoutUpdateHandler {
     /** {@inheritDoc} */
     @Override
@@ -242,7 +275,7 @@ public class TableLayoutMonitor implements Closeable {
         throw new KijiIOException(ioe.getCause());
       }
 
-      initializationLatch.countDown();
+      mInitializationLatch.countDown();
     }
   }
 
@@ -287,6 +320,13 @@ public class TableLayoutMonitor implements Closeable {
 
     private final Set<LayoutConsumer> mConsumers;
 
+    /**
+     * Create a new layout monitor phantom reference.
+     *
+     * @param value TableLayoutMonitor to be cleaned up by phantom reference.
+     * @param queue to which the phantom reference should be added.
+     * @param closeables resources which should be closed when the phantom reference is queued.
+     */
     private LayoutMonitorPhantomRef(
         TableLayoutMonitor value,
         ReferenceQueue<? super TableLayoutMonitor> queue,
@@ -297,6 +337,7 @@ public class TableLayoutMonitor implements Closeable {
       mConsumers = value.mConsumers;
     }
 
+    /** {@inheritDoc}. */
     @Override
     public void close() {
       LOG.debug("Closing TableLayoutMonitor for table {}.", mTableURI);

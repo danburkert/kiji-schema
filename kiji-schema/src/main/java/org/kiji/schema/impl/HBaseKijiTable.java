@@ -58,8 +58,8 @@ import org.kiji.schema.KijiTableReader;
 import org.kiji.schema.KijiTableWriter;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.KijiWriterFactory;
-import org.kiji.schema.avro.RowKeyFormat2;
 import org.kiji.schema.avro.RowKeyFormat;
+import org.kiji.schema.avro.RowKeyFormat2;
 import org.kiji.schema.hbase.KijiManagedHBaseTableName;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
@@ -160,6 +160,7 @@ public final class HBaseKijiTable implements KijiTable {
    * @param name The name of the Kiji user-space table to open.
    * @param conf The Hadoop configuration object.
    * @param htableFactory A factory that creates HTable objects.
+   * @param layoutMonitor a valid TableLayoutMonitor for this table.
    *
    * @throws IOException On an HBase error.
    *     <p> Throws KijiTableNotFoundException if the table does not exist. </p>

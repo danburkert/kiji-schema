@@ -612,6 +612,9 @@ public final class ZooKeeperMonitor implements Closeable {
     }
   }
 
+  /**
+   * Registers a table user with ZooKeeper.
+   */
   public final class TableUserRegistration implements Closeable {
     private final String mUserID;
     private final KijiURI mTableURI;
@@ -619,11 +622,23 @@ public final class ZooKeeperMonitor implements Closeable {
     /** protected by mMonitor. */
     private File mCurrentNode;
 
+    /**
+     * Create a new table user registration in ZooKeeper.  The registration will not take effect
+     * until {@link #register(String)} is called with the initial layout id.
+     *
+     * @param userID of table user.
+     * @param tableURI of table.
+     */
     public TableUserRegistration(String userID, KijiURI tableURI) {
       mUserID = userID;
       mTableURI = tableURI;
     }
 
+    /**
+     * Unregisters this table user from ZooKeeper.
+     *
+     * @throws IOException on unrecoverable ZooKeeper error.
+     */
     private void unregister() throws IOException {
       synchronized (mMonitor) {
         if (mCurrentNode != null) {
@@ -638,6 +653,12 @@ public final class ZooKeeperMonitor implements Closeable {
       }
     }
 
+    /**
+     * Register this table user with ZooKeeper.
+     *
+     * @param layoutID layout id known by table user.
+     * @throws IOException on unrecoverable ZooKeeper error.
+     */
     private void register(String layoutID) throws IOException {
       synchronized (mMonitor) {
         try {
@@ -659,6 +680,9 @@ public final class ZooKeeperMonitor implements Closeable {
 
     /**
      * Update this TableUserRegistration with the supplied layout ID.
+     *
+     * @param layoutID id of layout being used by registered table user.
+     * @throws IOException on unrecoverable ZooKeeper error.
      */
     public void updateRegisteredLayout(String layoutID) throws IOException {
       synchronized (mMonitor) {
@@ -674,6 +698,9 @@ public final class ZooKeeperMonitor implements Closeable {
     }
   }
 
+  /**
+   * Registers an instance user with ZooKeeper.
+   */
   public final class InstanceUserRegistration implements Closeable {
     private final String mUserID;
     private final String mSystemVersion;
@@ -682,12 +709,24 @@ public final class ZooKeeperMonitor implements Closeable {
     /** protected by mMonitor. */
     private File mCurrentNode;
 
+    /**
+     * Create a new instance user registration.
+     *
+     * @param userID of instance user.
+     * @param systemVersion of instance user.
+     * @param instanceURI Kiji uri of instance being used.
+     */
     public InstanceUserRegistration(String userID, String systemVersion, KijiURI instanceURI) {
       mUserID = userID;
       mSystemVersion = systemVersion;
       mInstanceURI = instanceURI;
     }
 
+    /**
+     * Start this instance user registration.
+     *
+     * @throws IOException on unrecoverable ZooKeeper error.
+     */
     public void start() throws IOException {
       synchronized (mMonitor) {
         try {
