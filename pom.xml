@@ -40,6 +40,7 @@
     <kiji-delegation.version>1.0.0</kiji-delegation.version>
     <kiji-platforms.version>1.3.0</kiji-platforms.version>
     <fake-hbase.version>0.1.5-SNAPSHOT</fake-hbase.version>
+    <curator.version>2.4.1</curator.version>
 
     <!--
        The Hadoop and HBase versions to use in the default "cdh4" profile
