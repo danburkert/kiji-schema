@@ -75,11 +75,8 @@ public class IntegrationTestHBaseTableLayoutUpdater extends AbstractKijiIntegrat
       try {
         kiji.createTable(layout1);
 
-        final KijiTable table = kiji.openTable("table_name");  // currently not registered as a user
+        final KijiTable table = kiji.openTable("table_name");
         try {
-          final ZooKeeperMonitor.TableUserRegistration userRegistration1 =
-              monitor.newTableUserRegistration("user-id-1", table.getURI());
-          userRegistration1.updateRegisteredLayout("1");
           final List<String> layoutIDs = Lists.newArrayList();
 
           final LayoutTracker tracker = monitor.newTableLayoutTracker(table.getURI(),
@@ -116,6 +113,7 @@ public class IntegrationTestHBaseTableLayoutUpdater extends AbstractKijiIntegrat
                 }
               }
             };
+            thread.start();
 
             synchronized (layoutIDs) {
               while ((layoutIDs.size() < 2))  {
@@ -124,15 +122,7 @@ public class IntegrationTestHBaseTableLayoutUpdater extends AbstractKijiIntegrat
               Assert.assertEquals("2", layoutIDs.get(1));
             }
             tracker.close();
-
-            final ZooKeeperMonitor.TableUserRegistration userRegistration2 =
-                monitor.newTableUserRegistration("user-id-1", table.getURI());
-            userRegistration2.updateRegisteredLayout("2");
-            userRegistration1.close();
-
             thread.join();
-            userRegistration2.close();
-
           } finally {
             updater.close();
           }
