@@ -56,12 +56,12 @@ public class InstanceMonitor implements Closeable {
 
   private volatile boolean mIsClosed = false;
 
-  private final ReferenceQueue<TableLayoutMonitor> mRefQueue =
-      new ReferenceQueue<TableLayoutMonitor>();
+//  private final ReferenceQueue<TableLayoutMonitor> mRefQueue =
+//      new ReferenceQueue<TableLayoutMonitor>();
 
   /** Ensures PhantomRef's are not garbage collected prematurely. */
-  private final Set<LayoutMonitorPhantomRef> mReferences =
-      Collections.newSetFromMap(new ConcurrentHashMap<LayoutMonitorPhantomRef, Boolean>());
+//  private final Set<LayoutMonitorPhantomRef> mReferences =
+//      Collections.newSetFromMap(new ConcurrentHashMap<LayoutMonitorPhantomRef, Boolean>());
 
   private final ExecutorService mExecutor = Executors.newCachedThreadPool();
 
@@ -154,7 +154,7 @@ public class InstanceMonitor implements Closeable {
     if (mUserRegistration != null) {
       mUserRegistration.start();
     }
-    mExecutor.execute(new PhantomRefCloser(mRefQueue, mReferences));
+//    mExecutor.execute(new PhantomRefCloser(mRefQueue, mReferences));
     return this;
   }
 
@@ -190,7 +190,7 @@ public class InstanceMonitor implements Closeable {
       TableLayoutMonitor monitor =
           new TableLayoutMonitor(mUserID, tableURI, mSchemaTable, mMetaTable, mZKMonitor).start();
 
-      mReferences.add(monitor.getCloseablePhantomRef(mRefQueue));
+//      mReferences.add(monitor.getCloseablePhantomRef(mRefQueue));
       return monitor;
     }
   }
