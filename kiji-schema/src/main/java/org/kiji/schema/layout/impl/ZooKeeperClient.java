@@ -294,8 +294,7 @@ public final class ZooKeeperClient implements ReferenceCountable<ZooKeeperClient
         } else {
           try {
             if (absoluteDeadline > 0) {
-              final double waitTimeout = absoluteDeadline - Time.now();  // seconds
-              mMonitor.wait((long) (waitTimeout * 1000.0));
+              mMonitor.wait(50L); // Try again in 50 ms
             } else {
               mMonitor.wait();
             }
