@@ -29,6 +29,8 @@ import com.google.common.collect.Multimap;
 import com.google.common.collect.Queues;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.Test;
+import org.kiji.schema.util.Time;
+import org.mortbay.log.Log;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -96,6 +98,7 @@ public class IntegrationTestTableLayoutUpdate extends AbstractKijiIntegrationTes
               @Override
               public void update(Multimap<String, String> users) {
                 try {
+                  LOG.info("Received user update: " + users);
                   queue.put(users);
                 } catch (InterruptedException ie) {
                   throw new RuntimeInterruptedException(ie);
@@ -108,7 +111,7 @@ public class IntegrationTestTableLayoutUpdate extends AbstractKijiIntegrationTes
           // Initial user map should be empty:
           assertTrue(queue.take().isEmpty());
 
-          final KijiTable table = kiji.openTable(tableName);
+          KijiTable table = kiji.openTable(tableName);
           try {
             {
               // We opened a table, user map must contain exactly one entry:
@@ -135,7 +138,11 @@ public class IntegrationTestTableLayoutUpdate extends AbstractKijiIntegrationTes
             }
           } finally {
             table.release();
+            table = null;
           }
+          Log.info("table: " + table);
+          System.gc();
+          Time.sleep(3);
           // Table is now closed, the user map should become empty:
           assertTrue(queue.size() > 0); // prevents deadlock
           assertTrue(queue.take().isEmpty());
@@ -146,7 +153,6 @@ public class IntegrationTestTableLayoutUpdate extends AbstractKijiIntegrationTes
         zkMonitor.close();
         zkClient.release();
       }
-
     } finally {
       kiji.release();
     }

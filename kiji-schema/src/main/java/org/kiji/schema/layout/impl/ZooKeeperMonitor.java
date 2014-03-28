@@ -357,7 +357,7 @@ public final class ZooKeeperMonitor implements Closeable {
     // This should not be needed if we add a lock for layout updates.
     final Stat updateStat =
         this.mZKClient.setData(layoutPath, layout, version);
-    LOG.info("Updated layout for table {}. Layout version is {}.",
+    LOG.debug("Updated layout for table {}. Layout version is {}.",
         tableURI, updateStat.getVersion());
   }
 
@@ -452,7 +452,7 @@ public final class ZooKeeperMonitor implements Closeable {
         if (!Arrays.equals(mLatestLayout, layoutUpdate)) {
           // Layout update may not be changed in the case where this was triggered by a ZooKeeper
           // connection state change.
-          LOG.info("Received layout update for table {}: {}.",
+          LOG.debug("Received layout update for table {}: {}.",
               mTableURI, Bytes.toStringBinary(layoutUpdate));
           mLatestLayout = layoutUpdate;
 
@@ -574,7 +574,7 @@ public final class ZooKeeperMonitor implements Closeable {
         // and registers a watcher for updates on the children list:
         final List<String> zkNodeNames =
             ZooKeeperMonitor.this.mZKClient.getChildren(mUsersDir, mWatcher, mStat);
-        LOG.info("Received users update for table {}: {}.", mTableURI, zkNodeNames);
+        LOG.debug("Received users update for table {}: {}.", mTableURI, zkNodeNames);
 
         final Multimap<String, String> children = HashMultimap.create();
         try {
