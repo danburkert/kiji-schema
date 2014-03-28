@@ -8,7 +8,7 @@ import org.kiji.schema.avro.TableLayoutDesc;
 import org.kiji.schema.layout.KijiTableLayouts;
 import org.kiji.schema.util.ZooKeeperTest;
 
-public class InstanceMonitorTest extends ZooKeeperTest {
+public class TestInstanceMonitor extends ZooKeeperTest {
 
   private TableLayoutDesc mLayout;
   private ZooKeeperClient mZKClient;
