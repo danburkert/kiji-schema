@@ -18,9 +18,7 @@
  */
 package org.kiji.schema.layout.impl;
 
-import java.io.Closeable;
 import java.io.IOException;
-import java.lang.ref.PhantomReference;
 import java.lang.ref.ReferenceQueue;
 import java.util.Collections;
 import java.util.Set;
@@ -31,6 +29,8 @@ import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.kiji.schema.scratch.CloseablePhantomRef;
+import org.kiji.schema.scratch.PhantomRefCloseable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -58,7 +58,8 @@ import org.kiji.schema.layout.KijiTableLayout;
  *    for the life of the object if it is never unregistered, or until
  *    {@link #unregisterLayoutConsumer(LayoutConsumer)} is called.
  */
-public class TableLayoutMonitor implements Closeable {
+public class TableLayoutMonitor implements PhantomRefCloseable {
+
   private static final Logger LOG = LoggerFactory.getLogger(TableLayoutMonitor.class);
 
   private final KijiURI mTableURI;
@@ -138,13 +139,8 @@ public class TableLayoutMonitor implements Closeable {
 
   /** {@inheritDoc} */
   @Override
-  public void close() throws IOException {
-    if (mLayoutTracker != null) {
-      mLayoutTracker.close();
-    }
-    if (mUserRegistration != null) {
-      mUserRegistration.close();
-    }
+  public CloseablePhantomRef getCloseablePhantomRef(ReferenceQueue<PhantomRefCloseable> queue) {
+    return new CloseablePhantomRef(this, queue, mLayoutTracker, mUserRegistration);
   }
 
   /**
@@ -276,83 +272,6 @@ public class TableLayoutMonitor implements Closeable {
       }
 
       mInitializationLatch.countDown();
-    }
-  }
-
-  /*
-    Lifecycle Notes:
-
-    This class has two seperate mechanisms for cleaning up the resources allocated to it:
-
-      1) It implements Closeable.  Call #close, and the resources will be cleaned up, and the
-         instance can be safely garbage collected.
-
-      2) It will return a PhantomReference which implements Closeable from #getCloseablePhantomRef.
-         This PhantomReference can be used to clean up the resources using a ReferenceQueue and a
-         thread which is taking references off the queue and calling close on them.
-
-    Either method is sufficient for cleaning up owned resources.
-   */
-
-  /**
-   * Retrieve a PhantomReference to this TableLayoutMonitor which implements Closeable and is able
-   * to cleanup the resources held by this TableLayoutMonitor.
-   *
-   * @param queue which will own the PhantomReference.
-   * @return a PhantomReference which implements Closeable.
-   */
-  LayoutMonitorPhantomRef getCloseablePhantomRef(ReferenceQueue<? super TableLayoutMonitor> queue) {
-    return new LayoutMonitorPhantomRef(this, queue, mLayoutTracker, mUserRegistration);
-  }
-
-  /**
-   * A PhantomReference for TableLayoutMonitor which will close the resources held by the
-   * TableLayoutMonitor in the case that it gets garbage collected.
-   */
-  static final class LayoutMonitorPhantomRef extends PhantomReference<TableLayoutMonitor>
-      implements Closeable {
-
-    private static final Logger LOG = LoggerFactory.getLogger(LayoutMonitorPhantomRef.class);
-
-    private final Closeable[] mCloseables;
-
-    private final KijiURI mTableURI;
-
-    private final Set<LayoutConsumer> mConsumers;
-
-    /**
-     * Create a new layout monitor phantom reference.
-     *
-     * @param value TableLayoutMonitor to be cleaned up by phantom reference.
-     * @param queue to which the phantom reference should be added.
-     * @param closeables resources which should be closed when the phantom reference is queued.
-     */
-    private LayoutMonitorPhantomRef(
-        TableLayoutMonitor value,
-        ReferenceQueue<? super TableLayoutMonitor> queue,
-        Closeable... closeables) {
-      super(value, queue);
-      mCloseables = closeables;
-      mTableURI = value.mTableURI;
-      mConsumers = value.mConsumers;
-    }
-
-    /** {@inheritDoc}. */
-    @Override
-    public void close() {
-      LOG.debug("Closing TableLayoutMonitor for table {}.", mTableURI);
-      if (!mConsumers.isEmpty()) {
-        // This can only happen if registered layout consumers fail to hold a strong reference to
-        // the TableLayoutMonitor.
-        LOG.error("Closing TableLayoutMonitor with registed layout consumers: {}", mConsumers);
-      }
-      for (Closeable closeable : mCloseables) {
-        try {
-          closeable.close();
-        } catch (IOException ioe) {
-          LOG.warn("Unable to close resource:", ioe);
-        }
-      }
     }
   }
 }

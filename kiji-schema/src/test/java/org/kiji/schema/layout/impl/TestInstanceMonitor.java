@@ -1,14 +1,16 @@
 package org.kiji.schema.layout.impl;
 
 import org.junit.After;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.kiji.schema.Kiji;
+import org.kiji.schema.KijiClientTest;
 import org.kiji.schema.avro.TableLayoutDesc;
+import org.kiji.schema.hbase.HBaseFactory;
 import org.kiji.schema.layout.KijiTableLayouts;
-import org.kiji.schema.util.ZooKeeperTest;
 
-public class TestInstanceMonitor extends ZooKeeperTest {
+public class TestInstanceMonitor extends KijiClientTest {
 
   private TableLayoutDesc mLayout;
   private ZooKeeperClient mZKClient;
@@ -19,7 +21,7 @@ public class TestInstanceMonitor extends ZooKeeperTest {
     mLayout = KijiTableLayouts.getLayout(KijiTableLayouts.SIMPLE);
     Kiji kiji = getKiji();
     kiji.createTable(mLayout);
-    mZKClient = ZooKeeperClient.getZooKeeperClient(getZKAddress());
+    mZKClient = HBaseFactory.Provider.get().getZooKeeperClient(kiji.getURI());
 
     mInstanceMonitor = new InstanceMonitor(
         "user",
@@ -39,5 +41,26 @@ public class TestInstanceMonitor extends ZooKeeperTest {
   @Test
   public void testCanRetrieveTableMonitor() throws Exception {
     TableLayoutMonitor monitor = mInstanceMonitor.getTableLayoutMonitor(mLayout.getName());
+    Assert.assertEquals("layout-1.0", monitor.getLayoutCapsule().getLayout().getDesc().getVersion());
+  }
+
+  @Test
+  public void testClosingInstanceMonitorWillCloseTableLayoutMonitor() throws Exception {
+    TableLayoutMonitor monitor = mInstanceMonitor.getTableLayoutMonitor(mLayout.getName());
+    mInstanceMonitor.close();
+    // TODO: figure out how to test the monitor is closed.
+  }
+
+  @Test
+  public void testLosingReferenceToTableLayoutMonitorWillCloseIt() throws Exception {
+    int hash1 = mInstanceMonitor.getTableLayoutMonitor(mLayout.getName()).hashCode();
+
+    System.gc();
+
+    final int hash2 = mInstanceMonitor.getTableLayoutMonitor(mLayout.getName()).hashCode();
+
+    System.out.println(hash1);
+    System.out.println(hash2);
+    Assert.assertFalse(hash1 == hash2);
   }
 }

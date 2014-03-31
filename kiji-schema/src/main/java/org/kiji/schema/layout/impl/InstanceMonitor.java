@@ -22,12 +22,7 @@ package org.kiji.schema.layout.impl;
 import java.io.Closeable;
 import java.io.IOException;
 import java.lang.ref.ReferenceQueue;
-import java.util.Collections;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 import com.google.common.base.Preconditions;
 import com.google.common.cache.CacheBuilder;
@@ -36,6 +31,8 @@ import com.google.common.cache.LoadingCache;
 import com.google.common.cache.RemovalListener;
 import com.google.common.cache.RemovalNotification;
 import com.google.common.util.concurrent.UncheckedExecutionException;
+import org.kiji.schema.scratch.CloseablePhantomRefCloser;
+import org.kiji.schema.util.ResourceUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,7 +40,6 @@ import org.kiji.schema.KijiIOException;
 import org.kiji.schema.KijiMetaTable;
 import org.kiji.schema.KijiSchemaTable;
 import org.kiji.schema.KijiURI;
-import org.kiji.schema.layout.impl.TableLayoutMonitor.LayoutMonitorPhantomRef;
 import org.kiji.schema.util.ProtocolVersion;
 
 /**
@@ -59,11 +55,7 @@ public class InstanceMonitor implements Closeable {
   private final ReferenceQueue<TableLayoutMonitor> mRefQueue =
       new ReferenceQueue<TableLayoutMonitor>();
 
-  /** Ensures PhantomRef's are not garbage collected prematurely. */
-  private final Set<LayoutMonitorPhantomRef> mReferences =
-      Collections.newSetFromMap(new ConcurrentHashMap<LayoutMonitorPhantomRef, Boolean>());
-
-  private final ExecutorService mExecutor = Executors.newCachedThreadPool();
+  private final CloseablePhantomRefCloser mCloser = new CloseablePhantomRefCloser();
 
   private final String mUserID;
 
@@ -154,7 +146,6 @@ public class InstanceMonitor implements Closeable {
     if (mUserRegistration != null) {
       mUserRegistration.start();
     }
-    mExecutor.execute(new PhantomRefCloser(mRefQueue, mReferences));
     return this;
   }
 
@@ -174,7 +165,7 @@ public class InstanceMonitor implements Closeable {
     }
 
     mTableLayoutMonitors.invalidateAll();
-    mExecutor.shutdown();
+    mCloser.close();
   }
 
   /**
@@ -190,7 +181,8 @@ public class InstanceMonitor implements Closeable {
       TableLayoutMonitor monitor =
           new TableLayoutMonitor(mUserID, tableURI, mSchemaTable, mMetaTable, mZKMonitor).start();
 
-      mReferences.add(monitor.getCloseablePhantomRef(mRefQueue));
+      mCloser.registerPhantomRefCloseable(monitor);
+
       return monitor;
     }
   }
@@ -199,7 +191,7 @@ public class InstanceMonitor implements Closeable {
    * Listens for table layout monitors being removed from a cache and closes them, if they have not
    * already been garbage collected.
    */
-  private static class TableLayoutMonitorRemovalListener
+  private class TableLayoutMonitorRemovalListener
       implements RemovalListener<String, TableLayoutMonitor> {
     @Override
     public void onRemoval(RemovalNotification<String, TableLayoutMonitor> notification) {
@@ -207,49 +199,7 @@ public class InstanceMonitor implements Closeable {
       if (monitor != null) {
         // Cleanup the TableLayoutMonitor if it hasn't been collected
         LOG.debug("Cleaning up TableLayoutMonitor for table {}.", notification.getKey());
-        try {
-          monitor.close();
-        } catch (IOException ioe) {
-          LOG.warn("Unable to cleanup TableLayoutMonitor for table {}.", notification.getKey());
-        }
-      }
-    }
-  }
-
-  /**
-   * Runnable that polls a ReferenceQueue for TableLayoutMonitor PhantomReferences, and calls
-   * {@link Closeable#close} on them.
-   */
-  private static final class PhantomRefCloser implements Runnable {
-    private final ReferenceQueue<TableLayoutMonitor> mRefQueue;
-    private final Set<LayoutMonitorPhantomRef> mReferences;
-
-    /**
-     *
-     * Create a phantom reference closer for table layout monitor instances.
-     *
-     * @param refQueue reference queue which phantom references will be registered with.
-     * @param references set which holds a strong reference to phantom references to prevent their
-     *                   garbage collection.
-     */
-    private PhantomRefCloser(
-        ReferenceQueue<TableLayoutMonitor> refQueue,
-        Set<LayoutMonitorPhantomRef> references) {
-      mRefQueue = refQueue;
-      mReferences = references;
-    }
-
-    /** {@inheritDoc}. */
-    @Override
-    public void run() {
-      while (true) {
-        try {
-          LayoutMonitorPhantomRef ref = (LayoutMonitorPhantomRef) mRefQueue.remove();
-          ref.close();
-          mReferences.remove(ref);
-        } catch (Exception e) {
-          LOG.warn("Exception while closing TableLayoutMonitor from a phantom reference:", e);
-        }
+        ResourceUtils.closeOrLog(mCloser.unregisterPhantomRefCloseable(monitor));
       }
     }
   }
