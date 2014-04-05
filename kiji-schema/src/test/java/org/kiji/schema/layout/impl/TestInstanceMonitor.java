@@ -56,18 +56,9 @@ public class TestInstanceMonitor extends KijiClientTest {
 
   @Test
   public void testLosingReferenceToTableLayoutMonitorWillCloseIt() throws Exception {
-    String name = mLayout.getName();
-    int hash1 = mInstanceMonitor.getTableLayoutMonitor(name).hashCode();
-
+    int hash1 = mInstanceMonitor.getTableLayoutMonitor(mLayout.getName()).hashCode();
     System.gc();
-    System.gc();
-    System.gc();
-    System.gc();
-
-    int hash2 = mInstanceMonitor.getTableLayoutMonitor(name).hashCode();
-    System.out.println(hash1);
-    System.out.println(hash2);
-
+    int hash2 = mInstanceMonitor.getTableLayoutMonitor(mLayout.getName()).hashCode();
     Assert.assertTrue(hash1 != hash2);
   }
 }

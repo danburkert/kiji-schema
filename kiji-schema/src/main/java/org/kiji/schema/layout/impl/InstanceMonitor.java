@@ -159,12 +159,10 @@ public class InstanceMonitor implements Closeable {
 
       LOG.debug("Creating TableLayoutMonitor for table {}.", tableURI);
 
-      System.out.println("Creating TableLayoutMonitor for " + tableName);
-
       TableLayoutMonitor monitor =
           new TableLayoutMonitor(mUserID, tableURI, mSchemaTable, mMetaTable, mZKMonitor).start();
 
-//      mCloser.registerAutoCloseable(monitor);
+      mCloser.registerAutoCloseable(monitor);
 
       return monitor;
     }

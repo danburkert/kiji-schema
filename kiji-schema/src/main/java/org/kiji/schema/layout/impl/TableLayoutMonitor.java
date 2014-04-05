@@ -24,6 +24,7 @@ import java.util.Collections;
 import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicReference;
 
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
@@ -78,7 +79,7 @@ public class TableLayoutMonitor implements AutoCloseable {
    * The capsule itself is immutable and should be replaced atomically with a new capsule.
    * References only the LayoutCapsule for the most recent layout for this table.
    */
-  private volatile LayoutCapsule mLayoutCapsule = null;
+  private final AtomicReference<LayoutCapsule> mLayoutCapsule = new AtomicReference<LayoutCapsule>();
 
   /**
    * Holds the set of LayoutConsumers who should be notified of layout updates.  Held in a weak
@@ -111,8 +112,17 @@ public class TableLayoutMonitor implements AutoCloseable {
       mLayoutTracker = null;
       mUserRegistration = null;
     } else {
-      mLayoutTracker = zkMonitor.newTableLayoutTracker(mTableURI, new InnerLayoutUpdater());
       mUserRegistration = zkMonitor.newTableUserRegistration(userID, tableURI);
+      mLayoutTracker = zkMonitor.newTableLayoutTracker(
+          mTableURI,
+          new InnerLayoutUpdater(
+              mUserRegistration,
+              mInitializationLatch,
+              mLayoutCapsule,
+              mTableURI,
+              mConsumers,
+              mMetaTable,
+              mSchemaTable));
     }
   }
 
@@ -131,7 +141,9 @@ public class TableLayoutMonitor implements AutoCloseable {
         throw new RuntimeInterruptedException(e);
       }
     } else {
-      mLayoutCapsule = createCapsule();
+      final KijiTableLayout layout =
+          mMetaTable.getTableLayout(mTableURI.getTable()).setSchemaTable(mSchemaTable);
+      mLayoutCapsule.set(new LayoutCapsule(layout, new ColumnNameTranslator(layout)));
     }
     return this;
   }
@@ -148,7 +160,7 @@ public class TableLayoutMonitor implements AutoCloseable {
    * @return the table's layout capsule.
    */
   public LayoutCapsule getLayoutCapsule() {
-    return mLayoutCapsule;
+    return mLayoutCapsule.get();
   }
 
   /**
@@ -210,26 +222,50 @@ public class TableLayoutMonitor implements AutoCloseable {
   }
 
   /**
-   * Reads the most recent layout of this Kiji table from the Kiji instance meta-table.
-   *
-   * @return the most recent layout of this Kiji table from the Kiji instance meta-table.
-   * @throws IOException if unable to retrieve table layout.
-   */
-  private LayoutCapsule createCapsule() throws IOException {
-    final KijiTableLayout layout =
-        mMetaTable.getTableLayout(mTableURI.getTable()).setSchemaTable(mSchemaTable);
-    return new LayoutCapsule(layout, new ColumnNameTranslator(layout));
-  }
-
-  /**
    * Updates the layout of this table in response to a layout update pushed from ZooKeeper.
    */
-  private final class InnerLayoutUpdater implements ZooKeeperMonitor.LayoutUpdateHandler {
+  private static final class InnerLayoutUpdater implements ZooKeeperMonitor.LayoutUpdateHandler {
+
+    private final ZooKeeperMonitor.TableUserRegistration mUserRegistration;
+
+    private final CountDownLatch mInitializationLatch;
+
+    private final AtomicReference<LayoutCapsule> mLayoutCapsule;
+
+    private final KijiURI mTableURI;
+
+    private final Set<LayoutConsumer> mConsumers;
+
+    private final KijiMetaTable mMetaTable;
+
+    private final KijiSchemaTable mSchemaTable;
+
+    private InnerLayoutUpdater(
+        ZooKeeperMonitor.TableUserRegistration userRegistration,
+        CountDownLatch initializationLatch,
+        AtomicReference<LayoutCapsule> layoutCapsule,
+        KijiURI tableURI,
+        Set<LayoutConsumer> consumers,
+        KijiMetaTable metaTable,
+        KijiSchemaTable schemaTable
+    ) {
+      mUserRegistration = userRegistration;
+      mInitializationLatch = initializationLatch;
+      mLayoutCapsule = layoutCapsule;
+      mTableURI = tableURI;
+      mConsumers = consumers;
+      mMetaTable = metaTable;
+      mSchemaTable = schemaTable;
+    }
+
+
     /** {@inheritDoc} */
     @Override
     public void update(final byte[] layoutBytes) {
       final String currentLayoutId =
-          (mLayoutCapsule == null) ? null : mLayoutCapsule.getLayout().getDesc().getLayoutId();
+          (mLayoutCapsule.get() == null)
+              ? null
+              : mLayoutCapsule.get().getLayout().getDesc().getLayoutId();
       final String newLayoutId = Bytes.toString(layoutBytes);
       if (currentLayoutId == null) {
         LOG.info("Setting initial layout for table {} to layout ID {}.",
@@ -240,12 +276,14 @@ public class TableLayoutMonitor implements AutoCloseable {
       }
 
       try {
-        mLayoutCapsule = createCapsule();
+        final KijiTableLayout layout =
+            mMetaTable.getTableLayout(mTableURI.getTable()).setSchemaTable(mSchemaTable);
+        mLayoutCapsule.set(new LayoutCapsule(layout, new ColumnNameTranslator(layout)));
       } catch (IOException ioe) {
         throw new KijiIOException(ioe);
       }
 
-      KijiTableLayout newLayout = mLayoutCapsule.getLayout();
+      KijiTableLayout newLayout = mLayoutCapsule.get().getLayout();
 
       Preconditions.checkState(
           Objects.equal(newLayout.getDesc().getLayoutId(), newLayoutId),
@@ -253,9 +291,9 @@ public class TableLayoutMonitor implements AutoCloseable {
           newLayoutId, newLayout.getDesc().getLayoutId());
 
       // Propagates the new layout to all consumers:
-      for (LayoutConsumer consumer : getLayoutConsumers()) {
+      for (LayoutConsumer consumer : ImmutableSet.copyOf(mConsumers)) {
         try {
-          consumer.update(mLayoutCapsule);
+          consumer.update(mLayoutCapsule.get());
         } catch (IOException ioe) {
           // TODO(SCHEMA-505): Handle exceptions decently
           throw new KijiIOException(ioe);
