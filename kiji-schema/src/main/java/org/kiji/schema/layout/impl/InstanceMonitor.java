@@ -31,7 +31,7 @@ import com.google.common.cache.LoadingCache;
 import com.google.common.cache.RemovalListener;
 import com.google.common.cache.RemovalNotification;
 import com.google.common.util.concurrent.UncheckedExecutionException;
-import org.kiji.schema.scratch.CloseablePhantomRefCloser;
+import org.kiji.schema.util.AutoCloser;
 import org.kiji.schema.util.ResourceUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,7 +55,7 @@ public class InstanceMonitor implements Closeable {
   private final ReferenceQueue<TableLayoutMonitor> mRefQueue =
       new ReferenceQueue<TableLayoutMonitor>();
 
-  private final CloseablePhantomRefCloser mCloser = new CloseablePhantomRefCloser();
+  private final AutoCloser mCloser = new AutoCloser();
 
   private final String mUserID;
 
@@ -181,7 +181,7 @@ public class InstanceMonitor implements Closeable {
       TableLayoutMonitor monitor =
           new TableLayoutMonitor(mUserID, tableURI, mSchemaTable, mMetaTable, mZKMonitor).start();
 
-      mCloser.registerPhantomRefCloseable(monitor);
+      mCloser.registerAutoCloseable(monitor);
 
       return monitor;
     }
@@ -199,7 +199,7 @@ public class InstanceMonitor implements Closeable {
       if (monitor != null) {
         // Cleanup the TableLayoutMonitor if it hasn't been collected
         LOG.debug("Cleaning up TableLayoutMonitor for table {}.", notification.getKey());
-        ResourceUtils.closeOrLog(mCloser.unregisterPhantomRefCloseable(monitor));
+        ResourceUtils.closeOrLog(mCloser.unregisterAutoCloseable(monitor));
       }
     }
   }

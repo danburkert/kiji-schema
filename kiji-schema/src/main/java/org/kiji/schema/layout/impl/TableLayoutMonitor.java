@@ -29,8 +29,7 @@ import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.kiji.schema.scratch.CloseablePhantomRef;
-import org.kiji.schema.scratch.PhantomRefCloseable;
+import org.kiji.schema.util.AutoCloseable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -58,7 +57,7 @@ import org.kiji.schema.layout.KijiTableLayout;
  *    for the life of the object if it is never unregistered, or until
  *    {@link #unregisterLayoutConsumer(LayoutConsumer)} is called.
  */
-public class TableLayoutMonitor implements PhantomRefCloseable {
+public class TableLayoutMonitor implements AutoCloseable {
 
   private static final Logger LOG = LoggerFactory.getLogger(TableLayoutMonitor.class);
 
@@ -139,7 +138,7 @@ public class TableLayoutMonitor implements PhantomRefCloseable {
 
   /** {@inheritDoc} */
   @Override
-  public CloseablePhantomRef getCloseablePhantomRef(ReferenceQueue<PhantomRefCloseable> queue) {
+  public CloseablePhantomRef getCloseablePhantomRef(ReferenceQueue<AutoCloseable> queue) {
     return new CloseablePhantomRef(this, queue, mLayoutTracker, mUserRegistration);
   }
 
