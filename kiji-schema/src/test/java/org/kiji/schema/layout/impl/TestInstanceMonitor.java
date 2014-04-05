@@ -14,6 +14,7 @@ public class TestInstanceMonitor extends KijiClientTest {
 
   private TableLayoutDesc mLayout;
   private ZooKeeperClient mZKClient;
+  private ZooKeeperMonitor mZKMonitor;
   private InstanceMonitor mInstanceMonitor;
 
   @Before
@@ -22,6 +23,7 @@ public class TestInstanceMonitor extends KijiClientTest {
     Kiji kiji = getKiji();
     kiji.createTable(mLayout);
     mZKClient = HBaseFactory.Provider.get().getZooKeeperClient(kiji.getURI());
+    mZKMonitor = new ZooKeeperMonitor(mZKClient);
 
     mInstanceMonitor = new InstanceMonitor(
         "user",
@@ -29,11 +31,12 @@ public class TestInstanceMonitor extends KijiClientTest {
         kiji.getURI(),
         kiji.getSchemaTable(),
         kiji.getMetaTable(),
-        new ZooKeeperMonitor(mZKClient));
+        mZKMonitor);
   }
 
   @After
   public void tearDown() throws Exception {
+    mZKMonitor.close();
     mZKClient.release();
     mInstanceMonitor.close();
   }
@@ -53,14 +56,18 @@ public class TestInstanceMonitor extends KijiClientTest {
 
   @Test
   public void testLosingReferenceToTableLayoutMonitorWillCloseIt() throws Exception {
-    int hash1 = mInstanceMonitor.getTableLayoutMonitor(mLayout.getName()).hashCode();
+    String name = mLayout.getName();
+    int hash1 = mInstanceMonitor.getTableLayoutMonitor(name).hashCode();
 
     System.gc();
+    System.gc();
+    System.gc();
+    System.gc();
 
-    final int hash2 = mInstanceMonitor.getTableLayoutMonitor(mLayout.getName()).hashCode();
-
+    int hash2 = mInstanceMonitor.getTableLayoutMonitor(name).hashCode();
     System.out.println(hash1);
     System.out.println(hash2);
-    Assert.assertFalse(hash1 == hash2);
+
+    Assert.assertTrue(hash1 != hash2);
   }
 }

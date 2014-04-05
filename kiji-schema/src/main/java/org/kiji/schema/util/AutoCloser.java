@@ -25,23 +25,21 @@ public class AutoCloser implements Closeable {
       Sets.newSetFromMap(Maps.<CloseablePhantomRef, Boolean>newConcurrentMap());
   private final ConcurrentMap<AutoCloseable, CloseablePhantomRef> mCloseables =
       new MapMaker().weakKeys().makeMap();
-  private volatile boolean isOpen = true;
+  private volatile boolean mIsOpen = true;
 
   public AutoCloser() {
     mExecutorService.execute(new Closer());
   }
 
-  public CloseablePhantomRef registerAutoCloseable(AutoCloseable autoCloseable) {
-    Preconditions.checkState(isOpen);
+  public void registerAutoCloseable(AutoCloseable autoCloseable) {
+    Preconditions.checkState(mIsOpen);
     LOG.debug("Registering AutoCloseable {}.", autoCloseable);
     CloseablePhantomRef ref = autoCloseable.getCloseablePhantomRef(mReferenceQueue);
     CloseablePhantomRef existing = mCloseables.putIfAbsent(autoCloseable, ref);
     mReferences.add(ref);
     if (existing != null) {
-      LOG.warn("Attempt to register {} failed: a AutoCloseable with the same identity hash" +
-          " code is already registered.", autoCloseable);
+      LOG.warn("AutoCloseable {} is alread registered.", autoCloseable);
     }
-    return ref;
   }
 
   /**
@@ -50,10 +48,9 @@ public class AutoCloser implements Closeable {
    * registered.
    *
    * @param autoCloseable to be unregistered by this closer.
-   * @return the CloseablePhantomRef of the auto closeable, or null if it was not registered.
    */
-  public CloseablePhantomRef unregisterAutoCloseable(AutoCloseable autoCloseable) {
-    Preconditions.checkState(isOpen);
+  public void unregisterAutoCloseable(AutoCloseable autoCloseable) {
+    Preconditions.checkState(mIsOpen);
     LOG.debug("Unregistering AutoCloseable {}.", autoCloseable);
     CloseablePhantomRef reference = mCloseables.remove(autoCloseable);
     if (reference == null) {
@@ -63,12 +60,11 @@ public class AutoCloser implements Closeable {
         LOG.warn("Could not remove reference {} from strong set.", autoCloseable);
       }
     }
-    return reference;
   }
 
   @Override
   public void close() throws IOException {
-    isOpen = false;
+    mIsOpen = false;
     mExecutorService.shutdownNow();
     mCloseables.clear();
     for (CloseablePhantomRef reference : mReferences) {

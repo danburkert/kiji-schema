@@ -1,4 +1,4 @@
-package org.kiji.schema.scratch;
+package org.kiji.schema.util;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -15,10 +15,6 @@ import junit.framework.Assert;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-
-import org.kiji.schema.util.AutoCloseable;
-import org.kiji.schema.util.AutoCloser;
-
 
 public class TestAutoCloser {
 
@@ -48,8 +44,7 @@ public class TestAutoCloser {
     final CountDownLatch latch = new CountDownLatch(1);
     AutoCloseable closeable = new LatchAutoCloseable(latch);
     mCloser.registerAutoCloseable(closeable);
-    Assert.assertNotNull("Unable to unregister closeable.",
-        mCloser.unregisterAutoCloseable(closeable));
+    mCloser.unregisterAutoCloseable(closeable);
     closeable = null;
     System.gc();
     Assert.assertEquals("AutoCloser will not close unregistered closeable.", 1, latch.getCount());
@@ -103,6 +98,51 @@ public class TestAutoCloser {
     latch.await();
   }
 
+  @Test
+  public void testWeakCacheWillBeCleanedUp() throws Exception {
+    CountDownLatch latch = new CountDownLatch(2);
+
+    final LoadingCache<CountDownLatch, AutoCloseable> cache = CacheBuilder
+        .newBuilder()
+        .weakValues()
+        .build(new CacheLoader<CountDownLatch, AutoCloseable>() {
+          @Override
+          public AutoCloseable load(CountDownLatch latch) throws Exception {
+            System.out.println("creating new AutoCloseable.");
+            AutoCloseable closeable = new LatchAutoCloseable(latch);
+            mCloser.registerAutoCloseable(closeable);
+            return closeable;
+          }
+        });
+
+    cache.get(latch);
+    System.gc();
+    cache.get(latch);
+    System.gc();
+    latch.await();
+  }
+
+  @Test
+  public void testWeakCacheWillBeCleanedUp2() throws Exception {
+    final LoadingCache<String, Object> cache = CacheBuilder
+        .newBuilder()
+        .weakValues()
+        .build(new CacheLoader<String, Object>() {
+          @Override
+          public Object load(String key) throws Exception {
+            System.out.println("creating new Object.");
+            return new Object();
+          }
+        });
+
+    int hash1 = cache.get("foo").hashCode();
+    System.gc();
+    int hash2 = cache.get("foo").hashCode();
+    System.gc();
+    System.out.println(hash1);
+    System.out.println(hash2);
+  }
+
   private static class LatchAutoCloseable implements AutoCloseable {
     private final Closeable mResource;
 
@@ -124,7 +164,7 @@ public class TestAutoCloser {
     }
 
     @Override
-    public void close() throws IOException {
+     public void close() throws IOException {
       mLatch.countDown();
     }
   }

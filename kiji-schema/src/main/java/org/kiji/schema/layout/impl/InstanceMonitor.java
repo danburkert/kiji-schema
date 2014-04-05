@@ -21,18 +21,13 @@ package org.kiji.schema.layout.impl;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.lang.ref.ReferenceQueue;
 import java.util.concurrent.ExecutionException;
 
 import com.google.common.base.Preconditions;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
-import com.google.common.cache.RemovalListener;
-import com.google.common.cache.RemovalNotification;
 import com.google.common.util.concurrent.UncheckedExecutionException;
-import org.kiji.schema.util.AutoCloser;
-import org.kiji.schema.util.ResourceUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,6 +35,7 @@ import org.kiji.schema.KijiIOException;
 import org.kiji.schema.KijiMetaTable;
 import org.kiji.schema.KijiSchemaTable;
 import org.kiji.schema.KijiURI;
+import org.kiji.schema.util.AutoCloser;
 import org.kiji.schema.util.ProtocolVersion;
 
 /**
@@ -47,28 +43,15 @@ import org.kiji.schema.util.ProtocolVersion;
  * table layout monitors.
  */
 public class InstanceMonitor implements Closeable {
-
   private static final Logger LOG = LoggerFactory.getLogger(InstanceMonitor.class);
-
-  private volatile boolean mIsClosed = false;
-
-  private final ReferenceQueue<TableLayoutMonitor> mRefQueue =
-      new ReferenceQueue<TableLayoutMonitor>();
-
+  private volatile boolean mIsOpen = true;
   private final AutoCloser mCloser = new AutoCloser();
-
   private final String mUserID;
-
   private final KijiURI mInstanceURI;
-
   private final KijiSchemaTable mSchemaTable;
-
   private final KijiMetaTable mMetaTable;
-
   private final ZooKeeperMonitor mZKMonitor;
-
   private final LoadingCache<String, TableLayoutMonitor> mTableLayoutMonitors;
-
   private final ZooKeeperMonitor.InstanceUserRegistration mUserRegistration;
 
   /**
@@ -100,7 +83,6 @@ public class InstanceMonitor implements Closeable {
         // Only keep a weak reference to cached TableLayoutMonitors.  This allows them to be
         // collected when they don't have any remaining clients.
         .weakValues()
-        .removalListener(new TableLayoutMonitorRemovalListener())
         .build(new TableLayoutMonitorCacheLoader());
 
     if (zkMonitor != null) {
@@ -120,7 +102,7 @@ public class InstanceMonitor implements Closeable {
    * @throws IOException if unrecoverable ZooKeeper exception.
    */
   public TableLayoutMonitor getTableLayoutMonitor(String tableName) throws IOException {
-    Preconditions.checkState(!mIsClosed, "InstanceMonitor is closed.");
+    Preconditions.checkState(mIsOpen, "InstanceMonitor is closed.");
     try {
       return mTableLayoutMonitors.get(tableName);
     } catch (ExecutionException e) {
@@ -142,7 +124,7 @@ public class InstanceMonitor implements Closeable {
    * @throws IOException on unrecoverable ZooKeeper exception.
    */
   public InstanceMonitor start() throws IOException {
-    Preconditions.checkState(!mIsClosed, "InstanceMonitor is closed.");
+    Preconditions.checkState(mIsOpen, "InstanceMonitor is closed.");
     if (mUserRegistration != null) {
       mUserRegistration.start();
     }
@@ -157,14 +139,13 @@ public class InstanceMonitor implements Closeable {
    */
   @Override
   public void close() throws IOException {
+    mIsOpen = false;
     LOG.debug("Closing InstanceMonitor for instance {}.", mInstanceURI);
-    mIsClosed = true;
 
     if (mUserRegistration != null) {
       mUserRegistration.close();
     }
 
-    mTableLayoutMonitors.invalidateAll();
     mCloser.close();
   }
 
@@ -178,29 +159,14 @@ public class InstanceMonitor implements Closeable {
 
       LOG.debug("Creating TableLayoutMonitor for table {}.", tableURI);
 
+      System.out.println("Creating TableLayoutMonitor for " + tableName);
+
       TableLayoutMonitor monitor =
           new TableLayoutMonitor(mUserID, tableURI, mSchemaTable, mMetaTable, mZKMonitor).start();
 
-      mCloser.registerAutoCloseable(monitor);
+//      mCloser.registerAutoCloseable(monitor);
 
       return monitor;
-    }
-  }
-
-  /**
-   * Listens for table layout monitors being removed from a cache and closes them, if they have not
-   * already been garbage collected.
-   */
-  private class TableLayoutMonitorRemovalListener
-      implements RemovalListener<String, TableLayoutMonitor> {
-    @Override
-    public void onRemoval(RemovalNotification<String, TableLayoutMonitor> notification) {
-      TableLayoutMonitor monitor = notification.getValue();
-      if (monitor != null) {
-        // Cleanup the TableLayoutMonitor if it hasn't been collected
-        LOG.debug("Cleaning up TableLayoutMonitor for table {}.", notification.getKey());
-        ResourceUtils.closeOrLog(mCloser.unregisterAutoCloseable(monitor));
-      }
     }
   }
 }
