@@ -30,6 +30,7 @@ import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.util.AutoCloseable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -143,7 +144,7 @@ public class TableLayoutMonitor implements AutoCloseable {
     } else {
       final KijiTableLayout layout =
           mMetaTable.getTableLayout(mTableURI.getTable()).setSchemaTable(mSchemaTable);
-      mLayoutCapsule.set(new LayoutCapsule(layout, new ColumnNameTranslator(layout)));
+      mLayoutCapsule.set(new LayoutCapsule(layout, KijiColumnNameTranslator.from(layout)));
     }
     return this;
   }
@@ -215,7 +216,7 @@ public class TableLayoutMonitor implements AutoCloseable {
    */
   public void updateLayoutConsumers(KijiTableLayout layout) throws IOException {
     layout.setSchemaTable(mSchemaTable);
-    final LayoutCapsule capsule = new LayoutCapsule(layout, new ColumnNameTranslator(layout));
+    final LayoutCapsule capsule = new LayoutCapsule(layout, KijiColumnNameTranslator.from(layout));
     for (LayoutConsumer consumer : getLayoutConsumers()) {
       consumer.update(capsule);
     }
@@ -278,7 +279,7 @@ public class TableLayoutMonitor implements AutoCloseable {
       try {
         final KijiTableLayout layout =
             mMetaTable.getTableLayout(mTableURI.getTable()).setSchemaTable(mSchemaTable);
-        mLayoutCapsule.set(new LayoutCapsule(layout, new ColumnNameTranslator(layout)));
+        mLayoutCapsule.set(new LayoutCapsule(layout, KijiColumnNameTranslator.from(layout)));
       } catch (IOException ioe) {
         throw new KijiIOException(ioe);
       }

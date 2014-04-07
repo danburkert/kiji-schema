@@ -50,17 +50,11 @@ import org.kiji.schema.KijiTableWriter;
 import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.avro.SchemaType;
 import org.kiji.schema.hbase.HBaseColumnName;
-import org.kiji.schema.impl.HBaseKijiTable.LayoutCapsule;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
-import org.kiji.schema.layout.KijiTableLayout;
-import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout;
 import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout.ColumnLayout;
 import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout;
 import org.kiji.schema.layout.KijiTableLayout;
-import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout;
-import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout.ColumnLayout;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
-import org.kiji.schema.layout.impl.ColumnNameTranslator;
 import org.kiji.schema.layout.impl.LayoutCapsule;
 import org.kiji.schema.platform.SchemaPlatformBridge;
 
@@ -189,7 +183,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
       mWriterLayoutCapsule = new WriterLayoutCapsule(
           provider,
           capsule.getLayout(),
-          capsule.getKijiColumnNameTranslator());
+          capsule.getColumnNameTranslator());
     }
   }
 

@@ -63,7 +63,6 @@ import org.kiji.schema.layout.InvalidLayoutException;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
-import org.kiji.schema.layout.impl.ColumnNameTranslator;
 import org.kiji.schema.layout.impl.LayoutCapsule;
 
 /**
@@ -195,7 +194,7 @@ public final class HBaseKijiTableReader implements KijiTableReader {
       mReaderLayoutCapsule = new ReaderLayoutCapsule(
           provider,
           capsule.getLayout(),
-          capsule.getKijiColumnNameTranslator());
+          capsule.getColumnNameTranslator());
     }
   }
 

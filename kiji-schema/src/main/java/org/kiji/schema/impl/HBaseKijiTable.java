@@ -56,22 +56,16 @@ import org.kiji.schema.KijiTableReader;
 import org.kiji.schema.KijiTableWriter;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.KijiWriterFactory;
-import org.kiji.schema.avro.RowKeyFormat;
 import org.kiji.schema.avro.RowKeyFormat2;
+import org.kiji.schema.avro.RowKeyFormat;
 import org.kiji.schema.hbase.KijiManagedHBaseTableName;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
-import org.kiji.schema.layout.impl.ZooKeeperClient;
-import org.kiji.schema.layout.impl.ColumnNameTranslator;
 import org.kiji.schema.layout.impl.LayoutCapsule;
 import org.kiji.schema.layout.impl.TableLayoutMonitor;
-import org.kiji.schema.layout.impl.ZooKeeperMonitor;
 import org.kiji.schema.util.Debug;
 import org.kiji.schema.util.DebugResourceTracker;
-import org.kiji.schema.util.JvmId;
 import org.kiji.schema.util.ResourceUtils;
-import org.kiji.schema.util.Debug;
-import org.kiji.schema.util.DebugResourceTracker;
 import org.kiji.schema.util.VersionInfo;
 
 /**
@@ -326,7 +320,7 @@ public final class HBaseKijiTable implements KijiTable {
    * operation, you should use {@link #getLayoutCapsule()} to ensure consistent state.
    * @return the column name translator for the current layout of this table.
    */
-  public ColumnNameTranslator getColumnNameTranslator() {
+  public KijiColumnNameTranslator getColumnNameTranslator() {
     return getLayoutCapsule().getColumnNameTranslator();
   }
 
@@ -446,18 +440,6 @@ public final class HBaseKijiTable implements KijiTable {
     Preconditions.checkState(oldState == State.OPEN || oldState == State.UNINITIALIZED,
         "Cannot close KijiTable instance %s in state %s.", this, oldState);
     LOG.debug("Closing HBaseKijiTable '{}'.", this);
-
-    mLayoutMonitor.close();
-    if (mZKMonitor != null) {
-      // Unregister this KijiTable as a live user of the Kiji table:
-      try {
-        mZKMonitor.unregisterTableUser(
-            mTableURI, mKijiClientId, getLayoutCapsule().getLayout().getDesc().getLayoutId());
-      } catch (KeeperException ke) {
-        throw new IOException(ke);
-      }
-      mZKMonitor.close();
-    }
 
     ResourceUtils.closeOrLog(mHTablePool);
     ResourceUtils.releaseOrLog(mKiji);

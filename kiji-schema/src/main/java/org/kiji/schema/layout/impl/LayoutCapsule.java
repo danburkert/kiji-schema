@@ -18,6 +18,7 @@
  */
 package org.kiji.schema.layout.impl;
 
+import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
 
 /**
@@ -31,7 +32,7 @@ import org.kiji.schema.layout.KijiTableLayout;
  */
 public final class LayoutCapsule {
   private final KijiTableLayout mLayout;
-  private final ColumnNameTranslator mTranslator;
+  private final KijiColumnNameTranslator mTranslator;
 
   /**
    * Default constructor.
@@ -39,7 +40,7 @@ public final class LayoutCapsule {
    * @param layout the layout of the table.
    * @param translator the ColumnNameTranslator for the given layout.
    */
-  public LayoutCapsule(final KijiTableLayout layout, final ColumnNameTranslator translator) {
+  public LayoutCapsule(final KijiTableLayout layout, final KijiColumnNameTranslator translator) {
     mLayout = layout;
     mTranslator = translator;
   }
@@ -56,7 +57,7 @@ public final class LayoutCapsule {
    * Get the ColumnNameTranslator for the associated layout.
    * @return the ColumnNameTranslator for the associated layout.
    */
-  public ColumnNameTranslator getColumnNameTranslator() {
+  public KijiColumnNameTranslator getColumnNameTranslator() {
     return mTranslator;
   }
 }
