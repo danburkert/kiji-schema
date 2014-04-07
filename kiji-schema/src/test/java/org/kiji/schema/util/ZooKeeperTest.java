@@ -19,24 +19,20 @@
 
 package org.kiji.schema.util;
 
-import java.io.File;
-
-import org.apache.hadoop.hbase.zookeeper.MiniZooKeeperCluster;
+import org.apache.curator.test.TestingCluster;
+import org.apache.curator.test.TestingZooKeeperServer;
 import org.junit.After;
 import org.junit.Before;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.kiji.schema.KijiClientTest;
-
 /**
  * Base class for tests that require a ZooKeeper cluster.
  */
-public abstract class ZooKeeperTest extends KijiClientTest {
+public abstract class ZooKeeperTest {
   private static final Logger LOG = LoggerFactory.getLogger(ZooKeeperTest.class);
 
-  private MiniZooKeeperCluster mZKCluster = null;
-  private File mZKBaseDir = null;
+  private volatile TestingCluster mZKCluster = null;
 
   /**
    * Starts the mini ZooKeeper cluster.
@@ -45,7 +41,9 @@ public abstract class ZooKeeperTest extends KijiClientTest {
    */
   public void startZKCluster() throws Exception {
     LOG.info("Starting ZooKeeper mini cluster.");
-    mZKCluster.startup(mZKBaseDir, 1);
+    for (TestingZooKeeperServer server : mZKCluster.getServers()) {
+      server.restart();
+    }
     LOG.info("ZooKeeper mini cluster started.");
   }
 
@@ -56,17 +54,15 @@ public abstract class ZooKeeperTest extends KijiClientTest {
    */
   public void stopZKCluster() throws Exception {
     LOG.info("Shutting down ZooKeeper mini cluster.");
-    mZKCluster.shutdown();
+    mZKCluster.stop();
     LOG.info("ZooKeeper mini cluster is down.");
   }
 
   @Before
   public final void setupZooKeeperTest() throws Exception {
-    mZKBaseDir = new File(getLocalTempDir(), "mini-zookeeper-cluster");
-    mZKCluster = new MiniZooKeeperCluster();
-    // TODO: Pick a random port number
-    mZKCluster.setDefaultClientPort(21818);
-    startZKCluster();
+    LOG.info("Creating new ZooKeeper testing cluster");
+    mZKCluster = new TestingCluster(1);
+    mZKCluster.start();
   }
 
   @After
@@ -80,7 +76,7 @@ public abstract class ZooKeeperTest extends KijiClientTest {
    *
    * @return the mini ZooKeeper cluster.
    */
-  public MiniZooKeeperCluster getZKCluster() {
+  public TestingCluster getZKCluster() {
     return mZKCluster;
   }
 
@@ -90,7 +86,7 @@ public abstract class ZooKeeperTest extends KijiClientTest {
    * @return the address of the mini ZooKeeper cluster.
    */
   public String getZKAddress() {
-    return String.format("localhost:%d", mZKCluster.getClientPort());
+    return mZKCluster.getConnectString();
   }
 
 }
