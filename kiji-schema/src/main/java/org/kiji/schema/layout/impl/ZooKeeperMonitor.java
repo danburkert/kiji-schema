@@ -459,10 +459,11 @@ public final class ZooKeeperMonitor implements Closeable {
           // This assumes handlers do not let exceptions pop up:
           mHandler.update(layoutUpdate);
         }
-
+      } catch (KeeperException.NoNodeException nne) {
+        LOG.info("Tracked table layout node for table {} has been removed. Tracking will cease.",
+            mTableURI);
       } catch (KeeperException ke) {
         LOG.error("Unrecoverable ZooKeeper error: {}", ke.getMessage());
-        throw new RuntimeException(ke);
       }
     }
 
@@ -536,7 +537,7 @@ public final class ZooKeeperMonitor implements Closeable {
       this.mHandler = handler;
       final State oldState = mState.getAndSet(State.INITIALIZED);
       Preconditions.checkState(oldState == State.UNINITIALIZED,
-          "Cannot open UserTracker instance in state %s.", oldState);
+          "Cannot open UsersTracker instance in state %s.", oldState);
     }
 
     /**
@@ -545,7 +546,7 @@ public final class ZooKeeperMonitor implements Closeable {
     public void open() {
       final State oldState = mState.getAndSet(State.OPEN);
       Preconditions.checkState(oldState == State.INITIALIZED,
-          "Cannot open UserTracker instance in state %s.", oldState);
+          "Cannot open UsersTracker instance in state %s.", oldState);
       final Thread thread = new Thread() {
         /** {@inheritDoc} */
         @Override

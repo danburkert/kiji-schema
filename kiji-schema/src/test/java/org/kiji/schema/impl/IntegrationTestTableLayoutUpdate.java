@@ -20,17 +20,21 @@
 package org.kiji.schema.impl;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.TimeUnit;
 
+import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.ImmutableSetMultimap;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Queues;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.junit.Assert;
 import org.junit.Test;
 import org.kiji.schema.util.Time;
-import org.mortbay.log.Log;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -87,7 +91,6 @@ public class IntegrationTestTableLayoutUpdate extends AbstractKijiIntegrationTes
       final ZooKeeperClient zkClient = kiji.getZKClient().retain();
       final ZooKeeperMonitor zkMonitor = new ZooKeeperMonitor(zkClient);
       try {
-        zkMonitor.notifyNewTableLayout(tableURI, Bytes.toBytes(layoutId1), -1);
         final BlockingQueue<Multimap<String, String>> queue = Queues.newSynchronousQueue();
 
         final UsersTracker tracker = zkMonitor.newTableUsersTracker(tableURI,
@@ -109,43 +112,47 @@ public class IntegrationTestTableLayoutUpdate extends AbstractKijiIntegrationTes
         tracker.open();
         try {
           // Initial user map should be empty:
-          assertTrue(queue.take().isEmpty());
+          assertEquals(ImmutableSetMultimap.<String, String>of(), queue.poll(1, TimeUnit.SECONDS));
 
-          KijiTable table = kiji.openTable(tableName);
-          try {
-            {
-              // We opened a table, user map must contain exactly one entry:
-              final Multimap<String, String> umap = queue.take();
-              assertEquals(1, umap.size());
-              assertEquals(layoutId1, umap.values().iterator().next());
+          {
+            KijiTable table = kiji.openTable(tableName);
+            try {
+              {
+                // We opened a table, user map must contain exactly one entry:
+                final Multimap<String, String> umap = queue.take();
+                assertEquals(ImmutableSet.of(layoutId1), ImmutableSet.copyOf(umap.values()));
+              }
+
+              // Push a layout update (a no-op, but with a new layout ID):
+              final TableLayoutDesc newLayoutDesc =
+                  KijiTableLayouts.getLayout(KijiTableLayouts.FOO_TEST);
+              newLayoutDesc.setReferenceLayout(layoutId1);
+              newLayoutDesc.setLayoutId(layoutId2);
+              newLayoutDesc.setName(tableName);
+              kiji.modifyTableLayout(newLayoutDesc);
+
+              // The new user map should eventually reflect the new layout ID.
+              {
+                // We opened one table, user map must contain exactly one entry:
+                assertEquals(ImmutableSet.of(layoutId2),
+                    ImmutableSet.copyOf(queue.poll(1, TimeUnit.SECONDS).values()));
+              }
+            } finally {
+              table.release();
+              LOG.info("table: " + table);
             }
 
-            // Push a layout update (a no-op, but with a new layout ID):
-            final TableLayoutDesc newLayoutDesc =
-                KijiTableLayouts.getLayout(KijiTableLayouts.FOO_TEST);
-            newLayoutDesc.setReferenceLayout(layoutId1);
-            newLayoutDesc.setLayoutId(layoutId2);
-            newLayoutDesc.setName(tableName);
-            kiji.getMetaTable().updateTableLayout(tableName, newLayoutDesc);
-            zkMonitor.notifyNewTableLayout(tableURI, Bytes.toBytes(layoutId2), -1);
-
-            // The new user map should eventually reflect the new layout ID.
-            {
-              // We opened one table, user map must contain exactly one entry:
-              final Multimap<String, String> umap = queue.take();
-              assertEquals(1, umap.size());
-              assertEquals(layoutId2, umap.values().iterator().next());
-            }
-          } finally {
-            table.release();
-            table = null;
           }
-          Log.info("table: " + table);
+
+//          LOG.info("kiji: " + kiji);
+//          kiji.release();
+//          LOG.info("kiji: " + kiji);
+
+          Thread.sleep(1000);
           System.gc();
-          Time.sleep(3);
+          Thread.sleep(1000);
           // Table is now closed, the user map should become empty:
-          assertTrue(queue.size() > 0); // prevents deadlock
-          assertTrue(queue.take().isEmpty());
+          assertEquals(ImmutableSetMultimap.<String, String>of(), queue.poll(1, TimeUnit.SECONDS));
         } finally {
           tracker.close();
         }

@@ -1,5 +1,8 @@
 package org.kiji.schema.util;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.Closeable;
 import java.lang.ref.PhantomReference;
 import java.lang.ref.ReferenceQueue;
@@ -52,6 +55,7 @@ public interface AutoCloseable {
   public static class CloseablePhantomRef
       extends PhantomReference<AutoCloseable>
       implements Closeable {
+    private static final Logger LOG = LoggerFactory.getLogger(CloseablePhantomRef.class);
     private final Closeable[] mCloseables;
 
     /**
@@ -78,6 +82,7 @@ public interface AutoCloseable {
      */
     @Override
     public void close() {
+      LOG.info("closing phantom ref");
       for (Closeable closeable : mCloseables) {
         ResourceUtils.closeOrLog(closeable);
       }
