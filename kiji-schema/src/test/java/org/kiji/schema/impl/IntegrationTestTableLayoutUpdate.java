@@ -34,6 +34,7 @@ import com.google.common.collect.Queues;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.Assert;
 import org.junit.Test;
+import org.kiji.schema.layout.impl.TestZooKeeperMonitor;
 import org.kiji.schema.util.Time;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -94,21 +95,8 @@ public class IntegrationTestTableLayoutUpdate extends AbstractKijiIntegrationTes
         final BlockingQueue<Multimap<String, String>> queue = Queues.newSynchronousQueue();
 
         final UsersTracker tracker = zkMonitor.newTableUsersTracker(tableURI,
-            new UsersUpdateHandler() {
-              /**
-               * {@inheritDoc}
-               */
-              @Override
-              public void update(Multimap<String, String> users) {
-                try {
-                  LOG.info("Received user update: " + users);
-                  queue.put(users);
-                } catch (InterruptedException ie) {
-                  throw new RuntimeInterruptedException(ie);
-                }
-              }
-            }
-        );
+            new TestZooKeeperMonitor.QueueingUsersUpdateHandler(queue));
+
         tracker.open();
         try {
           // Initial user map should be empty:
@@ -129,7 +117,9 @@ public class IntegrationTestTableLayoutUpdate extends AbstractKijiIntegrationTes
               newLayoutDesc.setReferenceLayout(layoutId1);
               newLayoutDesc.setLayoutId(layoutId2);
               newLayoutDesc.setName(tableName);
-              kiji.modifyTableLayout(newLayoutDesc);
+
+              kiji.getMetaTable().updateTableLayout(tableName, newLayoutDesc);
+              zkMonitor.notifyNewTableLayout(tableURI, Bytes.toBytes(layoutId2), -1);
 
               // The new user map should eventually reflect the new layout ID.
               {
@@ -139,7 +129,7 @@ public class IntegrationTestTableLayoutUpdate extends AbstractKijiIntegrationTes
               }
             } finally {
               table.release();
-              LOG.info("table: " + table);
+              LOG.info("table: " + table.toString());
             }
 
           }

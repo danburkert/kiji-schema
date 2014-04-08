@@ -29,8 +29,9 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
+import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
-import com.google.common.collect.HashMultimap;
+import com.google.common.collect.ImmutableSetMultimap;
 import com.google.common.collect.Multimap;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.zookeeper.CreateMode;
@@ -470,11 +471,21 @@ public final class ZooKeeperMonitor implements Closeable {
     /** {@inheritDoc} */
     @Override
     public void close() throws IOException {
+      LOG.info("Closing LayoutTracker {}.", this);
       final State oldState = mState.getAndSet(State.CLOSED);
       Preconditions.checkState(oldState == State.OPEN,
           "Cannot close LayoutTracker instance in state %s.", oldState);
       // ZOOKEEPER-442: There is currently no way to cancel a watch.
       //     All we can do here is to neutralize the handler by setting mClosed.
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public String toString() {
+      return Objects.toStringHelper(LayoutTracker.class)
+          .add("table", mTableURI)
+          .add("state", mState.get())
+          .toString();
     }
   }
 
@@ -577,7 +588,8 @@ public final class ZooKeeperMonitor implements Closeable {
             ZooKeeperMonitor.this.mZKClient.getChildren(mUsersDir, mWatcher, mStat);
         LOG.debug("Received users update for table {}: {}.", mTableURI, zkNodeNames);
 
-        final Multimap<String, String> children = HashMultimap.create();
+        final ImmutableSetMultimap.Builder<String, String> children =
+            ImmutableSetMultimap.builder();
         try {
           for (String nodeName : zkNodeNames) {
             final String[] split = nodeName.split(ZK_NODE_NAME_SEPARATOR);
@@ -593,8 +605,9 @@ public final class ZooKeeperMonitor implements Closeable {
           throw new InternalKijiError(uee);
         }
 
+        LOG.info("Notifying watchers of changed layout users {}.", children.build());
         // This assumes handlers do not let exceptions pop up:
-        mHandler.update(children);
+        mHandler.update(children.build());
 
       } catch (KeeperException ke) {
         LOG.error("Unrecoverable ZooKeeper error: {}", ke.getMessage());
@@ -605,11 +618,21 @@ public final class ZooKeeperMonitor implements Closeable {
     /** {@inheritDoc} */
     @Override
     public void close() throws IOException {
+      LOG.info("Closing UsersTracker {}.", this);
       final State oldState = mState.getAndSet(State.CLOSED);
       Preconditions.checkState(oldState == State.OPEN,
           "Cannot close UsersTracker instance in state %s.", oldState);
       // ZOOKEEPER-442: There is currently no way to cancel a watch.
       //     All we can do here is to neutralize the handler by setting mClosed.
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public String toString() {
+      return Objects.toStringHelper(UsersTracker.class)
+          .add("tableURI", mTableURI)
+          .add("state", mState.get())
+          .toString();
     }
   }
 
@@ -644,9 +667,8 @@ public final class ZooKeeperMonitor implements Closeable {
       synchronized (mMonitor) {
         if (mCurrentNode != null) {
           try {
-            if (ZooKeeperMonitor.this.mZKClient.exists(mCurrentNode) != null) {
-              ZooKeeperMonitor.this.mZKClient.delete(mCurrentNode, -1);
-            }
+            ZooKeeperMonitor.this.mZKClient.delete(mCurrentNode, -1);
+            mCurrentNode = null;
           } catch (KeeperException e) {
             throw new IOException(e);
           }
@@ -693,9 +715,18 @@ public final class ZooKeeperMonitor implements Closeable {
     }
 
     /** {@inheritDoc} */
-    @Override
-    public void close() throws IOException {
+    @Override public void close() throws IOException {
+      LOG.info("Closing TableUserRegistration {}.", this);
       unregister();
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public String toString() {
+      return Objects.toStringHelper(TableUserRegistration.class)
+          .add("userID", mUserID)
+          .add("table", mTableURI)
+          .toString();
     }
   }
 

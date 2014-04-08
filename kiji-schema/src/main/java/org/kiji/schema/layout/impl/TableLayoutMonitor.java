@@ -152,7 +152,7 @@ public class TableLayoutMonitor implements AutoCloseable {
   /** {@inheritDoc} */
   @Override
   public CloseablePhantomRef getCloseablePhantomRef(ReferenceQueue<AutoCloseable> queue) {
-    return new CloseablePhantomRef(this, queue, mLayoutTracker, mUserRegistration);
+    return new CloseablePhantomRef(this, queue, mUserRegistration, mLayoutTracker);
   }
 
   /**

@@ -11,6 +11,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.MapMaker;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -26,8 +27,13 @@ import org.kiji.schema.util.AutoCloseable.CloseablePhantomRef;
  * be automatically cleaned up by the auto closer.
  */
 public class AutoCloser implements Closeable {
-  private static final Logger LOG = LoggerFactory.getLogger(ResourceUtils.class);
-  private final ExecutorService mExecutorService = Executors.newSingleThreadExecutor();
+  private static final Logger LOG = LoggerFactory.getLogger(AutoCloser.class);
+  private final ExecutorService mExecutorService =
+      Executors.newSingleThreadExecutor(
+        new ThreadFactoryBuilder()
+            .setNameFormat("auto-closer-%d")
+            .build()
+      );
 
   /** Ref queue which closeable phantom references will be enqueued to. */
   private final ReferenceQueue<AutoCloseable> mReferenceQueue = new ReferenceQueue<AutoCloseable>();
@@ -109,14 +115,14 @@ public class AutoCloser implements Closeable {
     public void run() {
       try {
         while (true) {
-          LOG.debug("Waiting for enqueued CloseablePhantomRefs...");
+          LOG.info("Waiting for enqueued CloseablePhantomRefs...");
           CloseablePhantomRef reference = (CloseablePhantomRef) mReferenceQueue.remove();
-          LOG.debug("CloseablePhantomRef {} enqueued.", reference);
+          LOG.info("CloseablePhantomRef {} enqueued.", reference);
           boolean removed = mReferences.remove(reference);
           if (removed) {
             ResourceUtils.closeOrLog(reference);
           } else {
-            LOG.debug("Phantom reference to unregistered AutoCloseable queued.");
+            LOG.info("Phantom reference to unregistered AutoCloseable queued.");
           }
         }
       } catch (InterruptedException e) {

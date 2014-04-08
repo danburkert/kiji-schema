@@ -150,9 +150,7 @@ public class TestTableLayoutMonitor extends ZooKeeperTest {
               umap5);
 
         } finally {
-          LOG.info("Closing tracker");
           tracker.close();
-          LOG.info("Tracker closed");
           userRegistration2.close();
         }
       } finally {

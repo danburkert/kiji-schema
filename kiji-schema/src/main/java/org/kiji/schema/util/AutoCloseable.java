@@ -84,7 +84,11 @@ public interface AutoCloseable {
     public void close() {
       LOG.info("closing phantom ref");
       for (Closeable closeable : mCloseables) {
-        ResourceUtils.closeOrLog(closeable);
+        try {
+          ResourceUtils.closeOrLog(closeable);
+        } catch (Throwable t) {
+          LOG.warn("caught exception while closing {}: {}.", closeable, t);
+        }
       }
     }
   }

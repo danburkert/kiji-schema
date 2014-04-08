@@ -23,6 +23,7 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.util.concurrent.ExecutionException;
 
+import com.google.common.base.FinalizableReferenceQueue;
 import com.google.common.base.Preconditions;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
@@ -45,6 +46,10 @@ import org.kiji.schema.util.ProtocolVersion;
 public class InstanceMonitor implements Closeable {
   private static final Logger LOG = LoggerFactory.getLogger(InstanceMonitor.class);
   private volatile boolean mIsOpen = true;
+
+  private final FinalizableReferenceQueue refQueue = new FinalizableReferenceQueue();
+
+
   private final AutoCloser mCloser = new AutoCloser();
   private final String mUserID;
   private final KijiURI mInstanceURI;
