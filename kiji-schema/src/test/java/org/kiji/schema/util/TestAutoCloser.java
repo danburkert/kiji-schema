@@ -3,6 +3,7 @@ package org.kiji.schema.util;
 import java.io.Closeable;
 import java.io.IOException;
 import java.lang.ref.ReferenceQueue;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -10,6 +11,7 @@ import java.util.concurrent.CountDownLatch;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.MapMaker;
 import junit.framework.Assert;
 import org.junit.After;
@@ -37,17 +39,6 @@ public class TestAutoCloser {
     System.gc(); // Force the phantom ref to be enqueued
 
     latch.await();
-  }
-
-  @Test
-  public void testCloserCanUnregisterAutoCloseable() throws Exception {
-    final CountDownLatch latch = new CountDownLatch(1);
-    AutoCloseable closeable = new LatchAutoCloseable(latch);
-    mCloser.registerAutoCloseable(closeable);
-    mCloser.unregisterAutoCloseable(closeable);
-    closeable = null;
-    System.gc();
-    Assert.assertEquals("AutoCloser will not close unregistered closeable.", 1, latch.getCount());
   }
 
   @Test
@@ -108,7 +99,6 @@ public class TestAutoCloser {
         .build(new CacheLoader<CountDownLatch, AutoCloseable>() {
           @Override
           public AutoCloseable load(CountDownLatch latch) throws Exception {
-            System.out.println("creating new AutoCloseable.");
             AutoCloseable closeable = new LatchAutoCloseable(latch);
             mCloser.registerAutoCloseable(closeable);
             return closeable;
@@ -130,7 +120,6 @@ public class TestAutoCloser {
         .build(new CacheLoader<String, Object>() {
           @Override
           public Object load(String key) throws Exception {
-            System.out.println("creating new Object.");
             return new Object();
           }
         });
@@ -139,8 +128,7 @@ public class TestAutoCloser {
     System.gc();
     int hash2 = cache.get("foo").hashCode();
     System.gc();
-    System.out.println(hash1);
-    System.out.println(hash2);
+    Assert.assertFalse(hash1 == hash2);
   }
 
   private static class LatchAutoCloseable implements AutoCloseable {
@@ -151,8 +139,8 @@ public class TestAutoCloser {
     }
 
     @Override
-    public CloseablePhantomRef getCloseablePhantomRef(ReferenceQueue<AutoCloseable> queue) {
-      return new CloseablePhantomRef(this, queue, mResource);
+    public Collection<Closeable> getCloseableResources() {
+      return ImmutableList.of(mResource);
     }
   }
 

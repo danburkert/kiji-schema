@@ -18,8 +18,10 @@
  */
 package org.kiji.schema.layout.impl;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.lang.ref.ReferenceQueue;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Set;
 import java.util.WeakHashMap;
@@ -28,6 +30,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
@@ -151,8 +154,8 @@ public class TableLayoutMonitor implements AutoCloseable {
 
   /** {@inheritDoc} */
   @Override
-  public CloseablePhantomRef getCloseablePhantomRef(ReferenceQueue<AutoCloseable> queue) {
-    return new CloseablePhantomRef(this, queue, mUserRegistration, mLayoutTracker);
+  public Collection<Closeable> getCloseableResources() {
+    return ImmutableList.of(mUserRegistration, mLayoutTracker);
   }
 
   /**
