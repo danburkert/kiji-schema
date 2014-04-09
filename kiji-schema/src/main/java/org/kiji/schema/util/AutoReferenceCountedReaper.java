@@ -132,6 +132,9 @@ public final class AutoReferenceCountedReaper implements Closeable {
       } catch (InterruptedException e) {
         // If this thread is interrupted, then die.  This happens normally when
         // AutoReferenceCountedReaper#close is called.
+
+        // Restore the interrupted status
+        Thread.currentThread().interrupt();
       }
     }
   }
