@@ -1,3 +1,22 @@
+/**
+ * (c) Copyright 2014 WibiData, Inc.
+ *
+ * See the NOTICE file distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.kiji.schema.layout.impl;
 
 import java.util.Arrays;
@@ -13,22 +32,22 @@ import junit.framework.Assert;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.kiji.schema.KijiURI;
-import org.kiji.schema.util.ZooKeeperTest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.kiji.schema.KijiURI;
 import org.kiji.schema.layout.impl.ZooKeeperMonitor.LayoutTracker;
 import org.kiji.schema.layout.impl.ZooKeeperMonitor.LayoutUpdateHandler;
 import org.kiji.schema.layout.impl.ZooKeeperMonitor.TableUserRegistration;
 import org.kiji.schema.layout.impl.ZooKeeperMonitor.UsersTracker;
 import org.kiji.schema.layout.impl.ZooKeeperMonitor.UsersUpdateHandler;
+import org.kiji.schema.util.ZooKeeperTest;
 
 public class TestZooKeeperMonitor extends ZooKeeperTest {
   private static final Logger LOG = LoggerFactory.getLogger(ZooKeeperMonitor.class);
   private volatile ZooKeeperMonitor mMonitor;
   private volatile ZooKeeperClient mZKClient;
-  private final AtomicInteger tableCounter = new AtomicInteger(0);
+  private final AtomicInteger mTableCounter = new AtomicInteger(0);
 
   @Before
   public void setup() throws Exception {
@@ -50,7 +69,7 @@ public class TestZooKeeperMonitor extends ZooKeeperTest {
     return KijiURI
         .newBuilder()
         .withInstanceName(instanceName)
-        .withTableName(tablePrefix + tableCounter.getAndIncrement())
+        .withTableName(tablePrefix + mTableCounter.getAndIncrement())
         .build();
   }
 
@@ -128,32 +147,32 @@ public class TestZooKeeperMonitor extends ZooKeeperTest {
     }
   }
 
-  public static class QueueingLayoutUpdateHandler implements LayoutUpdateHandler {
-    private final BlockingQueue<byte[]> layoutQueue;
+  public static final class QueueingLayoutUpdateHandler implements LayoutUpdateHandler {
+    private final BlockingQueue<byte[]> mLayoutQueue;
     private QueueingLayoutUpdateHandler(BlockingQueue<byte[]> layoutQueue) {
-      this.layoutQueue = layoutQueue;
+      this.mLayoutQueue = layoutQueue;
     }
     @Override
     public void update(byte[] layout) {
       try {
-        layoutQueue.put(layout);
+        mLayoutQueue.put(layout);
       } catch (InterruptedException e) {
         LOG.warn(e.getMessage());
       }
     }
   }
 
-  public static class QueueingUsersUpdateHandler implements UsersUpdateHandler {
-    private final BlockingQueue<Multimap<String, String>> usersQueue;
+  public static final class QueueingUsersUpdateHandler implements UsersUpdateHandler {
+    private final BlockingQueue<Multimap<String, String>> mUsersQueue;
     public QueueingUsersUpdateHandler(BlockingQueue<Multimap<String, String>> usersQueue) {
-      this.usersQueue = usersQueue;
+      this.mUsersQueue = usersQueue;
     }
 
     @Override
     public void update(Multimap<String, String> users) {
       try {
         LOG.warn("QueueingUsersUpdateHandler Received update: " + users);
-        usersQueue.put(users);
+        mUsersQueue.put(users);
       } catch (InterruptedException e) {
         LOG.warn(e.getMessage());
       }

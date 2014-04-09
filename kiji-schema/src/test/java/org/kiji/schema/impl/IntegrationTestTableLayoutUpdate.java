@@ -29,18 +29,18 @@ import com.google.common.collect.ImmutableSetMultimap;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Queues;
 import org.junit.Test;
-import org.kiji.schema.KijiTable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.kiji.schema.Kiji;
+import org.kiji.schema.KijiTable;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.avro.TableLayoutDesc;
 import org.kiji.schema.layout.KijiTableLayouts;
 import org.kiji.schema.layout.impl.TestZooKeeperMonitor;
 import org.kiji.schema.layout.impl.ZooKeeperClient;
-import org.kiji.schema.layout.impl.ZooKeeperMonitor.UsersTracker;
 import org.kiji.schema.layout.impl.ZooKeeperMonitor;
+import org.kiji.schema.layout.impl.ZooKeeperMonitor.UsersTracker;
 import org.kiji.schema.testutil.AbstractKijiIntegrationTest;
 
 public class IntegrationTestTableLayoutUpdate extends AbstractKijiIntegrationTest {
@@ -78,8 +78,8 @@ public class IntegrationTestTableLayoutUpdate extends AbstractKijiIntegrationTes
           KijiTable kijiTable = kiji.openTable(tableName);
           try {
             // We opened a table, user map must contain exactly one entry:
-            assertEquals(ImmutableSet.of(layoutId1), ImmutableSet.copyOf(queue.poll(2, TimeUnit.SECONDS)
-                                                                              .values()));
+            assertEquals(ImmutableSet.of(layoutId1),
+                ImmutableSet.copyOf(queue.poll(2, TimeUnit.SECONDS).values()));
 
               // Push a layout update (a no-op, but with a new layout ID):
               final TableLayoutDesc newLayoutDesc =

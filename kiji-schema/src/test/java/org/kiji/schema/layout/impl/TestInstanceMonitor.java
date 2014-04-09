@@ -1,3 +1,22 @@
+/**
+ * (c) Copyright 2014 WibiData, Inc.
+ *
+ * See the NOTICE file distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.kiji.schema.layout.impl;
 
 import java.util.concurrent.BlockingQueue;
@@ -21,8 +40,7 @@ import org.kiji.schema.layout.impl.ZooKeeperMonitor.UsersTracker;
 
 public class TestInstanceMonitor extends KijiClientTest {
 
-
-  private final String userName = "user";
+  private final String mUserName = "user";
   private volatile KijiURI mTableURI;
   private volatile ZooKeeperClient mZKClient;
   private volatile ZooKeeperMonitor mZKMonitor;
@@ -38,7 +56,7 @@ public class TestInstanceMonitor extends KijiClientTest {
     mZKMonitor = new ZooKeeperMonitor(mZKClient);
 
     mInstanceMonitor = new InstanceMonitor(
-        userName,
+        mUserName,
         kiji.getSystemTable().getDataVersion(),
         kiji.getURI(),
         kiji.getSchemaTable(),
@@ -56,7 +74,8 @@ public class TestInstanceMonitor extends KijiClientTest {
   @Test
   public void testCanRetrieveTableMonitor() throws Exception {
     TableLayoutMonitor monitor = mInstanceMonitor.getTableLayoutMonitor(mTableURI.getTable());
-    Assert.assertEquals("layout-1.0", monitor.getLayoutCapsule().getLayout().getDesc().getVersion());
+    Assert.assertEquals("layout-1.0",
+        monitor.getLayoutCapsule().getLayout().getDesc().getVersion());
   }
 
   @Test
@@ -78,7 +97,8 @@ public class TestInstanceMonitor extends KijiClientTest {
   public void testLosingReferenceToTableLayoutMonitorWillUpdateZooKeeper() throws Exception {
     final BlockingQueue<Multimap<String, String>> usersQueue = Queues.newSynchronousQueue();
     UsersTracker tracker =
-        mZKMonitor.newTableUsersTracker(mTableURI, new TestZooKeeperMonitor.QueueingUsersUpdateHandler(usersQueue));
+        mZKMonitor.newTableUsersTracker(mTableURI,
+            new TestZooKeeperMonitor.QueueingUsersUpdateHandler(usersQueue));
     try {
       tracker.open();
       Assert.assertEquals(ImmutableSetMultimap.<String, String>of(),
@@ -86,7 +106,7 @@ public class TestInstanceMonitor extends KijiClientTest {
 
       mInstanceMonitor.getTableLayoutMonitor(mTableURI.getTable());
 
-      Assert.assertEquals(ImmutableSetMultimap.of(userName, "1"),
+      Assert.assertEquals(ImmutableSetMultimap.of(mUserName, "1"),
           usersQueue.poll(1, TimeUnit.SECONDS));
 
       System.gc();

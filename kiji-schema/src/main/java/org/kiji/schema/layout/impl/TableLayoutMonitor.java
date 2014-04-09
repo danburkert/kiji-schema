@@ -32,18 +32,21 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.kiji.schema.layout.KijiColumnNameTranslator;
-import org.kiji.schema.util.AutoReferenceCounted;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.kiji.annotations.ApiAudience;
+import org.kiji.annotations.ApiStability;
+import org.kiji.annotations.Inheritance;
 import org.kiji.schema.KijiIOException;
 import org.kiji.schema.KijiMetaTable;
 import org.kiji.schema.KijiSchemaTable;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.RuntimeInterruptedException;
 import org.kiji.schema.impl.LayoutConsumer;
+import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
+import org.kiji.schema.util.AutoReferenceCounted;
 
 /**
  * TableLayoutMonitor provides three services for users of table layouts:
@@ -61,7 +64,10 @@ import org.kiji.schema.layout.KijiTableLayout;
  *    for the life of the object if it is never unregistered, or until
  *    {@link #unregisterLayoutConsumer(LayoutConsumer)} is called.
  */
-public class TableLayoutMonitor implements AutoReferenceCounted {
+@ApiAudience.Private
+@ApiStability.Experimental
+@Inheritance.Sealed
+public final class TableLayoutMonitor implements AutoReferenceCounted {
 
   private static final Logger LOG = LoggerFactory.getLogger(TableLayoutMonitor.class);
 
@@ -82,7 +88,8 @@ public class TableLayoutMonitor implements AutoReferenceCounted {
    * The capsule itself is immutable and should be replaced atomically with a new capsule.
    * References only the LayoutCapsule for the most recent layout for this table.
    */
-  private final AtomicReference<LayoutCapsule> mLayoutCapsule = new AtomicReference<LayoutCapsule>();
+  private final AtomicReference<LayoutCapsule> mLayoutCapsule =
+      new AtomicReference<LayoutCapsule>();
 
   /**
    * Holds the set of LayoutConsumers who should be notified of layout updates.  Held in a weak
@@ -243,6 +250,18 @@ public class TableLayoutMonitor implements AutoReferenceCounted {
 
     private final KijiSchemaTable mSchemaTable;
 
+    /**
+     * Create an InnerLayoutUpdater to update the layout of this table in response to a layout node
+     * change in ZooKeeper.
+     *
+     * @param userRegistration ZooKeeper table user registration.
+     * @param initializationLatch latch that will be counted down upon successful initialization.
+     * @param layoutCapsule layout capsule to store most recent layout in.
+     * @param tableURI URI of table whose layout is to be tracked.
+     * @param consumers Set of layout consumers to notify on table layout update.
+     * @param metaTable containing meta information.
+     * @param schemaTable containing schema information.
+     */
     private InnerLayoutUpdater(
         ZooKeeperMonitor.TableUserRegistration userRegistration,
         CountDownLatch initializationLatch,

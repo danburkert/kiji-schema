@@ -23,34 +23,35 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.util.concurrent.ExecutionException;
 
-import com.google.common.base.FinalizableReferenceQueue;
 import com.google.common.base.Preconditions;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import com.google.common.util.concurrent.UncheckedExecutionException;
-import org.kiji.schema.util.AutoReferenceCountedReaper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.kiji.annotations.ApiAudience;
+import org.kiji.annotations.ApiStability;
+import org.kiji.annotations.Inheritance;
 import org.kiji.schema.KijiIOException;
 import org.kiji.schema.KijiMetaTable;
 import org.kiji.schema.KijiSchemaTable;
 import org.kiji.schema.KijiURI;
+import org.kiji.schema.util.AutoReferenceCountedReaper;
 import org.kiji.schema.util.ProtocolVersion;
 
 /**
  * A Kiji instance monitors. Registers a client as an instance user in ZooKeeper, and provides
  * table layout monitors.
  */
-public class InstanceMonitor implements Closeable {
+@ApiAudience.Private
+@ApiStability.Experimental
+@Inheritance.Sealed
+public final class InstanceMonitor implements Closeable {
   private static final Logger LOG = LoggerFactory.getLogger(InstanceMonitor.class);
   private volatile boolean mIsOpen = true;
-
-  private final FinalizableReferenceQueue refQueue = new FinalizableReferenceQueue();
-
-
-  private final AutoReferenceCountedReaper mCloser = new AutoReferenceCountedReaper();
+  private final AutoReferenceCountedReaper mReaper = new AutoReferenceCountedReaper();
   private final String mUserID;
   private final KijiURI mInstanceURI;
   private final KijiSchemaTable mSchemaTable;
@@ -151,13 +152,14 @@ public class InstanceMonitor implements Closeable {
       mUserRegistration.close();
     }
 
-    mCloser.close();
+    mReaper.close();
   }
 
   /**
    * KijiTableLayout CacheLoader that adds a ColumnNameTranslator to a cache in the same step.
    */
-  private class TableLayoutMonitorCacheLoader extends CacheLoader<String, TableLayoutMonitor> {
+  private final class TableLayoutMonitorCacheLoader
+      extends CacheLoader<String, TableLayoutMonitor> {
     @Override
     public TableLayoutMonitor load(String tableName) throws IOException {
       KijiURI tableURI = KijiURI.newBuilder(mInstanceURI).withTableName(tableName).build();
@@ -167,7 +169,7 @@ public class InstanceMonitor implements Closeable {
       TableLayoutMonitor monitor =
           new TableLayoutMonitor(mUserID, tableURI, mSchemaTable, mMetaTable, mZKMonitor).start();
 
-      mCloser.registerAutoReferenceCounted(monitor);
+      mReaper.registerAutoReferenceCounted(monitor);
 
       return monitor;
     }

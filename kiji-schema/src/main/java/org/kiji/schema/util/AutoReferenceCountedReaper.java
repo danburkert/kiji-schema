@@ -1,3 +1,21 @@
+/**
+ * (c) Copyright 2014 WibiData, Inc.
+ *
+ * See the NOTICE file distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.kiji.schema.util;
 
 import java.io.Closeable;
@@ -16,6 +34,10 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.kiji.annotations.ApiAudience;
+import org.kiji.annotations.ApiStability;
+import org.kiji.annotations.Inheritance;
+
 /**
  * An {@code AutoReferenceCountedReaper} manages {@link AutoReferenceCounted} instance cleanup.
  * {@link AutoReferenceCounted} instances can be registered with an
@@ -24,7 +46,10 @@ import org.slf4j.LoggerFactory;
  * should be closed when no longer needed. Any outstanding registered {@link AutoReferenceCounted}
  * will be reaped when the {@link AutoReferenceCountedReaper} is closed.
  */
-public class AutoReferenceCountedReaper implements Closeable {
+@ApiAudience.Framework
+@ApiStability.Experimental
+@Inheritance.Sealed
+public final class AutoReferenceCountedReaper implements Closeable {
   private static final Logger LOG = LoggerFactory.getLogger(AutoReferenceCountedReaper.class);
   private static final AtomicInteger COUNTER = new AtomicInteger(0);
   private final ExecutorService mExecutorService =
@@ -35,7 +60,8 @@ public class AutoReferenceCountedReaper implements Closeable {
       );
 
   /** Ref queue which closeable phantom references will be enqueued to. */
-  private final ReferenceQueue<AutoReferenceCounted> mReferenceQueue = new ReferenceQueue<AutoReferenceCounted>();
+  private final ReferenceQueue<AutoReferenceCounted> mReferenceQueue =
+      new ReferenceQueue<AutoReferenceCounted>();
 
   /** We must hold a strong reference to each phantom ref so they are not GC'd. */
   private final Set<CloseablePhantomRef> mReferences =
@@ -63,13 +89,15 @@ public class AutoReferenceCountedReaper implements Closeable {
         new CloseablePhantomRef(
             autoReferenceCountable,
             mReferenceQueue,
-            autoReferenceCountable.getCloseableResources()));
+            autoReferenceCountable.getCloseableResources())
+    );
   }
 
   /**
    * {@inheritDoc}
    *
-   * Close this {@code AutoReferenceCountedReaper}, and close any registered {@link AutoReferenceCounted} instances.
+   * Close this {@code AutoReferenceCountedReaper}, and close any registered
+   * {@link AutoReferenceCounted} instances.
    */
   @Override
   public void close() {
@@ -91,18 +119,19 @@ public class AutoReferenceCountedReaper implements Closeable {
     public void run() {
       try {
         while (true) {
-          LOG.info("Waiting for enqueued CloseablePhantomRefs...");
           CloseablePhantomRef reference = (CloseablePhantomRef) mReferenceQueue.remove();
-          LOG.info("CloseablePhantomRef {} enqueued.", reference);
+          LOG.debug("Closing enqueued PhantomReference {}.", reference);
           if (mReferences.remove(reference)) {
             reference.clear(); // allows referent to be claimed by the GC.
             reference.close();
           } else {
-            LOG.info("Phantom reference to unregistered AutoReferenceCounted queued.");
+            // This should not happen
+            LOG.warn("Enqueued PhantomReference {} is not registered to this reaper.", reference);
           }
         }
       } catch (InterruptedException e) {
-        // If this thread is interrupted, then die.
+        // If this thread is interrupted, then die.  This happens normally when
+        // AutoReferenceCountedReaper#close is called.
       }
     }
   }
@@ -112,7 +141,7 @@ public class AutoReferenceCountedReaper implements Closeable {
    * reference can be used to close resources when the referent is determined to no longer be
    * reachable.
    */
-  public static class CloseablePhantomRef
+  public static final class CloseablePhantomRef
       extends PhantomReference<AutoReferenceCounted>
       implements Closeable {
     private static final Logger LOG = LoggerFactory.getLogger(CloseablePhantomRef.class);

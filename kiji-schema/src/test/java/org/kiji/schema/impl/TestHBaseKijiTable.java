@@ -29,14 +29,14 @@ package org.kiji.schema.impl;
     import com.google.common.collect.Multimap;
     import com.google.common.collect.Queues;
     import org.junit.Test;
-    import org.kiji.schema.KijiClientTest;
-    import org.kiji.schema.layout.impl.TestZooKeeperMonitor;
     import org.slf4j.Logger;
     import org.slf4j.LoggerFactory;
 
+    import org.kiji.schema.KijiClientTest;
     import org.kiji.schema.KijiURI;
     import org.kiji.schema.avro.TableLayoutDesc;
     import org.kiji.schema.layout.KijiTableLayouts;
+    import org.kiji.schema.layout.impl.TestZooKeeperMonitor;
     import org.kiji.schema.layout.impl.ZooKeeperClient;
     import org.kiji.schema.layout.impl.ZooKeeperMonitor;
     import org.kiji.schema.layout.impl.ZooKeeperMonitor.UsersTracker;
