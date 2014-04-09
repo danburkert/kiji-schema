@@ -494,22 +494,6 @@ public final class HBaseKijiTable implements KijiTable {
     return mTableURI.hashCode();
   }
 
-//  /** {@inheritDoc} */
-//  @Override
-//  protected void finalize() throws Throwable {
-//    final State state = mState.get();
-//    if (state != State.CLOSED) {
-//      CLEANUP_LOG.warn("Finalizing unreleased KijiTable {} in state {}.", this, state);
-//      if (CLEANUP_LOG.isDebugEnabled()) {
-//        CLEANUP_LOG.debug(
-//            "HBaseKijiTable '{}' was constructed through:\n{}",
-//            mTableURI, mConstructorStack);
-//      }
-//      closeResources();
-//    }
-//    super.finalize();
-//  }
-
   /** {@inheritDoc} */
   @Override
   public String toString() {

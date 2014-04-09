@@ -33,7 +33,7 @@ import org.kiji.annotations.Inheritance;
  * reference counting is performed by the JVM garbage collector. Users of
  * {@code AutoReferenceCounted} objects need only to register the object with an
  * {@link AutoReferenceCountedReaper} upon creation; no explicit life-cycle management needs to be
- * done.  The objects resources will automatically be released when the {@Code AutoReferenceCounted}
+ * done.  The objects resources will automatically be released when the {@code AutoReferenceCounted}
  * is claimed by the garbage collector.
  *
  * {@code AutoReferenceCounted} and {@link AutoReferenceCountedReaper} use the

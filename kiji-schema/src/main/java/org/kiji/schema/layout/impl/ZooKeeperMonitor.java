@@ -471,7 +471,7 @@ public final class ZooKeeperMonitor implements Closeable {
     /** {@inheritDoc} */
     @Override
     public void close() throws IOException {
-      LOG.info("Closing LayoutTracker {}.", this);
+      LOG.debug("Closing LayoutTracker {}.", this);
       final State oldState = mState.getAndSet(State.CLOSED);
       Preconditions.checkState(oldState == State.OPEN,
           "Cannot close LayoutTracker instance in state %s.", oldState);
@@ -605,7 +605,7 @@ public final class ZooKeeperMonitor implements Closeable {
           throw new InternalKijiError(uee);
         }
 
-        LOG.info("Notifying watchers of changed layout users {}.", children.build());
+        LOG.debug("Notifying watchers of changed layout users {}.", children.build());
         // This assumes handlers do not let exceptions pop up:
         mHandler.update(children.build());
 
@@ -618,7 +618,7 @@ public final class ZooKeeperMonitor implements Closeable {
     /** {@inheritDoc} */
     @Override
     public void close() throws IOException {
-      LOG.info("Closing UsersTracker {}.", this);
+      LOG.debug("Closing UsersTracker {}.", this);
       final State oldState = mState.getAndSet(State.CLOSED);
       Preconditions.checkState(oldState == State.OPEN,
           "Cannot close UsersTracker instance in state %s.", oldState);
@@ -716,7 +716,7 @@ public final class ZooKeeperMonitor implements Closeable {
 
     /** {@inheritDoc} */
     @Override public void close() throws IOException {
-      LOG.info("Closing TableUserRegistration {}.", this);
+      LOG.debug("Closing TableUserRegistration {}.", this);
       unregister();
     }
 

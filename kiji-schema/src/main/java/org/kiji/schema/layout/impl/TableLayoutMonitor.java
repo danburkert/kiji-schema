@@ -290,10 +290,10 @@ public final class TableLayoutMonitor implements AutoReferenceCounted {
               : mLayoutCapsule.get().getLayout().getDesc().getLayoutId();
       final String newLayoutId = Bytes.toString(layoutBytes);
       if (currentLayoutId == null) {
-        LOG.info("Setting initial layout for table {} to layout ID {}.",
+        LOG.debug("Setting initial layout for table {} to layout ID {}.",
             mTableURI, newLayoutId);
       } else {
-        LOG.info("Updating layout for table {} from layout ID {} to layout ID {}.",
+        LOG.debug("Updating layout for table {} from layout ID {} to layout ID {}.",
             mTableURI, currentLayoutId, newLayoutId);
       }
 

@@ -44,7 +44,7 @@ import org.kiji.schema.layout.impl.ZooKeeperMonitor.UsersUpdateHandler;
 import org.kiji.schema.util.ZooKeeperTest;
 
 public class TestZooKeeperMonitor extends ZooKeeperTest {
-  private static final Logger LOG = LoggerFactory.getLogger(ZooKeeperMonitor.class);
+  private static final Logger LOG = LoggerFactory.getLogger(TestZooKeeperMonitor.class);
   private volatile ZooKeeperMonitor mMonitor;
   private volatile ZooKeeperClient mZKClient;
   private final AtomicInteger mTableCounter = new AtomicInteger(0);
@@ -171,7 +171,6 @@ public class TestZooKeeperMonitor extends ZooKeeperTest {
     @Override
     public void update(Multimap<String, String> users) {
       try {
-        LOG.warn("QueueingUsersUpdateHandler Received update: " + users);
         mUsersQueue.put(users);
       } catch (InterruptedException e) {
         LOG.warn(e.getMessage());
