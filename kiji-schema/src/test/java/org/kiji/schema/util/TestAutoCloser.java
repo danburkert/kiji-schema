@@ -2,7 +2,6 @@ package org.kiji.schema.util;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.lang.ref.ReferenceQueue;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Set;
@@ -20,11 +19,11 @@ import org.junit.Test;
 
 public class TestAutoCloser {
 
-  private volatile AutoCloser mCloser;
+  private volatile AutoReferenceCountedReaper mCloser;
 
   @Before
   public void setUp() throws Exception {
-    mCloser = new AutoCloser();
+    mCloser = new AutoReferenceCountedReaper();
   }
 
   @After
@@ -35,7 +34,7 @@ public class TestAutoCloser {
   @Test
   public void testCloserWillCloseAutoCloseables() throws Exception {
     CountDownLatch latch = new CountDownLatch(1);
-    mCloser.registerAutoCloseable(new LatchAutoCloseable(latch));
+    mCloser.registerAutoReferenceCounted(new LatchAutoReferenceCountable(latch));
     System.gc(); // Force the phantom ref to be enqueued
 
     latch.await();
@@ -45,22 +44,22 @@ public class TestAutoCloser {
   public void testCloserWillCloseRegisteredCloseablesWhenClosed() throws Exception {
     // Good test name, or best?
     final CountDownLatch latch = new CountDownLatch(1);
-    final AutoCloseable closeable = new LatchAutoCloseable(latch);
-    mCloser.registerAutoCloseable(closeable);
+    final AutoReferenceCounted closeable = new LatchAutoReferenceCountable(latch);
+    mCloser.registerAutoReferenceCounted(closeable);
     mCloser.close();
     latch.await();
   }
 
   @Test
   public void testCloserWillCloseAutoCloseableInWeakSet() throws Exception {
-    Set<org.kiji.schema.util.AutoCloseable> set =
-        Collections.newSetFromMap(new MapMaker().weakKeys().<AutoCloseable, Boolean>makeMap());
+    Set<AutoReferenceCounted> set =
+        Collections.newSetFromMap(new MapMaker().weakKeys().<AutoReferenceCounted, Boolean>makeMap());
 
     final CountDownLatch latch = new CountDownLatch(1);
-    AutoCloseable closeable = new LatchAutoCloseable(latch);
+    AutoReferenceCounted closeable = new LatchAutoReferenceCountable(latch);
 
     set.add(closeable);
-    mCloser.registerAutoCloseable(closeable);
+    mCloser.registerAutoReferenceCounted(closeable);
     closeable = null;
 
     System.gc();
@@ -71,14 +70,14 @@ public class TestAutoCloser {
   public void testCloserWillCloseAutoCloseableInWeakCache() throws Exception {
     CountDownLatch latch = new CountDownLatch(1);
 
-    final LoadingCache<CountDownLatch, AutoCloseable> cache = CacheBuilder
+    final LoadingCache<CountDownLatch, AutoReferenceCounted> cache = CacheBuilder
         .newBuilder()
         .weakValues()
-        .build(new CacheLoader<CountDownLatch, AutoCloseable>() {
+        .build(new CacheLoader<CountDownLatch, AutoReferenceCounted>() {
           @Override
-          public AutoCloseable load(CountDownLatch latch) throws Exception {
-            AutoCloseable closeable = new LatchAutoCloseable(latch);
-            mCloser.registerAutoCloseable(closeable);
+          public AutoReferenceCounted load(CountDownLatch latch) throws Exception {
+            AutoReferenceCounted closeable = new LatchAutoReferenceCountable(latch);
+            mCloser.registerAutoReferenceCounted(closeable);
             return closeable;
           }
         });
@@ -93,14 +92,14 @@ public class TestAutoCloser {
   public void testWeakCacheWillBeCleanedUp() throws Exception {
     CountDownLatch latch = new CountDownLatch(2);
 
-    final LoadingCache<CountDownLatch, AutoCloseable> cache = CacheBuilder
+    final LoadingCache<CountDownLatch, AutoReferenceCounted> cache = CacheBuilder
         .newBuilder()
         .weakValues()
-        .build(new CacheLoader<CountDownLatch, AutoCloseable>() {
+        .build(new CacheLoader<CountDownLatch, AutoReferenceCounted>() {
           @Override
-          public AutoCloseable load(CountDownLatch latch) throws Exception {
-            AutoCloseable closeable = new LatchAutoCloseable(latch);
-            mCloser.registerAutoCloseable(closeable);
+          public AutoReferenceCounted load(CountDownLatch latch) throws Exception {
+            AutoReferenceCounted closeable = new LatchAutoReferenceCountable(latch);
+            mCloser.registerAutoReferenceCounted(closeable);
             return closeable;
           }
         });
@@ -131,10 +130,10 @@ public class TestAutoCloser {
     Assert.assertFalse(hash1 == hash2);
   }
 
-  private static class LatchAutoCloseable implements AutoCloseable {
+  private static class LatchAutoReferenceCountable implements AutoReferenceCounted {
     private final Closeable mResource;
 
-    private LatchAutoCloseable(CountDownLatch latch) {
+    private LatchAutoReferenceCountable(CountDownLatch latch) {
       mResource = new LatchCloseable(latch);
     }
 

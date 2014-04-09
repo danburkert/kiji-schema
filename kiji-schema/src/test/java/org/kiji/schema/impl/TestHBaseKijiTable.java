@@ -34,7 +34,6 @@ package org.kiji.schema.impl;
     import org.slf4j.Logger;
     import org.slf4j.LoggerFactory;
 
-    import org.kiji.schema.KijiTable;
     import org.kiji.schema.KijiURI;
     import org.kiji.schema.avro.TableLayoutDesc;
     import org.kiji.schema.layout.KijiTableLayouts;
@@ -42,11 +41,11 @@ package org.kiji.schema.impl;
     import org.kiji.schema.layout.impl.ZooKeeperMonitor;
     import org.kiji.schema.layout.impl.ZooKeeperMonitor.UsersTracker;
 
-public class TestTableLayoutUpdate extends KijiClientTest {
+public class TestHBaseKijiTable extends KijiClientTest {
   private static final Logger LOG = LoggerFactory.getLogger(IntegrationTestTableLayoutUpdate.class);
 
   @Test
-  public void testUpdateLayout() throws Exception {
+  public void testReleasingKijiTableWillCloseItsResources() throws Exception {
     final KijiURI uri = getKiji().getURI();
     final String tableName = "IntegrationTestTableLayoutUpdate";
     final KijiURI tableURI = KijiURI.newBuilder(uri).withTableName(tableName).build();

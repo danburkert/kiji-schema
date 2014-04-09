@@ -845,22 +845,22 @@ public final class HBaseKiji implements Kiji {
     return mURI.hashCode();
   }
 
-  /** {@inheritDoc} */
-  @Override
-  protected void finalize() throws Throwable {
-    final State state = mState.get();
-    if (state != State.CLOSED) {
-      CLEANUP_LOG.warn("Finalizing unreleased HBaseKiji instance {} in state {}.", this, state);
-      if (CLEANUP_LOG.isDebugEnabled()) {
-        CLEANUP_LOG.debug(
-            "HBaseKiji '{}' was constructed through:\n{}",
-            mURI,
-            mConstructorStack);
-      }
-      close();
-    }
-    super.finalize();
-  }
+//  /** {@inheritDoc} */
+//  @Override
+//  protected void finalize() throws Throwable {
+//    final State state = mState.get();
+//    if (state != State.CLOSED) {
+//      CLEANUP_LOG.warn("Finalizing unreleased HBaseKiji instance {} in state {}.", this, state);
+//      if (CLEANUP_LOG.isDebugEnabled()) {
+//        CLEANUP_LOG.debug(
+//            "HBaseKiji '{}' was constructed through:\n{}",
+//            mURI,
+//            mConstructorStack);
+//      }
+//      close();
+//    }
+//    super.finalize();
+//  }
 
   /** {@inheritDoc} */
   @Override

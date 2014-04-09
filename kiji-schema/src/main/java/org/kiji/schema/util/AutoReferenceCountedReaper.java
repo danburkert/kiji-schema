@@ -17,23 +17,25 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * An {@code AutoCloser} manages {@link AutoCloseable} instance cleanup. {@link AutoCloseable}
- * instances can be registered with an {@code AutoCloser} to be cleaned up when the JVM determines
- * that the object is no longer reachable.  Alternatively, {@link AutoCloser} also implements
- * {@link Closeable}, and will close all registered {@link AutoCloseable} instances upon closing.
+ * An {@code AutoReferenceCountedReaper} manages {@link AutoReferenceCounted} instance cleanup.
+ * {@link AutoReferenceCounted} instances can be registered with an
+ * {@code AutoReferenceCountedReaper} to be cleaned up when the JVM determines that the object is
+ * no longer reachable. {@link AutoReferenceCountedReaper} implements {@link Closeable}, and
+ * should be closed when no longer needed. Any outstanding registered {@link AutoReferenceCounted}
+ * will be reaped when the {@link AutoReferenceCountedReaper} is closed.
  */
-public class AutoCloser implements Closeable {
-  private static final Logger LOG = LoggerFactory.getLogger(AutoCloser.class);
+public class AutoReferenceCountedReaper implements Closeable {
+  private static final Logger LOG = LoggerFactory.getLogger(AutoReferenceCountedReaper.class);
   private static final AtomicInteger COUNTER = new AtomicInteger(0);
   private final ExecutorService mExecutorService =
       Executors.newSingleThreadExecutor(
           new ThreadFactoryBuilder()
-              .setNameFormat("AutoCloser-" + COUNTER.getAndIncrement())
+              .setNameFormat("AutoReferenceCountedReaper-" + COUNTER.getAndIncrement())
               .build()
       );
 
   /** Ref queue which closeable phantom references will be enqueued to. */
-  private final ReferenceQueue<AutoCloseable> mReferenceQueue = new ReferenceQueue<AutoCloseable>();
+  private final ReferenceQueue<AutoReferenceCounted> mReferenceQueue = new ReferenceQueue<AutoReferenceCounted>();
 
   /** We must hold a strong reference to each phantom ref so they are not GC'd. */
   private final Set<CloseablePhantomRef> mReferences =
@@ -41,32 +43,33 @@ public class AutoCloser implements Closeable {
   private volatile boolean mIsOpen = true;
 
   /**
-   * Create an AutoCloser instance.
+   * Create an AutoReferenceCountedReaper instance.
    */
-  public AutoCloser() {
+  public AutoReferenceCountedReaper() {
     mExecutorService.execute(new Closer());
   }
 
   /**
-   * Register an {@link AutoCloseable} instance to be cleaned up by this {@code AutoCloser} when the
-   * {@link AutoCloseable} is determined by the JVM to no longer be reachable.
+   * Register an {@link AutoReferenceCounted} instance to be cleaned up by this
+   * {@code AutoReferenceCountedReaper} when the {@link AutoReferenceCounted} is determined by
+   * the JVM to no longer be reachable.
    *
-   * @param autoCloseable to be unregistered by this closer.
+   * @param autoReferenceCountable to be registered to this reaper.
    */
-  public void registerAutoCloseable(AutoCloseable autoCloseable) {
+  public void registerAutoReferenceCounted(AutoReferenceCounted autoReferenceCountable) {
     Preconditions.checkState(mIsOpen);
-    LOG.debug("Registering AutoCloseable {}.", autoCloseable);
+    LOG.debug("Registering AutoReferenceCounted {}.", autoReferenceCountable);
     mReferences.add(
         new CloseablePhantomRef(
-            autoCloseable,
+            autoReferenceCountable,
             mReferenceQueue,
-            autoCloseable.getCloseableResources()));
+            autoReferenceCountable.getCloseableResources()));
   }
 
   /**
    * {@inheritDoc}
    *
-   * Close this {@code AutoCloser}, and close any registered {@link AutoCloseable} instances.
+   * Close this {@code AutoReferenceCountedReaper}, and close any registered {@link AutoReferenceCounted} instances.
    */
   @Override
   public void close() {
@@ -95,7 +98,7 @@ public class AutoCloser implements Closeable {
             reference.clear(); // allows referent to be claimed by the GC.
             reference.close();
           } else {
-            LOG.info("Phantom reference to unregistered AutoCloseable queued.");
+            LOG.info("Phantom reference to unregistered AutoReferenceCounted queued.");
           }
         }
       } catch (InterruptedException e) {
@@ -110,7 +113,7 @@ public class AutoCloser implements Closeable {
    * reachable.
    */
   public static class CloseablePhantomRef
-      extends PhantomReference<AutoCloseable>
+      extends PhantomReference<AutoReferenceCounted>
       implements Closeable {
     private static final Logger LOG = LoggerFactory.getLogger(CloseablePhantomRef.class);
     private final Collection<Closeable> mCloseables;
@@ -125,8 +128,8 @@ public class AutoCloser implements Closeable {
      * @param closeables to be closed when {@link #close()} is called on this reference.
      */
     public CloseablePhantomRef(
-        AutoCloseable referent,
-        ReferenceQueue<AutoCloseable> refQueue,
+        AutoReferenceCounted referent,
+        ReferenceQueue<AutoReferenceCounted> refQueue,
         Collection<Closeable> closeables) {
       super(referent, refQueue);
       mCloseables = closeables;

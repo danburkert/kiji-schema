@@ -152,6 +152,7 @@ public class TestZooKeeperMonitor extends ZooKeeperTest {
     @Override
     public void update(Multimap<String, String> users) {
       try {
+        LOG.warn("QueueingUsersUpdateHandler Received update: " + users);
         usersQueue.put(users);
       } catch (InterruptedException e) {
         LOG.warn(e.getMessage());

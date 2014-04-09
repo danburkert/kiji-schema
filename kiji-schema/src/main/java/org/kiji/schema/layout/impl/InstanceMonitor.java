@@ -29,6 +29,7 @@ import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import com.google.common.util.concurrent.UncheckedExecutionException;
+import org.kiji.schema.util.AutoReferenceCountedReaper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,7 +37,6 @@ import org.kiji.schema.KijiIOException;
 import org.kiji.schema.KijiMetaTable;
 import org.kiji.schema.KijiSchemaTable;
 import org.kiji.schema.KijiURI;
-import org.kiji.schema.util.AutoCloser;
 import org.kiji.schema.util.ProtocolVersion;
 
 /**
@@ -50,7 +50,7 @@ public class InstanceMonitor implements Closeable {
   private final FinalizableReferenceQueue refQueue = new FinalizableReferenceQueue();
 
 
-  private final AutoCloser mCloser = new AutoCloser();
+  private final AutoReferenceCountedReaper mCloser = new AutoReferenceCountedReaper();
   private final String mUserID;
   private final KijiURI mInstanceURI;
   private final KijiSchemaTable mSchemaTable;
@@ -167,7 +167,7 @@ public class InstanceMonitor implements Closeable {
       TableLayoutMonitor monitor =
           new TableLayoutMonitor(mUserID, tableURI, mSchemaTable, mMetaTable, mZKMonitor).start();
 
-      mCloser.registerAutoCloseable(monitor);
+      mCloser.registerAutoReferenceCounted(monitor);
 
       return monitor;
     }

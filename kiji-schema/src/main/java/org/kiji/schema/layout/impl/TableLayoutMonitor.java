@@ -20,7 +20,6 @@ package org.kiji.schema.layout.impl;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.lang.ref.ReferenceQueue;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Set;
@@ -34,7 +33,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
-import org.kiji.schema.util.AutoCloseable;
+import org.kiji.schema.util.AutoReferenceCounted;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -62,7 +61,7 @@ import org.kiji.schema.layout.KijiTableLayout;
  *    for the life of the object if it is never unregistered, or until
  *    {@link #unregisterLayoutConsumer(LayoutConsumer)} is called.
  */
-public class TableLayoutMonitor implements AutoCloseable {
+public class TableLayoutMonitor implements AutoReferenceCounted {
 
   private static final Logger LOG = LoggerFactory.getLogger(TableLayoutMonitor.class);
 
