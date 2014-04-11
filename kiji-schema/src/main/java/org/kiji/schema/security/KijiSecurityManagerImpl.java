@@ -50,8 +50,8 @@ import org.kiji.schema.impl.HTableInterfaceFactory;
 import org.kiji.schema.impl.Versions;
 import org.kiji.schema.impl.hbase.HBaseKiji;
 import org.kiji.schema.layout.impl.ZooKeeperClient;
-import org.kiji.schema.layout.impl.ZooKeeperMonitor;
 import org.kiji.schema.util.Lock;
+import org.kiji.schema.zookeeper.ZooKeeperUtils;
 
 /**
  * The default implementation of KijiSecurityManager.
@@ -130,7 +130,7 @@ final class KijiSecurityManagerImpl implements KijiSecurityManager {
     final ZooKeeperClient zkClient = HBaseFactory.Provider.get().getZooKeeperClient(mInstanceUri);
     try {
       mLock = zkClient.getLockFactory().create(
-          ZooKeeperMonitor.getInstancePermissionsLock(instanceUri).getAbsolutePath());
+          ZooKeeperUtils.getInstancePermissionsLock(instanceUri).getAbsolutePath());
     } finally {
       zkClient.release();
     }

@@ -28,6 +28,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
+import org.apache.curator.framework.CuratorFramework;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HTableDescriptor;
@@ -73,6 +74,7 @@ import org.kiji.schema.util.LockFactory;
 import org.kiji.schema.util.ProtocolVersion;
 import org.kiji.schema.util.ResourceUtils;
 import org.kiji.schema.util.VersionInfo;
+import org.kiji.schema.zookeeper.ZooKeeperUtils;
 
 /**
  * Kiji instance class that contains configuration and table information.
@@ -138,7 +140,7 @@ public final class HBaseKiji implements Kiji {
   private final String mConstructorStack;
 
   /** ZooKeeper client for this Kiji instance. */
-  private final ZooKeeperClient mZKClient;
+  private final CuratorFramework mZKClient;
 
   /** Monitor to register Kiji instance users. */
   private final ZooKeeperMonitor mMonitor;
@@ -247,9 +249,12 @@ public final class HBaseKiji implements Kiji {
       // system-2.0 clients must connect to ZooKeeper:
       //  - to register themselves as table users;
       //  - to receive table layout updates.
-      mZKClient = HBaseFactory.Provider.get().getZooKeeperClient(mURI);
+      mZKClient =
+          ZooKeeperUtils.getZooKeeperClient(HBaseFactory.Provider.get().getZooKeeperEnsemble(mURI));
       try {
-        mMonitor = new ZooKeeperMonitor(mZKClient);
+        ZooKeeperClient zkClient = HBaseFactory.Provider.get().getZooKeeperClient(mURI);
+        mMonitor = new ZooKeeperMonitor(zkClient);
+        zkClient.release();
       } catch (KeeperException ke) {
         // Unrecoverable KeeperException:
         throw new IOException(ke);
@@ -269,7 +274,7 @@ public final class HBaseKiji implements Kiji {
         mURI,
         mSchemaTable,
         mMetaTable,
-        mMonitor);
+        mZKClient);
     mInstanceMonitor.start();
 
     mRetainCount.set(1);
@@ -746,10 +751,12 @@ public final class HBaseKiji implements Kiji {
     // Delete ZNodes from ZooKeeper
     try {
       KijiURI tableURI = KijiURI.newBuilder(mURI).withTableName(tableName).build();
-      mZKClient.deleteNodeRecursively(ZooKeeperMonitor.getTableDir(tableURI));
-    } catch (KeeperException e) {
-      LOG.warn("Unable to delete table ZNode in ZooKeeper.", e);
-      throw new IOException(e);
+      mZKClient
+          .delete()
+          .deletingChildrenIfNeeded()
+          .forPath(ZooKeeperUtils.getTableDir(tableURI).getPath());
+    } catch (Exception e) {
+      ZooKeeperUtils.wrapAndRethrow(e);
     }
   }
 
@@ -786,7 +793,7 @@ public final class HBaseKiji implements Kiji {
       mSecurityManager = null;
     }
     ResourceUtils.closeOrLog(mMonitor);
-    ResourceUtils.releaseOrLog(mZKClient);
+    ResourceUtils.closeOrLog(mZKClient);
 
     if (oldState != State.UNINITIALIZED) {
       DebugResourceTracker.get().unregisterResource(this);
@@ -874,8 +881,18 @@ public final class HBaseKiji implements Kiji {
    * @return the ZooKeeper client for this Kiji instance.
    *     Null if the data version &le; {@code system-2.0}.
    */
-  ZooKeeperClient getZKClient() {
+  CuratorFramework getZKClient() {
     return mZKClient;
+  }
+
+  /**
+   * Returns the ZooKeeperMonitor instance for this Kiji instance.
+   *
+   * @return the ZooKeeper client for this Kiji instance.
+   *     Null if the data version &le; {@code system-2.0}.
+   */
+  ZooKeeperMonitor getZooKeeperMonitor() {
+    return mMonitor;
   }
 
   /**
@@ -912,15 +929,12 @@ public final class HBaseKiji implements Kiji {
       // Invariant: ZooKeeper hold the most recent layout of the table.
       LOG.debug("Writing initial table layout in ZooKeeper for table {}.", tableURI);
       try {
-        final ZooKeeperMonitor monitor = new ZooKeeperMonitor(mZKClient);
-        try {
-          final byte[] layoutId = Bytes.toBytes(kijiTableLayout.getDesc().getLayoutId());
-          monitor.notifyNewTableLayout(tableURI, layoutId, -1);
-        } finally {
-          monitor.close();
-        }
-      } catch (KeeperException ke) {
-        throw new IOException(ke);
+        ZooKeeperUtils.setTableLayout(
+            mZKClient,
+            tableURI,
+            kijiTableLayout.getDesc().getLayoutId());
+      } catch (Exception e) {
+        ZooKeeperUtils.wrapAndRethrow(e);
       }
     }
 

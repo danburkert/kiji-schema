@@ -147,7 +147,6 @@
               </rules>
               <fail>true</fail>
               <skip>${skipTests}</skip>
-              <skip>${skipUnitTests}</skip>
             </configuration>
           </execution>
           <execution>
@@ -276,6 +275,12 @@
       <artifactId>fake-hbase</artifactId>
       <version>${fake-hbase.version}</version>
       <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.curator</groupId>
+      <artifactId>curator-recipes</artifactId>
+      <version>${curator.version}</version>
     </dependency>
 
     <dependency>

@@ -25,6 +25,7 @@ import java.util.concurrent.TimeUnit;
 import com.google.common.collect.ImmutableSetMultimap;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Queues;
+import org.apache.curator.framework.CuratorFramework;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -35,17 +36,15 @@ import org.kiji.schema.KijiClientTest;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.avro.TableLayoutDesc;
 import org.kiji.schema.hbase.HBaseFactory;
-import org.kiji.schema.layout.impl.TestZooKeeperMonitor;
-import org.kiji.schema.layout.impl.ZooKeeperClient;
-import org.kiji.schema.layout.impl.ZooKeeperMonitor;
-import org.kiji.schema.layout.impl.ZooKeeperMonitor.UsersTracker;
+import org.kiji.schema.zookeeper.TableUsersTracker;
+import org.kiji.schema.zookeeper.TestTableUsersTracker.QueueingTableUsersUpdateHandler;
+import org.kiji.schema.zookeeper.ZooKeeperUtils;
 
 public class TestInstanceMonitor extends KijiClientTest {
 
   private final String mUserName = "user";
   private volatile KijiURI mTableURI;
-  private volatile ZooKeeperClient mZKClient;
-  private volatile ZooKeeperMonitor mZKMonitor;
+  private volatile CuratorFramework mZKClient;
   private volatile InstanceMonitor mInstanceMonitor;
 
   @Before
@@ -54,8 +53,12 @@ public class TestInstanceMonitor extends KijiClientTest {
     TableLayoutDesc layout = KijiTableLayouts.getLayout(KijiTableLayouts.SIMPLE);
     kiji.createTable(layout);
     mTableURI = KijiURI.newBuilder(kiji.getURI()).withTableName(layout.getName()).build();
-    mZKClient = HBaseFactory.Provider.get().getZooKeeperClient(kiji.getURI());
-    mZKMonitor = new ZooKeeperMonitor(mZKClient);
+    mZKClient = ZooKeeperUtils.getZooKeeperClient(
+        HBaseFactory.Provider.get().getZooKeeperEnsemble(mTableURI));
+
+    CuratorFramework zkClient =
+        ZooKeeperUtils.getZooKeeperClient(
+            HBaseFactory.Provider.get().getZooKeeperEnsemble(kiji.getURI()));
 
     mInstanceMonitor = new InstanceMonitor(
         mUserName,
@@ -63,13 +66,12 @@ public class TestInstanceMonitor extends KijiClientTest {
         kiji.getURI(),
         kiji.getSchemaTable(),
         kiji.getMetaTable(),
-        mZKMonitor);
+        zkClient);
   }
 
   @After
   public void tearDown() throws Exception {
-    mZKMonitor.close();
-    mZKClient.release();
+    mZKClient.close();
     mInstanceMonitor.close();
   }
 
@@ -98,11 +100,11 @@ public class TestInstanceMonitor extends KijiClientTest {
   @Test
   public void testLosingReferenceToTableLayoutMonitorWillUpdateZooKeeper() throws Exception {
     final BlockingQueue<Multimap<String, String>> usersQueue = Queues.newSynchronousQueue();
-    UsersTracker tracker =
-        mZKMonitor.newTableUsersTracker(mTableURI,
-            new TestZooKeeperMonitor.QueueingUsersUpdateHandler(usersQueue));
+    TableUsersTracker tracker =
+        new TableUsersTracker(mZKClient, mTableURI,
+            new QueueingTableUsersUpdateHandler(usersQueue));
     try {
-      tracker.open();
+      tracker.start();
       Assert.assertEquals(ImmutableSetMultimap.<String, String>of(),
           usersQueue.poll(1, TimeUnit.SECONDS));
 

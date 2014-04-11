@@ -31,7 +31,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.MapMaker;
-import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.curator.framework.CuratorFramework;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -44,8 +44,10 @@ import org.kiji.schema.KijiSchemaTable;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.RuntimeInterruptedException;
 import org.kiji.schema.impl.LayoutConsumer;
-import org.kiji.schema.layout.impl.ZooKeeperMonitor;
 import org.kiji.schema.util.AutoReferenceCounted;
+import org.kiji.schema.zookeeper.TableLayoutTracker;
+import org.kiji.schema.zookeeper.TableLayoutUpdateHandler;
+import org.kiji.schema.zookeeper.TableUserRegistration;
 
 /**
  * TableLayoutMonitor provides three services for users of table layouts:
@@ -76,9 +78,9 @@ public final class TableLayoutMonitor implements AutoReferenceCounted {
 
   private final KijiMetaTable mMetaTable;
 
-  private final ZooKeeperMonitor.LayoutTracker mLayoutTracker;
+  private final TableLayoutTracker mTableLayoutTracker;
 
-  private final ZooKeeperMonitor.TableUserRegistration mUserRegistration;
+  private final TableUserRegistration mUserRegistration;
 
   private final CountDownLatch mInitializationLatch;
 
@@ -104,7 +106,7 @@ public final class TableLayoutMonitor implements AutoReferenceCounted {
    * @param tableURI of table being registered.
    * @param schemaTable of Kiji table.
    * @param metaTable of Kiji table.
-   * @param zkMonitor ZooKeeper connection to register monitor with, or null if ZooKeeper is
+   * @param zkClient ZooKeeper connection to register monitor with, or null if ZooKeeper is
    *        unavailable (SYSTEM_1_0).
    */
   public TableLayoutMonitor(
@@ -112,18 +114,19 @@ public final class TableLayoutMonitor implements AutoReferenceCounted {
       KijiURI tableURI,
       KijiSchemaTable schemaTable,
       KijiMetaTable metaTable,
-      ZooKeeperMonitor zkMonitor) {
+      CuratorFramework zkClient) {
     mTableURI = tableURI;
     mSchemaTable = schemaTable;
     mMetaTable = metaTable;
-    if (zkMonitor == null) {
-      mLayoutTracker = null;
+    if (zkClient == null) {
+      mTableLayoutTracker = null;
       mUserRegistration = null;
       mInitializationLatch = null;
     } else {
-      mUserRegistration = zkMonitor.newTableUserRegistration(userID, tableURI);
+      mUserRegistration = new TableUserRegistration(zkClient, tableURI, userID);
       mInitializationLatch = new CountDownLatch(1);
-      mLayoutTracker = zkMonitor.newTableLayoutTracker(
+      mTableLayoutTracker = new TableLayoutTracker(
+          zkClient,
           mTableURI,
           new InnerLayoutUpdater(
               mUserRegistration,
@@ -143,8 +146,8 @@ public final class TableLayoutMonitor implements AutoReferenceCounted {
    * @throws IOException on unrecoverable ZooKeeper error.
    */
   public TableLayoutMonitor start() throws IOException {
-    if (mLayoutTracker != null) {
-      mLayoutTracker.open();
+    if (mTableLayoutTracker != null) {
+      mTableLayoutTracker.start();
       try {
         mInitializationLatch.await();
       } catch (InterruptedException e) {
@@ -161,7 +164,7 @@ public final class TableLayoutMonitor implements AutoReferenceCounted {
   /** {@inheritDoc} */
   @Override
   public Collection<Closeable> getCloseableResources() {
-    return ImmutableList.of(mUserRegistration, mLayoutTracker);
+    return ImmutableList.of(mUserRegistration, mTableLayoutTracker);
   }
 
   /**
@@ -234,9 +237,9 @@ public final class TableLayoutMonitor implements AutoReferenceCounted {
   /**
    * Updates the layout of this table in response to a layout update pushed from ZooKeeper.
    */
-  private static final class InnerLayoutUpdater implements ZooKeeperMonitor.LayoutUpdateHandler {
+  private static final class InnerLayoutUpdater implements TableLayoutUpdateHandler {
 
-    private final ZooKeeperMonitor.TableUserRegistration mUserRegistration;
+    private final TableUserRegistration mUserRegistration;
 
     private final CountDownLatch mInitializationLatch;
 
@@ -263,7 +266,7 @@ public final class TableLayoutMonitor implements AutoReferenceCounted {
      * @param schemaTable containing schema information.
      */
     private InnerLayoutUpdater(
-        ZooKeeperMonitor.TableUserRegistration userRegistration,
+        TableUserRegistration userRegistration,
         CountDownLatch initializationLatch,
         AtomicReference<LayoutCapsule> layoutCapsule,
         KijiURI tableURI,
@@ -280,21 +283,18 @@ public final class TableLayoutMonitor implements AutoReferenceCounted {
       mSchemaTable = schemaTable;
     }
 
-
     /** {@inheritDoc} */
     @Override
-    public void update(final byte[] layoutBytes) {
+    public void update(final String newLayoutID) {
       final String currentLayoutId =
           (mLayoutCapsule.get() == null)
               ? null
               : mLayoutCapsule.get().getLayout().getDesc().getLayoutId();
-      final String newLayoutId = Bytes.toString(layoutBytes);
       if (currentLayoutId == null) {
-        LOG.debug("Setting initial layout for table {} to layout ID {}.",
-            mTableURI, newLayoutId);
+        LOG.debug("Setting initial layout for table {} to layout ID {}.", mTableURI, newLayoutID);
       } else {
         LOG.debug("Updating layout for table {} from layout ID {} to layout ID {}.",
-            mTableURI, currentLayoutId, newLayoutId);
+            mTableURI, currentLayoutId, newLayoutID);
       }
 
       try {
@@ -308,9 +308,9 @@ public final class TableLayoutMonitor implements AutoReferenceCounted {
       KijiTableLayout newLayout = mLayoutCapsule.get().getLayout();
 
       Preconditions.checkState(
-          Objects.equal(newLayout.getDesc().getLayoutId(), newLayoutId),
+          Objects.equal(newLayout.getDesc().getLayoutId(), newLayoutID),
           "New layout ID %s does not match most recent layout ID %s from meta-table.",
-          newLayoutId, newLayout.getDesc().getLayoutId());
+          newLayoutID, newLayout.getDesc().getLayoutId());
 
       // Propagates the new layout to all consumers:
       for (LayoutConsumer consumer : ImmutableSet.copyOf(mConsumers)) {
@@ -325,7 +325,11 @@ public final class TableLayoutMonitor implements AutoReferenceCounted {
       // Registers this KijiTable in ZooKeeper as a user of the new table layout,
       // and unregisters as a user of the former table layout.
       try {
-        mUserRegistration.updateRegisteredLayout(newLayoutId);
+        if (currentLayoutId == null) {
+          mUserRegistration.start(newLayoutID);
+        } else {
+          mUserRegistration.updateLayoutID(newLayoutID);
+        }
       } catch (IOException ioe) {
         throw new KijiIOException(ioe.getCause());
       }

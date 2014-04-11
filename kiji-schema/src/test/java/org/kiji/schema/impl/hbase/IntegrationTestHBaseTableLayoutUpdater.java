@@ -18,10 +18,10 @@
  */
 package org.kiji.schema.impl.hbase;
 
-import java.util.List;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.TimeUnit;
 
-import com.google.common.collect.Lists;
-import org.apache.hadoop.hbase.util.Bytes;
+import com.google.common.collect.Queues;
 import org.junit.Assert;
 import org.junit.Test;
 import org.slf4j.Logger;
@@ -32,12 +32,11 @@ import org.kiji.schema.KijiTable;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.avro.TableLayoutDesc;
 import org.kiji.schema.layout.KijiTableLayouts;
-import org.kiji.schema.layout.impl.ZooKeeperClient;
 import org.kiji.schema.layout.impl.ZooKeeperMonitor;
-import org.kiji.schema.layout.impl.ZooKeeperMonitor.LayoutTracker;
-import org.kiji.schema.layout.impl.ZooKeeperMonitor.LayoutUpdateHandler;
 import org.kiji.schema.testutil.AbstractKijiIntegrationTest;
 import org.kiji.schema.util.ProtocolVersion;
+import org.kiji.schema.zookeeper.TableLayoutTracker;
+import org.kiji.schema.zookeeper.TestTableLayoutTracker.QueuingTableLayoutUpdateHandler;
 
 public class IntegrationTestHBaseTableLayoutUpdater extends AbstractKijiIntegrationTest {
   private static final Logger LOG =
@@ -70,34 +69,20 @@ public class IntegrationTestHBaseTableLayoutUpdater extends AbstractKijiIntegrat
 
     final Kiji kiji = Kiji.Factory.open(uri);
     try {
-      final ZooKeeperClient zkClient = ((HBaseKiji) kiji).getZKClient();  // owned by kiji
-      final ZooKeeperMonitor monitor = new ZooKeeperMonitor(zkClient);
+      final ZooKeeperMonitor monitor = ((HBaseKiji) kiji).getZooKeeperMonitor();
       try {
         kiji.createTable(layout1);
 
         final KijiTable table = kiji.openTable("table_name");
         try {
-          final List<String> layoutIDs = Lists.newArrayList();
+          final BlockingQueue<String> layoutQueue = Queues.newSynchronousQueue();
 
-          final LayoutTracker tracker = monitor.newTableLayoutTracker(table.getURI(),
-              new LayoutUpdateHandler() {
-                /** {@inheritDoc} */
-                @Override
-                public void update(byte[] layout) {
-                  synchronized (layoutIDs) {
-                    layoutIDs.add(Bytes.toString(layout));
-                    layoutIDs.notifyAll();
-                  }
-                }
-              });
-          tracker.open();
+          final TableLayoutTracker tracker =
+              new TableLayoutTracker(((HBaseKiji) kiji).getZKClient(), table.getURI(),
+                  new QueuingTableLayoutUpdateHandler(layoutQueue))
+                .start();
 
-          synchronized (layoutIDs) {
-            while ((layoutIDs.size() < 1))  {
-              layoutIDs.wait();
-            }
-            Assert.assertEquals("1", layoutIDs.get(0));
-          }
+          Assert.assertEquals("1", layoutQueue.poll(5, TimeUnit.SECONDS));
 
           final HBaseTableLayoutUpdater updater =
               new HBaseTableLayoutUpdater((HBaseKiji) kiji, table.getURI(), layout2);
@@ -115,14 +100,9 @@ public class IntegrationTestHBaseTableLayoutUpdater extends AbstractKijiIntegrat
             };
             thread.start();
 
-            synchronized (layoutIDs) {
-              while ((layoutIDs.size() < 2))  {
-                layoutIDs.wait();
-              }
-              Assert.assertEquals("2", layoutIDs.get(1));
-            }
+            Assert.assertEquals("2", layoutQueue.poll(5, TimeUnit.SECONDS));
+
             tracker.close();
-            thread.join();
           } finally {
             updater.close();
           }
