@@ -32,7 +32,6 @@ import org.kiji.schema.KijiTable;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.avro.TableLayoutDesc;
 import org.kiji.schema.layout.KijiTableLayouts;
-import org.kiji.schema.layout.impl.ZooKeeperMonitor;
 import org.kiji.schema.testutil.AbstractKijiIntegrationTest;
 import org.kiji.schema.util.ProtocolVersion;
 import org.kiji.schema.zookeeper.TableLayoutTracker;
@@ -69,48 +68,43 @@ public class IntegrationTestHBaseTableLayoutUpdater extends AbstractKijiIntegrat
 
     final Kiji kiji = Kiji.Factory.open(uri);
     try {
-      final ZooKeeperMonitor monitor = ((HBaseKiji) kiji).getZooKeeperMonitor();
+      kiji.createTable(layout1);
+
+      final KijiTable table = kiji.openTable("table_name");
       try {
-        kiji.createTable(layout1);
+        final BlockingQueue<String> layoutQueue = Queues.newSynchronousQueue();
 
-        final KijiTable table = kiji.openTable("table_name");
+        final TableLayoutTracker tracker =
+            new TableLayoutTracker(((HBaseKiji) kiji).getZKClient(), table.getURI(),
+                new QueuingTableLayoutUpdateHandler(layoutQueue))
+              .start();
+
+        Assert.assertEquals("1", layoutQueue.poll(5, TimeUnit.SECONDS));
+
+        final HBaseTableLayoutUpdater updater =
+            new HBaseTableLayoutUpdater((HBaseKiji) kiji, table.getURI(), layout2);
         try {
-          final BlockingQueue<String> layoutQueue = Queues.newSynchronousQueue();
-
-          final TableLayoutTracker tracker =
-              new TableLayoutTracker(((HBaseKiji) kiji).getZKClient(), table.getURI(),
-                  new QueuingTableLayoutUpdateHandler(layoutQueue))
-                .start();
-
-          Assert.assertEquals("1", layoutQueue.poll(5, TimeUnit.SECONDS));
-
-          final HBaseTableLayoutUpdater updater =
-              new HBaseTableLayoutUpdater((HBaseKiji) kiji, table.getURI(), layout2);
-          try {
-            final Thread thread = new Thread() {
-              /** {@inheritDoc} */
-              @Override
-              public void run() {
-                try {
-                  updater.update();
-                } catch (Exception exn) {
-                  throw new RuntimeException(exn);
-                }
+          final Thread thread = new Thread() {
+                              /** {@inheritDoc} */
+                              @Override
+                              public void run() {
+              try {
+                updater.update();
+              } catch (Exception exn) {
+                throw new RuntimeException(exn);
               }
-            };
-            thread.start();
-
-            Assert.assertEquals("2", layoutQueue.poll(5, TimeUnit.SECONDS));
-
-            tracker.close();
-          } finally {
-            updater.close();
           }
+        };
+          thread.start();
+
+          Assert.assertEquals("2", layoutQueue.poll(5, TimeUnit.SECONDS));
+
+          tracker.close();
         } finally {
-          table.release();
+          updater.close();
         }
       } finally {
-        monitor.close();
+        table.release();
       }
       kiji.deleteTable("table_name");
     } finally {

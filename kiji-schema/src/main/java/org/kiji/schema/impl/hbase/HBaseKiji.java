@@ -63,8 +63,6 @@ import org.kiji.schema.layout.InvalidLayoutException;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.ColumnId;
 import org.kiji.schema.layout.impl.HTableSchemaTranslator;
-import org.kiji.schema.layout.impl.ZooKeeperClient;
-import org.kiji.schema.layout.impl.ZooKeeperMonitor;
 import org.kiji.schema.security.KijiSecurityException;
 import org.kiji.schema.security.KijiSecurityManager;
 import org.kiji.schema.util.Debug;
@@ -141,9 +139,6 @@ public final class HBaseKiji implements Kiji {
 
   /** ZooKeeper client for this Kiji instance. */
   private final CuratorFramework mZKClient;
-
-  /** Monitor to register Kiji instance users. */
-  private final ZooKeeperMonitor mMonitor;
 
   /** Provides table layout updates and user registrations. */
   private final InstanceMonitor mInstanceMonitor;
@@ -251,18 +246,9 @@ public final class HBaseKiji implements Kiji {
       //  - to receive table layout updates.
       mZKClient =
           ZooKeeperUtils.getZooKeeperClient(HBaseFactory.Provider.get().getZooKeeperEnsemble(mURI));
-      try {
-        ZooKeeperClient zkClient = HBaseFactory.Provider.get().getZooKeeperClient(mURI);
-        mMonitor = new ZooKeeperMonitor(zkClient);
-        zkClient.release();
-      } catch (KeeperException ke) {
-        // Unrecoverable KeeperException:
-        throw new IOException(ke);
-      }
     } else {
       // system-1.x clients do not need a ZooKeeper connection.
       mZKClient = null;
-      mMonitor = null;
     }
 
     /* Unique identifier for this Kiji instance as a live Kiji client. */
@@ -792,7 +778,6 @@ public final class HBaseKiji implements Kiji {
       mAdmin = null;
       mSecurityManager = null;
     }
-    ResourceUtils.closeOrLog(mMonitor);
     ResourceUtils.closeOrLog(mZKClient);
 
     if (oldState != State.UNINITIALIZED) {
@@ -886,16 +871,6 @@ public final class HBaseKiji implements Kiji {
   }
 
   /**
-   * Returns the ZooKeeperMonitor instance for this Kiji instance.
-   *
-   * @return the ZooKeeper client for this Kiji instance.
-   *     Null if the data version &le; {@code system-2.0}.
-   */
-  ZooKeeperMonitor getZooKeeperMonitor() {
-    return mMonitor;
-  }
-
-  /**
    * Creates a Kiji table in an HBase instance, without checking for validation compatibility and
    * without applying permissions.
    *
@@ -952,6 +927,5 @@ public final class HBaseKiji implements Kiji {
       throw new KijiAlreadyExistsException(
           String.format("Kiji table '%s' already exists.", tableURI), tableURI);
     }
-
   }
 }

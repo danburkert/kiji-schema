@@ -41,8 +41,14 @@ import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.RuntimeInterruptedException;
 import org.kiji.schema.layout.impl.ZooKeeperClient;
 
-/** Distributed lock on top of ZooKeeper. */
+/**
+ * Distributed lock on top of ZooKeeper.
+ *
+ * @deprecated use a {@link org.kiji.schema.zookeeper.ZooKeeperLock} instead.
+ *    Will be removed in KijiSchema 2.0.
+ */
 @ApiAudience.Private
+@Deprecated
 public final class ZooKeeperLock implements Lock, Closeable {
   private static final Logger LOG = LoggerFactory.getLogger(ZooKeeperLock.class);
   private static final Logger CLEANUP_LOG =

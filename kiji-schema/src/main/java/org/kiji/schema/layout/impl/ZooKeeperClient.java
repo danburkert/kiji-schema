@@ -54,8 +54,12 @@ import org.kiji.schema.util.ZooKeeperLock;
 
 /**
  * ZooKeeper client interface.
+ *
+ * @deprecated use a {@link org.apache.curator.framework.CuratorFramework} instead.
+ *    Will be removed in KijiSchema 2.0.
  */
 @ApiAudience.Private
+@Deprecated
 public final class ZooKeeperClient implements ReferenceCountable<ZooKeeperClient> {
   private static final Logger LOG = LoggerFactory.getLogger(ZooKeeperClient.class);
 

@@ -42,7 +42,6 @@ import org.kiji.schema.avro.TableLayoutDesc;
 import org.kiji.schema.layout.InvalidLayoutException;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.TableLayoutUpdateValidator;
-import org.kiji.schema.layout.impl.ZooKeeperMonitor;
 import org.kiji.schema.util.Lock;
 import org.kiji.schema.util.Time;
 import org.kiji.schema.zookeeper.TableLayoutTracker;
@@ -66,7 +65,6 @@ public class HBaseTableLayoutUpdater {
 
   private final HBaseKiji mKiji;
   private final KijiURI mTableURI;
-  private final ZooKeeperMonitor mMonitor;
   private final CuratorFramework mZKClient;
 
   private final UpdaterUsersUpdateHandler mUsersUpdateHandler = new UpdaterUsersUpdateHandler();
@@ -136,7 +134,7 @@ public class HBaseTableLayoutUpdater {
         }
       }
     }
-  };
+  }
 
   // -----------------------------------------------------------------------------------------------
 
@@ -218,7 +216,6 @@ public class HBaseTableLayoutUpdater {
     mKiji.retain();
     mTableURI = tableURI;
     mZKClient = mKiji.getZKClient();
-    mMonitor = mKiji.getZooKeeperMonitor();
     mLayoutUpdate = layoutUpdate;
   }
 
