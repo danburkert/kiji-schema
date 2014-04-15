@@ -53,6 +53,7 @@ import org.kiji.schema.KijiRowData;
 import org.kiji.schema.KijiTableReaderBuilder;
 import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.impl.BoundColumnReaderSpec;
+import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.layout.ColumnReaderSpec;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;

@@ -48,7 +48,6 @@ import org.kiji.schema.KijiCellEncoder;
 import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiTableWriter;
 import org.kiji.schema.NoSuchColumnException;
-import org.kiji.schema.avro.SchemaType;
 import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
 import org.kiji.schema.impl.LayoutConsumer;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
@@ -128,7 +127,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
      *
      * @return the column name translator from this container.
      */
-    public KijiColumnNameTranslator getColumnNameTranslator() {
+    public KijiColumnNameTranslator getKijiColumnNameTranslator() {
       return mTranslator;
     }
 
@@ -229,7 +228,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
     final KijiColumnName columnName = new KijiColumnName(family, qualifier);
     final WriterLayoutCapsule capsule = mWriterLayoutCapsule;
     final TranslatedColumnName translatedColumnName =
-        capsule.getColumnNameTranslator().toTranslatedColumnName(columnName);
+        capsule.getKijiColumnNameTranslator().toTranslatedColumnName(columnName);
 
     final KijiCellEncoder cellEncoder =
         capsule.getCellEncoderProvider().getEncoder(family, qualifier);

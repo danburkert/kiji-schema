@@ -60,6 +60,7 @@ import org.kiji.schema.avro.RowKeyFormat;
 import org.kiji.schema.avro.RowKeyFormat2;
 import org.kiji.schema.hbase.KijiManagedHBaseTableName;
 import org.kiji.schema.impl.HTableInterfaceFactory;
+import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.impl.LayoutConsumer;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
@@ -149,7 +150,6 @@ public final class HBaseKijiTable implements KijiTable {
    * in {@link #closeResources()}. No other method should modify this pointer.
    **/
   private volatile TableLayoutMonitor mLayoutMonitor;
-
   /**
    * Construct an opened Kiji table stored in HBase.
    *
