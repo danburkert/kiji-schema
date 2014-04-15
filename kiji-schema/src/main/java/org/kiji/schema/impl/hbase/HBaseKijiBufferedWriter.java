@@ -52,7 +52,9 @@ import org.kiji.schema.KijiTableNotFoundException;
 import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
+import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.impl.LayoutConsumer;
+import org.kiji.schema.impl.hbase.HBaseKijiTableWriter.WriterLayoutCapsule;
 import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout;
 import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout.ColumnLayout;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
@@ -90,7 +92,7 @@ public final class HBaseKijiBufferedWriter implements KijiBufferedWriter {
    * All state which should be modified atomically to reflect an update to the underlying table's
    * layout.
    */
-  private volatile HBaseKijiTableWriter.WriterLayoutCapsule mWriterLayoutCapsule = null;
+  private volatile WriterLayoutCapsule mWriterLayoutCapsule = null;
 
   /** Local write buffers. */
   private Map<EntityId, Put> mPutBuffer = new HashMap<EntityId, Put>();
@@ -123,7 +125,7 @@ public final class HBaseKijiBufferedWriter implements KijiBufferedWriter {
   private final class InnerLayoutUpdater implements LayoutConsumer {
     /** {@inheritDoc} */
     @Override
-    public void update(final HBaseKijiTable.LayoutCapsule capsule) throws IOException {
+    public void update(final LayoutCapsule capsule) throws IOException {
       synchronized (mInternalLock) {
         if (mState == State.CLOSED) {
           LOG.debug("BufferedWriter instance is closed; ignoring layout update.");
@@ -157,7 +159,7 @@ public final class HBaseKijiBufferedWriter implements KijiBufferedWriter {
               mTable.getURI(),
               capsule.getLayout().getDesc().getLayoutId());
         }
-        mWriterLayoutCapsule = new HBaseKijiTableWriter.WriterLayoutCapsule(
+        mWriterLayoutCapsule = new WriterLayoutCapsule(
             provider,
             capsule.getLayout(),
             capsule.getKijiColumnNameTranslator());
@@ -241,9 +243,9 @@ public final class HBaseKijiBufferedWriter implements KijiBufferedWriter {
   public <T> void put(EntityId entityId, String family, String qualifier, long timestamp, T value)
       throws IOException {
     final KijiColumnName columnName = new KijiColumnName(family, qualifier);
-    final HBaseKijiTableWriter.WriterLayoutCapsule capsule = mWriterLayoutCapsule;
+    final WriterLayoutCapsule capsule = mWriterLayoutCapsule;
     final HBaseColumnName hbaseColumnName =
-        capsule.getColumnNameTranslator().toHBaseColumnName(columnName);
+        capsule.getKijiColumnNameTranslator().toHBaseColumnName(columnName);
 
     final KijiCellEncoder cellEncoder =
         capsule.getCellEncoderProvider().getEncoder(family, qualifier);
@@ -298,7 +300,7 @@ public final class HBaseKijiBufferedWriter implements KijiBufferedWriter {
   @Override
   public void deleteFamily(EntityId entityId, String family, long upToTimestamp)
       throws IOException {
-    final HBaseKijiTableWriter.WriterLayoutCapsule capsule = mWriterLayoutCapsule;
+    final WriterLayoutCapsule capsule = mWriterLayoutCapsule;
     final FamilyLayout familyLayout = capsule.getLayout().getFamilyMap().get(family);
     if (null == familyLayout) {
       throw new NoSuchColumnException(String.format("Family '%s' not found.", family));
@@ -317,7 +319,7 @@ public final class HBaseKijiBufferedWriter implements KijiBufferedWriter {
     }
 
     // The only data in this HBase family is the one Kiji family, so we can delete everything.
-    final HBaseColumnName hbaseColumnName = capsule.getColumnNameTranslator()
+    final HBaseColumnName hbaseColumnName = capsule.getKijiColumnNameTranslator()
         .toHBaseColumnName(new KijiColumnName(family));
     final Delete delete = new Delete(entityId.getHBaseRowKey());
     delete.deleteFamily(hbaseColumnName.getFamily(), upToTimestamp);
@@ -347,7 +349,7 @@ public final class HBaseKijiBufferedWriter implements KijiBufferedWriter {
       final String qualifier = columnLayout.getName();
       final KijiColumnName column = new KijiColumnName(familyName, qualifier);
       final HBaseColumnName hbaseColumnName =
-          mWriterLayoutCapsule.getColumnNameTranslator().toHBaseColumnName(column);
+          mWriterLayoutCapsule.getKijiColumnNameTranslator().toHBaseColumnName(column);
       delete.deleteColumns(
           hbaseColumnName.getFamily(), hbaseColumnName.getQualifier(), upToTimestamp);
     }
@@ -377,7 +379,7 @@ public final class HBaseKijiBufferedWriter implements KijiBufferedWriter {
     // 2. Send a delete() for each of the HBase qualifiers found in the previous step.
 
     final String familyName = familyLayout.getName();
-    final HBaseColumnName hbaseColumnName = mWriterLayoutCapsule.getColumnNameTranslator()
+    final HBaseColumnName hbaseColumnName = mWriterLayoutCapsule.getKijiColumnNameTranslator()
         .toHBaseColumnName(new KijiColumnName(familyName));
     final byte[] hbaseRow = entityId.getHBaseRowKey();
 
@@ -425,7 +427,7 @@ public final class HBaseKijiBufferedWriter implements KijiBufferedWriter {
   @Override
   public void deleteColumn(EntityId entityId, String family, String qualifier, long upToTimestamp)
       throws IOException {
-    final HBaseColumnName hbaseColumnName = mWriterLayoutCapsule.getColumnNameTranslator()
+    final HBaseColumnName hbaseColumnName = mWriterLayoutCapsule.getKijiColumnNameTranslator()
         .toHBaseColumnName(new KijiColumnName(family, qualifier));
     final Delete delete = new Delete(entityId.getHBaseRowKey())
         .deleteColumns(hbaseColumnName.getFamily(), hbaseColumnName.getQualifier(), upToTimestamp);

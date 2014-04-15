@@ -69,6 +69,7 @@ import org.kiji.schema.avro.RowKeyFormat;
 import org.kiji.schema.avro.RowKeyFormat2;
 import org.kiji.schema.hbase.KijiManagedHBaseTableName;
 import org.kiji.schema.impl.HTableInterfaceFactory;
+import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.impl.LayoutConsumer;
 import org.kiji.schema.impl.Versions;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
@@ -194,7 +195,7 @@ public final class HBaseKijiTable implements KijiTable {
   /**
    * Set of outstanding layout consumers associated with this table.  Updating the layout of this
    * table requires calling
-   * {@link LayoutConsumer#update(org.kiji.schema.impl.hbase.HBaseKijiTable.LayoutCapsule)} on all
+   * {@link LayoutConsumer#update(org.kiji.schema.impl.LayoutCapsule)} on all
    * registered consumers.
    */
   private final Set<LayoutConsumer> mLayoutConsumers =
@@ -209,7 +210,7 @@ public final class HBaseKijiTable implements KijiTable {
    * readers and writers need to be able to override CellSpecs.  Does not include EntityIdFactory
    * because currently there are no valid table layout updates that modify the row key encoding.
    */
-  public static final class LayoutCapsule {
+  public static final class HBaseLayoutCapsule implements org.kiji.schema.impl.LayoutCapsule {
     private final KijiTableLayout mLayout;
     private final KijiColumnNameTranslator mTranslator;
     private final KijiTable mTable;
@@ -221,7 +222,7 @@ public final class HBaseKijiTable implements KijiTable {
      * @param translator the KijiColumnNameTranslator for the given layout.
      * @param table the KijiTable to which this capsule is associated.
      */
-    private LayoutCapsule(
+    private HBaseLayoutCapsule(
         final KijiTableLayout layout,
         final KijiColumnNameTranslator translator,
         final KijiTable table) {
@@ -285,7 +286,7 @@ public final class HBaseKijiTable implements KijiTable {
 
       // Update layout capsule
       mLayoutCapsule =
-          new LayoutCapsule(newLayout,
+          new HBaseLayoutCapsule(newLayout,
               KijiColumnNameTranslator.from(newLayout), HBaseKijiTable.this);
 
       // Update all layout consumers.  Safe iteration through a concurrent set requires making a
@@ -388,7 +389,8 @@ public final class HBaseKijiTable implements KijiTable {
             .setSchemaTable(mKiji.getSchemaTable());
         mLayoutMonitor = null;
         mLayoutTracker = null;
-        mLayoutCapsule = new LayoutCapsule(layout, KijiColumnNameTranslator.from(layout), this);
+        mLayoutCapsule =
+            new HBaseLayoutCapsule(layout, KijiColumnNameTranslator.from(layout), this);
 
       } catch (KijiTableNotFoundException ktnfe) {
         closeResources();
@@ -512,8 +514,8 @@ public final class HBaseKijiTable implements KijiTable {
   /**
    * <p>
    * Get the set of registered layout consumers.  All layout consumers should be updated using
-   * {@link LayoutConsumer#update(org.kiji.schema.impl.hbase.HBaseKijiTable.LayoutCapsule)} before
-   * this table reports that it has successfully update its layout.
+   * {@link LayoutConsumer#update(org.kiji.schema.impl.LayoutCapsule)} before this
+   * table reports that it has successfully update its layout.
    * </p>
    * <p>
    * This method is package private for testing purposes only.  It should not be used externally.
@@ -541,7 +543,7 @@ public final class HBaseKijiTable implements KijiTable {
         "Cannot update layout consumers for a KijiTable in state %s.", state);
     layout.setSchemaTable(mKiji.getSchemaTable());
     final LayoutCapsule capsule =
-        new LayoutCapsule(layout, KijiColumnNameTranslator.from(layout), this);
+        new HBaseLayoutCapsule(layout, KijiColumnNameTranslator.from(layout), this);
     for (LayoutConsumer consumer : ImmutableSet.copyOf(mLayoutConsumers)) {
       consumer.update(capsule);
     }
