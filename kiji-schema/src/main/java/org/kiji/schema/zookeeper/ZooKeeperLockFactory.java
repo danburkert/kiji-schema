@@ -40,10 +40,10 @@ public class ZooKeeperLockFactory implements LockFactory {
   /**
    * Create a new ZooKeeperLock factory with the provided ZooKeeper connection.
    *
-   * @param ZKClient connection to ZooKeeper.
+   * @param zkClient connection to ZooKeeper.
    */
-  public ZooKeeperLockFactory(CuratorFramework ZKClient) {
-    mZKClient = ZKClient;
+  public ZooKeeperLockFactory(CuratorFramework zkClient) {
+    mZKClient = zkClient;
   }
 
   /** {@inheritDoc}. */
