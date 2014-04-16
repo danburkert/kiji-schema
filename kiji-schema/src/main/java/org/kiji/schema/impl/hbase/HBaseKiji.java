@@ -246,6 +246,9 @@ public final class HBaseKiji implements Kiji {
       //  - to receive table layout updates.
       mZKClient =
           ZooKeeperUtils.getZooKeeperClient(HBaseFactory.Provider.get().getZooKeeperEnsemble(mURI));
+      HBaseFactory.Provider.get().getZooKeeperClient(mURI).release();
+
+      LOG.warn("zookeeper ensemble: {}", HBaseFactory.Provider.get().getZooKeeperEnsemble(mURI));
     } else {
       // system-1.x clients do not need a ZooKeeper connection.
       mZKClient = null;

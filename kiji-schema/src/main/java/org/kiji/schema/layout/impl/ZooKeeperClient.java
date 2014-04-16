@@ -98,7 +98,7 @@ public final class ZooKeeperClient implements ReferenceCountable<ZooKeeperClient
       if (existingClient == null) {
         final ZooKeeperClient newClient = new ZooKeeperClient(address).open();
         ZOOKEEPER_CACHE.put(address, newClient);
-        return newClient;
+        return newClient.retain();
       } else {
         return existingClient.retain();
       }
