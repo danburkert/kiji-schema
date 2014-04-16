@@ -279,7 +279,7 @@ import org.kiji.schema.util.ToJson;
  * For compatibility with existing HBase tables, the notion of a Kiji locality group can be
  * ignored, mapping Kiji family and column names directly to their HBase equivalents.
  * This translation happens in
- *   {@link org.kiji.schema.layout.impl.hbase.HBaseNativeColumnNameTranslator}
+ *   {@link org.kiji.schema.layout.impl.hbase.NativeColumnNameTranslator}
  * In this mode:
  * <ul>
  *   <li>Kiji locality groups and column families are translated into HBase families.</li>

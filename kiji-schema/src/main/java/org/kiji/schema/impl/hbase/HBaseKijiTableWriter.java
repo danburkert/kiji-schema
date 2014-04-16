@@ -104,7 +104,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
   public static final class WriterLayoutCapsule {
     private final CellEncoderProvider mCellEncoderProvider;
     private final KijiTableLayout mLayout;
-    private final KijiColumnNameTranslator mTranslator;
+    private final ColumnNameTranslator mTranslator;
 
     /**
      * Default constructor.
@@ -116,7 +116,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
     public WriterLayoutCapsule(
         final CellEncoderProvider cellEncoderProvider,
         final KijiTableLayout layout,
-        final KijiColumnNameTranslator translator) {
+        final ColumnNameTranslator translator) {
       mCellEncoderProvider = cellEncoderProvider;
       mLayout = layout;
       mTranslator = translator;
@@ -151,7 +151,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
   }
 
   /** Provides for the updating of this Writer in response to a table layout update. */
-  private final class InnerLayoutUpdater implements LayoutConsumer {
+  private final class InnerLayoutUpdater {
     /** {@inheritDoc} */
     @Override
     public void update(final LayoutCapsule capsule) throws IOException {
@@ -184,7 +184,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
       mWriterLayoutCapsule = new WriterLayoutCapsule(
           provider,
           capsule.getLayout(),
-          capsule.getKijiColumnNameTranslator());
+          capsule.getColumnNameTranslator());
     }
   }
 

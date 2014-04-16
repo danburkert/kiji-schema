@@ -266,7 +266,7 @@ public final class HBaseKijiResult implements KijiResult {
   private final EntityId mEntityId;
   private final KijiDataRequest mDataRequest;
   private final Result mUnpagedResult;
-  private final KijiColumnNameTranslator mColumnNameTranslator;
+  private final ColumnNameTranslator mColumnNameTranslator;
   private final CellDecoderProvider mCellDecoderProvider;
   private final HBaseKijiTable mTable;
   private final KeyValueToKijiCell<Object> mKeyValueToKijiCell;
@@ -288,7 +288,7 @@ public final class HBaseKijiResult implements KijiResult {
       final EntityId entityId,
       final KijiDataRequest dataRequest,
       final Result unPagedResult,
-      final KijiColumnNameTranslator columnNameTranslator,
+      final ColumnNameTranslator columnNameTranslator,
       final CellDecoderProvider cellDecoderProvider,
       final HBaseKijiTable table
   ) {

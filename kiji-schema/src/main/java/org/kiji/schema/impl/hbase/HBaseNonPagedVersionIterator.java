@@ -49,7 +49,7 @@ public final class HBaseNonPagedVersionIterator<T> implements Iterator<KijiCell<
   private static final Logger LOG = LoggerFactory.getLogger(HBaseNonPagedVersionIterator.class);
 
   private final Iterator<KeyValue> mResultIterator;
-  private final KijiColumnNameTranslator mColumnNameTranslator;
+  private final ColumnNameTranslator mColumnNameTranslator;
   private final KijiCellDecoder<T> mCellDecoder;
   private final EntityId mEntityId;
 
@@ -68,7 +68,7 @@ public final class HBaseNonPagedVersionIterator<T> implements Iterator<KijiCell<
    * @param result HBaseResultIterator containing cells from the table.
    */
   public HBaseNonPagedVersionIterator(
-      final KijiColumnNameTranslator columnNameTranslator,
+      final ColumnNameTranslator columnNameTranslator,
       final KijiCellDecoder<T> cellDecoder,
       final EntityId entityId,
       final Iterator<KeyValue> result

@@ -123,7 +123,7 @@ public final class HBaseKijiBufferedWriter implements KijiBufferedWriter {
   private State mState = State.UNINITIALIZED;
 
   /** Provides for the updating of this Writer in response to a table layout update. */
-  private final class InnerLayoutUpdater implements LayoutConsumer {
+  private final class InnerLayoutUpdater implements LayoutConsumer<HBaseLayoutCapsule> {
     /** {@inheritDoc} */
     @Override
     public void update(final LayoutCapsule capsule) throws IOException {
@@ -163,7 +163,7 @@ public final class HBaseKijiBufferedWriter implements KijiBufferedWriter {
         mWriterLayoutCapsule = new WriterLayoutCapsule(
             provider,
             capsule.getLayout(),
-            capsule.getKijiColumnNameTranslator());
+            capsule.getColumnNameTranslator());
       }
     }
   }

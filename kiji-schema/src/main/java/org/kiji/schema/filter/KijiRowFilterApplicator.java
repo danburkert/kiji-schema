@@ -36,8 +36,8 @@ import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
 import org.kiji.schema.impl.hbase.HBaseDataRequestAdapter;
 import org.kiji.schema.layout.CellSpec;
-import org.kiji.schema.layout.InvalidLayoutException;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
+import org.kiji.schema.layout.InvalidLayoutException;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.TranslatedColumnName;
 

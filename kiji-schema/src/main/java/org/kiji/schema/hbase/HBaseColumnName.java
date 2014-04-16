@@ -20,6 +20,8 @@
 package org.kiji.schema.hbase;
 
 import com.google.common.base.Objects;
+import org.apache.commons.lang.builder.EqualsBuilder;
+import org.apache.commons.lang.builder.HashCodeBuilder;
 import org.apache.hadoop.hbase.util.Bytes;
 
 import org.kiji.annotations.ApiAudience;
@@ -40,12 +42,6 @@ public final class HBaseColumnName {
   /** The HBase column qualifier. */
   private final byte[] mQualifier;
 
-  /** A cached string version of the family. */
-  private String mFamilyString;
-
-  /** A cached string version of the qualifier. */
-  private String mQualifierString;
-
   /**
    * Creates a new <code>HBaseColumnName</code> instance.
    *
@@ -58,40 +54,12 @@ public final class HBaseColumnName {
   }
 
   /**
-   * Creates a new <code>HBaseColumnName</code> instance.
-   *
-   * @param family HBase family as a String.
-   * @param qualifier HBase qualifier as a String.
-   */
-  public HBaseColumnName(
-      final String family,
-      final String qualifier
-  ) {
-    mFamily = Bytes.toBytes(family);
-    mQualifier = Bytes.toBytes(qualifier);
-    mFamilyString = family;
-    mQualifierString = qualifier;
-  }
-
-  /**
    * Gets the HBase column family.
    *
    * @return The family.
    */
   public byte[] getFamily() {
     return mFamily.clone();
-  }
-
-  /**
-   * Gets the HBase column family as a string.
-   *
-   * @return The family as a string.
-   */
-  public String getFamilyAsString() {
-    if (null == mFamilyString) {
-      mFamilyString = Bytes.toString(mFamily);
-    }
-    return mFamilyString;
   }
 
   /**
@@ -103,36 +71,35 @@ public final class HBaseColumnName {
     return mQualifier.clone();
   }
 
-  /**
-   * Gets the HBase column qualifier as a string.
-   *
-   * @return The qualifier as a string.
-   */
-  public String getQualifierAsString() {
-    if (null == mQualifierString) {
-      mQualifierString = Bytes.toString(mQualifier);
-    }
-    return mQualifierString;
-  }
-
   /** {@inheritDoc} */
   @Override
   public String toString() {
-    return getFamilyAsString() + ":" + getQualifierAsString();
+    return Objects.toStringHelper(this)
+        .add("family", Bytes.toStringBinary(mFamily))
+        .add("qualifier", Bytes.toStringBinary(mQualifier))
+        .toString();
   }
 
   /** {@inheritDoc} */
   @Override
   public int hashCode() {
-    return Objects.hashCode(mFamily, mQualifier);
+    return new HashCodeBuilder()
+        .append(mFamily)
+        .append(mQualifier)
+        .toHashCode();
   }
 
   /** {@inheritDoc} */
   @Override
-  public boolean equals(Object other) {
-    if (!(other instanceof HBaseColumnName)) {
+  public boolean equals(Object obj) {
+    if (!(obj instanceof HBaseColumnName)) {
       return false;
     }
-    return toString().equals(other.toString());
+
+    HBaseColumnName other = (HBaseColumnName) obj;
+    return new EqualsBuilder()
+        .append(mFamily, other.mFamily)
+        .append(mQualifier, other.mQualifier)
+        .isEquals();
   }
 }

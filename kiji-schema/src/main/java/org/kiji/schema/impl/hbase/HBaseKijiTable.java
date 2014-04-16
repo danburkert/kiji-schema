@@ -118,9 +118,6 @@ public final class HBaseKijiTable implements KijiTable {
   /** Tracks the state of this kiji table. */
   private final AtomicReference<State> mState = new AtomicReference<State>(State.UNINITIALIZED);
 
-  /** String representation of the call stack at the time this object is constructed. */
-  private final String mConstructorStack;
-
   /** HTableInterfaceFactory for creating new HTables associated with this KijiTable. */
   private final HTableInterfaceFactory mHTableFactory;
 
@@ -150,6 +147,7 @@ public final class HBaseKijiTable implements KijiTable {
    * in {@link #closeResources()}. No other method should modify this pointer.
    **/
   private volatile TableLayoutMonitor mLayoutMonitor;
+
   /**
    * Construct an opened Kiji table stored in HBase.
    *
@@ -169,10 +167,6 @@ public final class HBaseKijiTable implements KijiTable {
       HTableInterfaceFactory htableFactory,
       TableLayoutMonitor layoutMonitor)
       throws IOException {
-    mConstructorStack = (CLEANUP_LOG.isDebugEnabled())
-        ? Debug.getStackTrace()
-        : ENABLE_CONSTRUCTOR_STACK_LOGGING_MESSAGE;
-
     mKiji = kiji;
     mKiji.retain();
 
@@ -201,7 +195,10 @@ public final class HBaseKijiTable implements KijiTable {
     // Table is now open and must be released properly:
     mRetainCount.set(1);
 
-    DebugResourceTracker.get().registerResource(this, mConstructorStack);
+    String constructorStack = (CLEANUP_LOG.isDebugEnabled())
+        ? Debug.getStackTrace()
+        : ENABLE_CONSTRUCTOR_STACK_LOGGING_MESSAGE;
+    DebugResourceTracker.get().registerResource(this, constructorStack);
 
     final State oldState = mState.getAndSet(State.OPEN);
     Preconditions.checkState(oldState == State.UNINITIALIZED,
@@ -256,7 +253,8 @@ public final class HBaseKijiTable implements KijiTable {
    * @param consumer the LayoutConsumer to be registered.
    * @throws IOException in case of an error updating the LayoutConsumer.
    */
-  public void registerLayoutConsumer(LayoutConsumer consumer) throws IOException {
+  public void registerLayoutConsumer(LayoutConsumer<HBaseLayoutCapsule> consumer)
+      throws IOException {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot register a new layout consumer to a KijiTable in state %s.", state);

@@ -56,7 +56,7 @@ import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.impl.hbase.HBaseKijiRowData;
 import org.kiji.schema.impl.hbase.HBaseKijiTable;
 import org.kiji.schema.layout.CellSpec;
-import org.kiji.schema.layout.KijiColumnNameTranslator;
+import org.kiji.schema.layout.HBaseColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayouts;
 import org.kiji.schema.layout.TranslatedColumnName;
 import org.kiji.schema.layout.impl.LayoutCapsule;
@@ -217,7 +217,7 @@ public class TestHBaseKijiRowData extends KijiClientTest {
 
     HBaseKijiRowData input = new HBaseKijiRowData(mTable, dataRequest, row0, result, null);
     input.getMap();
-    final int integer = (Integer) input.getMostRecentValue("family", "qual3");
+    final int integer = input.getMostRecentValue("family", "qual3");
     assertEquals(42, integer);
   }
 

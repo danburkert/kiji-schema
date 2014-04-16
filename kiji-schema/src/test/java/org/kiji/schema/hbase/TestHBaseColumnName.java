@@ -30,8 +30,8 @@ public class TestHBaseColumnName {
   public void testHBaseColumnName() {
     HBaseColumnName column = new HBaseColumnName(Bytes.toBytes("foo"), Bytes.toBytes("bar"));
     assertArrayEquals(Bytes.toBytes("foo"), column.getFamily());
-    assertEquals("foo", column.getFamilyAsString());
+    assertEquals("foo", Bytes.toString(column.getFamily()));
     assertArrayEquals(Bytes.toBytes("bar"), column.getQualifier());
-    assertEquals("bar", column.getQualifierAsString());
+    assertEquals("bar", Bytes.toString(column.getQualifier()));
   }
 }

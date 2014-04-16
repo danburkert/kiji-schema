@@ -67,11 +67,12 @@ public final class HTableSchemaTranslator {
         tableDescriptor.setMemStoreFlushSize(tableLayoutDesc.getMemstoreFlushsize());
     }
 
-    KijiColumnNameTranslator kijiColumnNameTranslator = KijiColumnNameTranslator.from(tableLayout);
+    KijiColumnNameTranslator columnNameTranslator = KijiColumnNameTranslator.from(tableLayout);
 
     // Add the columns.
-    for (LocalityGroupLayout localityGroup : tableLayout.getLocalityGroupMap().values()) {
-      tableDescriptor.addFamily(toHColumnDescriptor(localityGroup, kijiColumnNameTranslator));
+    for (LocalityGroupLayout localityGroup : tableLayout.getLocalityGroups()) {
+      byte[] hbaseFamilyName = columnNameTranslator.toHBaseFamilyName(localityGroup);
+      tableDescriptor.addFamily(toHColumnDescriptor(localityGroup, hbaseFamilyName));
     }
 
     return tableDescriptor;
@@ -81,7 +82,7 @@ public final class HTableSchemaTranslator {
    * Translates a Kiji locality group into an HColumnDescriptor.
    *
    * @param localityGroup A Kiji locality group.
-   * @param kijiColumnNameTranslator to convert the locality group into the HBase family.
+   * @param hbaseFamilyName Name of HBase family corresponding to the locality group.
    * @return The HColumnDescriptor to use for storing the data in the locality group.
    */
   private static HColumnDescriptor toHColumnDescriptor(
