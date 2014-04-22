@@ -19,6 +19,7 @@
 
 package org.kiji.schema.cassandra;
 
+import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
 
 import org.kiji.annotations.ApiAudience;
@@ -43,13 +44,17 @@ import org.kiji.schema.KijiURI;
  *     KijiInstance: the name of kiji instance managing this table.
  *   </li>
  *   <li>
- *     Type: the type of table (system, schema, meta, table).
+ *     Type: the type of table (system, schema, meta, user).
+ *   </li>
+ *   <li>
+ *     Name: if the type of the table is "user", then its name (the name users of Kiji would use to
+ *     refer to it), is the fourth component.
+ *   </li>
+ *   <li>
+ *     Locality Group: if the type of the table is "user", then the Kiji locality group is the
+ *     fifth component.
  *   </li>
  * </ol>
- *
- * If the type of the table is "table", then its name (the name users of Kiji would use to refer to
- * it) is the fourth and final component.
- * </p>
  *
  * <p>
  * For example, a Cassandra cluster might have the following tables:
@@ -60,17 +65,21 @@ import org.kiji.schema.KijiURI;
  * kiji_default.schema_hash
  * kiji_default.schema_id
  * kiji_default.system
- * kiji_default.table_foo
- * kiji_default.table_bar
+ * kiji_default.t_foo_info
+ * kiji_default.t_foo_data
+ * kiji_default.c_foo
+ * kiji_default.t_bar_default
+ * kiji_default.c_bar
  * kiji_experimental.meta
  * kiji_experimental.schema
  * kiji_experimental.schema_hash
  * kiji_experimental.schema_id
  * kiji_experimental.system
- * kiji_experimental.table_baz
+ * kiji_experimental.t_baz_info
+ * kiji_experimental.c_baz
  * </pre>
  *
- * In this example, there is an Cassandra keyspace completely unrelated to Kiji called "devices."
+ * In this example, there is a Cassandra keyspace completely unrelated to Kiji called "devices."
  * There are two Kiji installations, one called "default" and another called "experimental."  Within
  * the "default" installation, there are two Kiji tables, "foo" and "bar."  Within the
  * "experimental" installation, there is a single Kiji table "baz."
@@ -83,8 +92,8 @@ import org.kiji.schema.KijiURI;
 @ApiStability.Evolving
 public final class KijiManagedCassandraTableName {
 
-  /** The first component of all Cassandra table names managed by Kiji. */
-  public static final String KIJI_COMPONENT = "kiji";
+  /** The first component of all Cassandra keyspaces managed by Kiji. */
+  public static final String KEYSPACE_PREFIX = "kiji";
 
   /** The name component used for the Kiji meta table. */
   private static final String KIJI_META_KEY_VALUE_COMPONENT = "meta_key_value";
@@ -105,16 +114,35 @@ public final class KijiManagedCassandraTableName {
   private static final String KIJI_SYSTEM_COMPONENT = "system";
 
   /** The name component used for all user-space Kiji tables. */
-  private static final String KIJI_TABLE_COMPONENT = "table";
+  private static final String KIJI_USER_TABLE_COMPONENT = "t";
 
   /** The name component used for all storing counters for user-space Kiji tables. */
-  private static final String KIJI_COUNTER_COMPONENT = "counter";
+  private static final String KIJI_USER_COUNTER_COMPONENT = "counter";
 
   /** The Cassandra table name. */
   private final String mCassandraTableName;
 
   /** The Kiji instance name. */
   private final String mKijiInstanceName;
+
+  private enum TableType {
+    META_KEY_VALUE("meta_key_value"),
+    META_LAYOUT("meta_layout"),
+    SCHEMA_HASH("schema_hash"),
+    SCHEMA_ID("schema_id"),
+    SCHEMA_COUNTER("schema_counter"),
+    SYSTEM("system"),
+    USER("t"),
+    USER_COUNTER("c");
+
+    private final String mName;
+    TableType(final String name) {
+      mName = name;
+    }
+    public String getName() {
+      return mName;
+    }
+  }
 
   /**
    * Constructs a Kiji-managed Cassandra table name.  The name will have quotes in it so that it
@@ -128,7 +156,7 @@ public final class KijiManagedCassandraTableName {
     // mCassandraTableName = KIJI_COMPONENT + "_" + kijiInstanceName + "." + type;
     mCassandraTableName = String.format(
         "\"%s_%s\".\"%s\"",
-        KIJI_COMPONENT,
+        KEYSPACE_PREFIX,
         kijiInstanceName,
         type);
     mKijiInstanceName = kijiInstanceName;
@@ -139,26 +167,40 @@ public final class KijiManagedCassandraTableName {
    * counters.  The name will have quotes in it so that it can be used in CQL queries without
    * additional processing (CQL is case-insensitive without quotes).
    *
-   * @param kijiInstanceName The kiji instance name.
-   * @param type The type component of the Cassandra table name.  Should be `KIJI_TABLE_COMPONENT`
-   *     or `KIJI_COUNTER_COMPONENT`.
-   * @param kijiTableName The name of the user-space Kiji table.
+   * @param instanceName The kiji instance name.
+   * @param type The type of the table. Must be `USER` or `USER_COUNTER`.
+   * @param tableName The name of the user-space Kiji table.
+   * @param localityGroup of the user table, if type `USER`, or null.
    */
   private KijiManagedCassandraTableName(
-      String kijiInstanceName,
-      String type,
-      String kijiTableName) {
-    Preconditions.checkArgument(
-        type.equals(KIJI_TABLE_COMPONENT) || type.equals(KIJI_COUNTER_COMPONENT)
-    );
-
-    mCassandraTableName = String.format(
-        "\"%s_%s\".\"%s_%s\"",
-        KIJI_COMPONENT,
-        kijiInstanceName,
-        type,
-        kijiTableName);
-    mKijiInstanceName = kijiInstanceName;
+      String instanceName,
+      TableType type,
+      String tableName,
+      String localityGroup) {
+    switch (type) {
+      case USER: {
+        Preconditions.checkArgument(localityGroup != null, "Locality group may not be null.");
+        mCassandraTableName = String.format(
+            "\"%s_%s\".\"%s_%s_%s\"",
+            KEYSPACE_PREFIX,
+            instanceName,
+            type.getName(),
+            tableName,
+            localityGroup);
+        break;
+      }
+      case USER_COUNTER: {
+        Preconditions.checkArgument(localityGroup != null, "Locality group must be null.");
+        mCassandraTableName = String.format(
+            "\"%s_%s\".\"%s_%s\"",
+            KEYSPACE_PREFIX,
+            instanceName,
+            type.getName(),
+            tableName);
+        break;
+      }
+      default: throw new IllegalArgumentException();
+    }
   }
 
   /**
@@ -233,7 +275,7 @@ public final class KijiManagedCassandraTableName {
   public static KijiManagedCassandraTableName getKijiTableName(KijiURI kijiURI, String tableName) {
     return new KijiManagedCassandraTableName(
         kijiURI.getInstance(),
-        KIJI_TABLE_COMPONENT,
+        KIJI_USER_TABLE_COMPONENT,
         tableName);
   }
 
@@ -250,7 +292,7 @@ public final class KijiManagedCassandraTableName {
       String tableName) {
     return new KijiManagedCassandraTableName(
         kijiURI.getInstance(),
-        KIJI_COUNTER_COMPONENT,
+        KIJI_USER_COUNTER_COMPONENT,
         tableName);
   }
 
@@ -273,7 +315,7 @@ public final class KijiManagedCassandraTableName {
   public static String getCassandraKeyspaceFormattedForCQL(KijiURI kijiURI) {
     return String.format(
         "\"%s_%s\"",
-        KIJI_COMPONENT,
+        KEYSPACE_PREFIX,
         kijiURI.getInstance());
   }
 
