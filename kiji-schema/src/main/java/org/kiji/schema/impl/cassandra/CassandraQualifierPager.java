@@ -40,7 +40,7 @@ import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiColumnPagingNotEnabledException;
 import org.kiji.schema.KijiDataRequest;
 import org.kiji.schema.NoSuchColumnException;
-import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
+import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.filter.KijiColumnFilter;
 import org.kiji.schema.filter.KijiColumnRangeFilter;
 import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
@@ -132,7 +132,7 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
   private void initializeRowIterator() {
     // Issue a paged SELECT statement to get all of the qualifiers for this map family from C*.
     // Get the Cassandra table name for this column family
-    String cassandraTableName = KijiManagedCassandraTableName.getKijiTableName(
+    String cassandraTableName = CassandraTableName.getKijiLocalityGroupTableName(
         mTable.getURI(),
         mTable.getName()).toString();
 

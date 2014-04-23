@@ -34,7 +34,7 @@ import org.kiji.annotations.ApiAudience;
 import org.kiji.annotations.Inheritance;
 import org.kiji.schema.EntityId;
 import org.kiji.schema.KijiBufferedWriter;
-import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
+import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
 import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.impl.LayoutConsumer;
@@ -181,7 +181,7 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
     // Create the CQL statement to insert data.
     // Get a reference to the full name of the C* table for this column.
     // TODO: Refactor this name-creation code somewhere cleaner.
-    KijiManagedCassandraTableName cTableName = KijiManagedCassandraTableName.getKijiTableName(
+    CassandraTableName cTableName = CassandraTableName.getKijiLocalityGroupTableName(
         mTable.getURI(),
         mTable.getName()
     );

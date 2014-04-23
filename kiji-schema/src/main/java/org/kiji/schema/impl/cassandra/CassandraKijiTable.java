@@ -56,7 +56,7 @@ import org.kiji.schema.KijiWriterFactory;
 import org.kiji.schema.RuntimeInterruptedException;
 import org.kiji.schema.avro.RowKeyFormat;
 import org.kiji.schema.avro.RowKeyFormat2;
-import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
+import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.impl.LayoutConsumer;
 import org.kiji.schema.impl.Versions;
@@ -321,7 +321,7 @@ public final class CassandraKijiTable implements KijiTable {
     LOG.debug("Opening Kiji table '{}' with client version '{}'.",
         mTableURI, VersionInfo.getSoftwareVersion());
     mCassandraTableName =
-        KijiManagedCassandraTableName.getKijiTableName(
+        CassandraTableName.getKijiLocalityGroupTableName(
             mTableURI,
             mName).toString();
 

@@ -22,6 +22,7 @@ package org.kiji.schema.impl.cassandra;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -48,7 +49,7 @@ import org.kiji.schema.avro.RowKeyEncoding;
 import org.kiji.schema.avro.RowKeyFormat;
 import org.kiji.schema.avro.TableLayoutDesc;
 import org.kiji.schema.cassandra.CassandraFactory;
-import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
+import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.hbase.HBaseFactory;
 import org.kiji.schema.impl.Versions;
 import org.kiji.schema.layout.InvalidLayoutException;
@@ -607,25 +608,22 @@ public final class CassandraKiji implements Kiji {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot delete table in Kiji instance %s in state %s.", this, state);
-    // Delete from Cassandra.
-    String mainTable = KijiManagedCassandraTableName.getKijiTableName(mURI, tableName).toString();
-    String counterTable =
-        KijiManagedCassandraTableName.getKijiCounterTableName(mURI, tableName).toString();
-    CassandraAdmin admin = getCassandraAdmin();
 
-    admin.disableTable(mainTable);
-    admin.deleteTable(mainTable);
+    final KijiURI tableURI = KijiURI.newBuilder(mURI).withTableName(tableName).build();
 
-    admin.disableTable(counterTable);
-    admin.deleteTable(counterTable);
+    final Set<CassandraTableName> tables =
+        CassandraTableName.getKijiLocalityGroupTableNames(tableURI,
+            mMetaTable.getTableLayout(tableName));
+
+    final CassandraAdmin admin = getCassandraAdmin();
+
+    for (CassandraTableName table : tables) {
+      admin.disableTable(table);
+      admin.deleteTable(table);
+    }
 
     // Delete from the meta table.
     getMetaTable().deleteTable(tableName);
-
-    // If the table persists immediately after deletion attempt, then give up.
-    if (admin.tableExists(mainTable)) {
-      LOG.warn("C* table " + mainTable + " survives deletion attempt. Giving up...");
-    }
   }
 
   /** {@inheritDoc} */
@@ -805,25 +803,18 @@ public final class CassandraKiji implements Kiji {
       }
     }
 
-    // Super-primitive right now.  Assume that max versions is always 1.
-
-    // Get a reference to the name of the Kiji table.
-    String kijiTableName = tableLayout.getName();
-
-    // Create a C* table name for this Kiji table.
-    String tableName =
-        KijiManagedCassandraTableName.getKijiTableName(mURI, kijiTableName).toString();
-
-    // Create the table!
-    mAdmin.createTable(tableName, CQLUtils.getCreateTableStatement(tableName, layout));
+    for (CassandraTableName cassandraTable
+        : CassandraTableName.getCassandraLocalityGroupTableNames(tableURI, layout)) {
+      mAdmin.createTable(cassandraTable, CQLUtils.getCreateTableStatement(cassandraTable, layout));
+      mAdmin.execute(CQLUtils.getCreateIndexStatement(cassandraTable, CQLUtils.VERSION_COL));
+    }
 
     // Add a secondary index on the version.
-    mAdmin.execute(CQLUtils.getCreateIndexStatement(tableName, CQLUtils.VERSION_COL));
 
     // Also create a second table, which we can use for counters.
     // Create a C* table name for this Kiji table.
-    String counterTableName =
-        KijiManagedCassandraTableName.getKijiCounterTableName(mURI, kijiTableName).toString();
+    CassandraTableName counterTableName =
+        CassandraTableName.getKijiCounterTableName(tableURI);
 
     String createCounterTableStatement =
         CQLUtils.getCreateCounterTableStatement(counterTableName, layout);

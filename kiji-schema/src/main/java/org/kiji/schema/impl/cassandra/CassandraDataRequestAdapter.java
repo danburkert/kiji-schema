@@ -38,7 +38,7 @@ import org.kiji.schema.EntityId;
 import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiDataRequest;
 import org.kiji.schema.KijiTableReader;
-import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
+import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
 
 /**
@@ -143,12 +143,12 @@ public class CassandraDataRequestAdapter {
     Preconditions.checkArgument(!(pagingEnabled && bIsScan));
 
     // Get the Cassandra table name for non-counter values.
-    String nonCounterTableName = KijiManagedCassandraTableName.getKijiTableName(
+    String nonCounterTableName = CassandraTableName.getKijiLocalityGroupTableName(
         table.getURI(),
         table.getName()).toString();
 
     // Get the counter table name.
-    String counterTableName = KijiManagedCassandraTableName.getKijiCounterTableName(
+    String counterTableName = CassandraTableName.getKijiCounterTableName(
         table.getURI(),
         table.getName()).toString();
 

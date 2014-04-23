@@ -30,12 +30,11 @@ import com.datastax.driver.core.Session;
 import com.datastax.driver.core.Statement;
 import com.datastax.driver.core.TableMetadata;
 import com.google.common.base.Preconditions;
-import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.kiji.schema.KijiURI;
-import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
+import org.kiji.schema.cassandra.CassandraTableName;
 
 
 /**
@@ -89,7 +88,7 @@ public abstract class CassandraAdmin implements Closeable {
    * @param kijiURI The URI.
    */
   private void createKeyspaceIfMissingForURI(KijiURI kijiURI) {
-    String keyspace = KijiManagedCassandraTableName.getCassandraKeyspaceFormattedForCQL(kijiURI);
+    String keyspace = CassandraTableName.getCassandraKeyspace(kijiURI);
     LOG.info(String.format("Creating keyspace %s (if missing) for %s.", keyspace, kijiURI));
 
     // TODO: Check whether keyspace is > 48 characters long and if so provide Kiji error to user.
@@ -124,10 +123,9 @@ public abstract class CassandraAdmin implements Closeable {
    * @param createTableStatement A string with the table layout.
    * @return An interface for the table.
    */
-  public CassandraTableInterface createTable(String tableName, String createTableStatement) {
-    Preconditions.checkArgument(
-        KijiManagedCassandraTableName.tableNameIsFormattedForCQL(tableName));
-
+  public CassandraTableInterface createTable(
+      CassandraTableName tableName,
+      String createTableStatement) {
     // TODO: Keep track of all tables associated with this session
     LOG.info("Creating table {} with statement {}.", tableName, createTableStatement);
     getSession().execute(createTableStatement);
@@ -146,9 +144,8 @@ public abstract class CassandraAdmin implements Closeable {
    * @param tableName The name of the table for which to return an interface.
    * @return The interface for the specified Cassandra table.
    */
-  public CassandraTableInterface getCassandraTableInterface(String tableName) {
-    Preconditions.checkArgument(
-        KijiManagedCassandraTableName.tableNameIsFormattedForCQL(tableName));
+  public CassandraTableInterface getCassandraTableInterface(
+      CassandraTableName tableName) {
     assert(tableExists(tableName));
     return CassandraTableInterface.createFromCassandraAdmin(this, tableName);
   }
@@ -160,7 +157,7 @@ public abstract class CassandraAdmin implements Closeable {
    *
    * @param tableName of the table to disable.
    */
-  public void disableTable(String tableName) { }
+  public void disableTable(CassandraTableName tableName) { }
 
   // TODO: Just return true for now since we aren't disabling any Cassandra tables yet.
 
@@ -170,7 +167,7 @@ public abstract class CassandraAdmin implements Closeable {
    * @param tableName of the table to check.
    * @return whether the table is enabled.
    */
-  public boolean isTableEnabled(String tableName) {
+  public boolean isTableEnabled(CassandraTableName tableName) {
     return true;
   }
 
@@ -179,9 +176,7 @@ public abstract class CassandraAdmin implements Closeable {
    *
    * @param tableName of the table to delete.
    */
-  public void deleteTable(String tableName) {
-    Preconditions.checkArgument(
-        KijiManagedCassandraTableName.tableNameIsFormattedForCQL(tableName));
+  public void deleteTable(CassandraTableName tableName) {
     // TODO: Check first that the table actually exists?
     String queryString = String.format("DROP TABLE IF EXISTS %s;", tableName);
     LOG.info("Deleting table " + tableName);
@@ -197,7 +192,7 @@ public abstract class CassandraAdmin implements Closeable {
     Preconditions.checkNotNull(getSession());
     Preconditions.checkNotNull(getSession().getCluster());
     Preconditions.checkNotNull(getSession().getCluster().getMetadata());
-    String keyspace = KijiManagedCassandraTableName.getCassandraKeyspaceFormattedForCQL(mKijiURI);
+    String keyspace = CassandraTableName.getCassandraKeyspace(mKijiURI);
     Preconditions.checkNotNull(getSession().getCluster().getMetadata().getKeyspace(keyspace));
     Collection<TableMetadata> tables =
         getSession().getCluster().getMetadata().getKeyspace(keyspace).getTables();
@@ -209,7 +204,7 @@ public abstract class CassandraAdmin implements Closeable {
    */
   public void deleteKeyspace() {
     // TODO: Track whether keyspace exists and assert appropriate keyspace state in all methods.
-    String keyspace = KijiManagedCassandraTableName.getCassandraKeyspaceFormattedForCQL(mKijiURI);
+    String keyspace = CassandraTableName.getCassandraKeyspace(mKijiURI);
     String queryString = "DROP KEYSPACE " + keyspace;
     getSession().execute(queryString);
     assert (!keyspaceExists(keyspace));
@@ -223,25 +218,17 @@ public abstract class CassandraAdmin implements Closeable {
    * @param tableName of the Cassandra table to check for.
    * @return Whether the table exists.
    */
-  public boolean tableExists(String tableName) {
-    Preconditions.checkArgument(
-        KijiManagedCassandraTableName.tableNameIsFormattedForCQL(tableName));
+  public boolean tableExists(CassandraTableName tableName) {
     Preconditions.checkNotNull(getSession());
     Metadata metadata = getSession().getCluster().getMetadata();
 
-    String keyspace = KijiManagedCassandraTableName.getCassandraKeyspaceFormattedForCQL(mKijiURI);
+    String keyspace = CassandraTableName.getCassandraKeyspace(mKijiURI);
 
     if (null == metadata.getKeyspace(keyspace)) {
-      assert(!keyspaceExists(
-          KijiManagedCassandraTableName.getCassandraKeyspaceFormattedForCQL(mKijiURI)
-      ));
+      assert(!keyspaceExists(CassandraTableName.getCassandraKeyspace(mKijiURI)));
       return false;
     }
-
-    // Use the quoted table name without the keyspace.
-    String quotedTableNameNoKeyspace = StringUtils.replace(tableName, keyspace + ".", "", 1);
-    Preconditions.checkArgument(!quotedTableNameNoKeyspace.equals(tableName));
-    return metadata.getKeyspace(keyspace).getTable(quotedTableNameNoKeyspace) != null;
+    return metadata.getKeyspace(tableName.getKeyspace()).getTable(tableName.getTable()) != null;
   }
 
   // TODO: Implement close method
@@ -311,4 +298,3 @@ public abstract class CassandraAdmin implements Closeable {
     return mStatementCache.getPreparedStatement(query);
   }
 }
-
