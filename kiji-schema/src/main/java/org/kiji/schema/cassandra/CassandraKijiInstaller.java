@@ -24,6 +24,7 @@ import java.util.Collections;
 import java.util.Map;
 
 import com.datastax.driver.core.exceptions.AlreadyExistsException;
+import com.google.common.collect.Maps;
 import org.apache.hadoop.conf.Configuration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -66,7 +67,7 @@ public final class CassandraKijiInstaller {
    * @throws KijiInvalidNameException if the Kiji instance name is invalid or already exists.
    */
   public void install(KijiURI uri, Configuration conf) throws IOException {
-    install(uri, CassandraFactory.Provider.get(), Collections.<String, String>emptyMap(), conf);
+    install(uri, CassandraFactory.Provider.get(), Maps.<String, String>newHashMap(), conf);
   }
 
   /**
@@ -106,9 +107,9 @@ public final class CassandraKijiInstaller {
       CassandraAdmin cassandraAdmin = cassandraAdminFactory.create(uri);
 
       // Install the system, meta, and schema tables.
-      CassandraSystemTable.install(cassandraAdmin, uri, conf, properties);
+      CassandraSystemTable.install(cassandraAdmin, uri, properties);
       CassandraMetaTable.install(cassandraAdmin, uri);
-      CassandraSchemaTable.install(cassandraAdmin, uri, conf, lockFactory);
+      CassandraSchemaTable.install(cassandraAdmin, uri, lockFactory);
 
       // Grant the current user all privileges on the instance just created, if security is enabled.
       //final Kiji kiji = CassandraKijiFactory.get().open(uri, conf, cassandraAdmin, lockFactory);

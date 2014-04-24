@@ -45,6 +45,7 @@ import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.impl.LayoutConsumer;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
+import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout;
 import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
 
@@ -260,10 +261,6 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
       String family,
       String qualifier
   ) throws IOException {
-    // Get a reference to the full name of the C* table for this column.
-    CassandraTableName cTableName =
-        CassandraTableName.getKijiCounterTableName(mTable.getURI(), mTable.getName());
-
     final KijiColumnName columnName = new KijiColumnName(family, qualifier);
     final CassandraColumnNameTranslator translator =
         (CassandraColumnNameTranslator) mWriterLayoutCapsule.getColumnNameTranslator();
@@ -271,9 +268,8 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     Statement statement = CQLUtils.getColumnGetStatement(
         mAdmin,
         mTable.getLayout(),
-        cTableName.toString(),
+        mTable.getCounterTable(),
         entityId,
-        translator.toCassandraLocalityGroup(columnName),
         translator.toCassandraColumnFamily(columnName),
         translator.toCassandraColumnQualifier(columnName),
         null,
@@ -303,19 +299,14 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
    * @param family of the column containing the counter.
    * @param qualifier of the column containing the counter.
    * @param counterIncrement by which to increment the counter.
-   * @param <T> The type of the increment value (should be long).
    * @throws IOException if there is a problem incrementing the counter value.
    */
-  private <T> void incrementCounterValue(
+  private void incrementCounterValue(
       EntityId entityId,
       String family,
       String qualifier,
       long counterIncrement) throws IOException {
     LOG.info("Incrementing the counter by " + counterIncrement);
-
-    // Get a reference to the full name of the C* table for this column.
-    CassandraTableName cTableName =
-        CassandraTableName.getKijiCounterTableName(mTable.getURI(), mTable.getName());
 
     final KijiColumnName columnName = new KijiColumnName(family, qualifier);
     final CassandraColumnNameTranslator translator =
@@ -325,9 +316,8 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
         CQLUtils.getIncrementCounterStatement(
             mAdmin,
             mTable.getLayout(),
-            cTableName.toString(),
+            mTable.getCounterTable(),
             entityId,
-            translator.toCassandraLocalityGroup(columnName),
             translator.toCassandraColumnFamily(columnName),
             translator.toCassandraColumnQualifier(columnName),
             counterIncrement));
@@ -395,14 +385,17 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
 
   /** {@inheritDoc} */
   @Override
-  public void deleteRow(EntityId entityId) throws IOException {
+  public void deleteRow(EntityId entityID) throws IOException {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot delete row while KijiTableWriter %s is in state %s.", this, state);
-    // TODO: Could check whether this family has an non-counter / counter columns before delete.
     // TODO: Should we wait for these calls to complete before returning?
-    mAdmin.executeAsync(mWriterCommon.getDeleteRowStatement(entityId));
-    mAdmin.executeAsync(mWriterCommon.getDeleteCounterRowStatement(entityId));
+    for (CassandraTableName localityGroup
+        : CassandraTableName.getKijiLocalityGroupTableNames(mTable.getURI(), mTable.getLayout())) {
+      mAdmin.executeAsync(
+          mWriterCommon.getDeleteLocalityGroupRowStatement(entityID, localityGroup));
+    }
+    mAdmin.executeAsync(mWriterCommon.getDeleteCounterRowStatement(entityID));
   }
 
   /** {@inheritDoc} */

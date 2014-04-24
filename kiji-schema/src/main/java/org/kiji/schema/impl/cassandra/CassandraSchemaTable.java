@@ -49,7 +49,6 @@ import org.apache.avro.io.EncoderFactory;
 import org.apache.avro.specific.SpecificDatumReader;
 import org.apache.avro.specific.SpecificDatumWriter;
 import org.apache.commons.io.output.ByteArrayOutputStream;
-import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HConstants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -113,16 +112,19 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
   public static final String SCHEMA_COUNTER_COLUMN_VALUE = "counter";
 
   /** C* table used to map schema hash to schema entries. */
-  private final CassandraTableInterface mSchemaHashTable;
+  private final CassandraTableName mSchemaHashTable;
 
   /** C* table used to map schema IDs to schema entries. */
-  private final CassandraTableInterface mSchemaIdTable;
+  private final CassandraTableName mSchemaIdTable;
+
+  /** C* table used to increment schema IDs. */
+  private final CassandraTableName mCounterTable;
+
+  /** C* cluster connection. */
+  private final CassandraAdmin mAdmin;
 
   /** Lock for the kiji instance schema table. */
   private final Lock mZKLock;
-
-  /** C* table used to increment schema IDs. */
-  private final CassandraTableInterface mCounterTable;
 
   /** Maps schema MD5 hashes to schema entries. */
   private final Map<BytesKey, SchemaEntry> mSchemaHashMap = new HashMap<BytesKey, SchemaEntry>();
@@ -199,13 +201,12 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
   private void prepareQueryWriteHashTable() throws IOException {
     String hashQueryText = String.format(
         "INSERT INTO %s(%s, %s, %s) VALUES(?, ?, ?);",
-        mSchemaHashTable.getTableName(),
+        mSchemaHashTable,
         SCHEMA_COLUMN_HASH_KEY,
         SCHEMA_COLUMN_TIME,
         SCHEMA_COLUMN_VALUE);
 
-    mPreparedStatementWriteHashTable =
-        mSchemaHashTable.getAdmin().getPreparedStatement(hashQueryText);
+    mPreparedStatementWriteHashTable = mAdmin.getPreparedStatement(hashQueryText);
   }
 
   /**
@@ -216,12 +217,12 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
   private void prepareQueryWriteIdTable() throws IOException {
     String idQueryText = String.format(
         "INSERT INTO %s(%s, %s, %s) VALUES(?, ?, ?);",
-        mSchemaIdTable.getTableName(),
+        mSchemaIdTable,
         SCHEMA_COLUMN_ID_KEY,
         SCHEMA_COLUMN_TIME,
         SCHEMA_COLUMN_VALUE);
 
-    mPreparedStatementWriteIdTable =  mSchemaIdTable.getAdmin().getPreparedStatement(idQueryText);
+    mPreparedStatementWriteIdTable =  mAdmin.getPreparedStatement(idQueryText);
   }
 
   /**
@@ -233,11 +234,11 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
     String queryText = String.format(
         "SELECT %s FROM %s WHERE %s=? ORDER BY %s DESC LIMIT 1",
         SCHEMA_COLUMN_VALUE,
-        mSchemaHashTable.getTableName(),
+        mSchemaHashTable,
         SCHEMA_COLUMN_HASH_KEY,
         SCHEMA_COLUMN_TIME
     );
-    mPreparedStatementReadHashTable = mSchemaHashTable.getAdmin().getPreparedStatement(queryText);
+    mPreparedStatementReadHashTable = mAdmin.getPreparedStatement(queryText);
   }
 
   /**
@@ -269,66 +270,11 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
   }
 
   /**
-   * Creates an C* table handle to the schema hash table.
-   *
-   * @param kijiURI the KijiURI.
-   * @param conf the Hadoop configuration.
-   * @param admin Wrapper around C* session.
-   * @return a new interface for the table storing the mapping from schema hash to schema entry.
-   * @throws IOException on I/O error.
-   */
-  public static CassandraTableInterface newSchemaHashTable(
-      KijiURI kijiURI,
-      Configuration conf,
-      CassandraAdmin admin)
-      throws IOException {
-    return admin.getCassandraTableInterface(
-        CassandraTableName.getSchemaHashTableName(kijiURI).toString());
-  }
-
-  /**
-   * Creates an C* table handle to the schema ID table.
-   *
-   * @param kijiURI the KijiURI.
-   * @param conf the Hadoop configuration.
-   * @param admin Wrapper around C* session.
-   * @return a new interface for the table storing the mapping from schema ID to schema entry.
-   * @throws IOException on I/O error.
-   */
-  public static CassandraTableInterface newSchemaIdTable(
-      KijiURI kijiURI,
-      Configuration conf,
-      CassandraAdmin admin)
-      throws IOException {
-    return admin.getCassandraTableInterface(
-        CassandraTableName.getSchemaIdTableName(kijiURI).toString());
-  }
-
-  /**
-   * Creates an C* table handle to the schema counter table.
-   *
-   * @param kijiURI the KijiURI.
-   * @param conf the Hadoop configuration.
-   * @param admin Wrapper around C* session.
-   * @return a new interface for the table storing the schema ID counter.
-   * @throws IOException on I/O error.
-   */
-  public static CassandraTableInterface newSchemaCounterTable(
-      KijiURI kijiURI,
-      Configuration conf,
-      CassandraAdmin admin)
-      throws IOException {
-    return admin.getCassandraTableInterface(
-        CassandraTableName.getSchemaCounterTableName(kijiURI).toString());
-  }
-
-  /**
    * Wrap existing C* tables with schema mappings in them.
    *
    * Assumes that the table already exists in Cassandra.
    *
    * @param kijiURI The KijiURI for the instance.
-   * @param conf The Hadoop configuration.
    * @param admin for this instance.
    * @param lockFactory for creating ZooKeeper locks.
    * @return a reference to an already-existing schema table.
@@ -336,14 +282,14 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
    */
   public static CassandraSchemaTable createAssumingTableExists(
       KijiURI kijiURI,
-      Configuration conf,
       CassandraAdmin admin,
       LockFactory lockFactory)
       throws IOException {
     return new CassandraSchemaTable(
-        newSchemaHashTable(kijiURI, conf, admin),
-        newSchemaIdTable(kijiURI, conf, admin),
-        newSchemaCounterTable(kijiURI, conf, admin),
+        admin,
+        CassandraTableName.getSchemaHashTableName(kijiURI),
+        CassandraTableName.getSchemaIdTableName(kijiURI),
+        CassandraTableName.getSchemaCounterTableName(kijiURI),
         newLock(kijiURI, lockFactory),
         kijiURI);
   }
@@ -360,12 +306,14 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
    * @throws java.io.IOException on I/O error.
    */
   private CassandraSchemaTable(
-      CassandraTableInterface hashTable,
-      CassandraTableInterface idTable,
-      CassandraTableInterface counterTable,
+      CassandraAdmin admin,
+      CassandraTableName hashTable,
+      CassandraTableName idTable,
+      CassandraTableName counterTable,
       Lock zkLock,
       KijiURI uri)
       throws IOException {
+    mAdmin = Preconditions.checkNotNull(admin);
     mSchemaHashTable = Preconditions.checkNotNull(hashTable);
     mSchemaIdTable = Preconditions.checkNotNull(idTable);
     mCounterTable = Preconditions.checkNotNull(counterTable);
@@ -464,7 +412,7 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
    * @param incrementAmount Amount by which to increment the counter (can be negative).
    */
   private void incrementSchemaIdCounter(long incrementAmount) {
-    String tableName = mCounterTable.getTableName();
+    CassandraTableName tableName = mCounterTable;
     String incrementSign = incrementAmount >= 0 ? "+" : "-";
     String queryText = String.format("UPDATE %s SET %s = %s %s %d WHERE %s='%s';",
         tableName,
@@ -475,7 +423,7 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
         SCHEMA_COUNTER_COLUMN_KEY,
         SCHEMA_COUNTER_ONLY_KEY_VALUE
     );
-    mCounterTable.getAdmin().execute(queryText);
+    mAdmin.execute(queryText);
   }
 
   /**
@@ -484,8 +432,8 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
    */
   private long readSchemaIdCounter() {
     // Sanity check that counter value is 1!
-    String queryText = String.format("SELECT * FROM %s;", mCounterTable.getTableName());
-    ResultSet resultSet = mCounterTable.getAdmin().execute(queryText);
+    String queryText = String.format("SELECT * FROM %s;", mCounterTable);
+    ResultSet resultSet = mAdmin.execute(queryText);
     List<Row> rows = resultSet.all();
     assert(rows.size() == 1);
     Row row = rows.get(0);
@@ -536,7 +484,7 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
     // The hash table write must not happen before the ID table write has been persisted.
     // Otherwise, another client may see the hash entry, write cells with the schema ID that cannot
     // be decoded (since the ID mapping has not been written yet).
-    ResultSet resultSet = mSchemaIdTable.getAdmin().execute(mPreparedStatementWriteIdTable.bind(
+    ResultSet resultSet = mAdmin.execute(mPreparedStatementWriteIdTable.bind(
         avroEntry.getId(),
         new Date(timestamp),
         CassandraByteUtil.bytesToByteBuffer(entryBytes)));
@@ -546,7 +494,7 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
     //if (flush) { mSchemaIdTable.flushCommits(); }
 
     ResultSet hashResultSet =
-        mSchemaHashTable.getAdmin().execute(mPreparedStatementWriteHashTable.bind(
+        mAdmin.execute(mPreparedStatementWriteHashTable.bind(
             CassandraByteUtil.bytesToByteBuffer(avroEntry.getHash().bytes()),
             new Date(timestamp),
             CassandraByteUtil.bytesToByteBuffer(entryBytes)));
@@ -564,7 +512,7 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
    * @throws java.io.IOException on I/O error.
    */
   private SchemaTableEntry loadFromIdTable(long schemaId) throws IOException {
-    String tableName = mSchemaIdTable.getTableName();
+    CassandraTableName tableName = mSchemaIdTable;
 
     // TODO: Prepare this statement once in constructor, not every load.
     String queryText = String.format(
@@ -575,7 +523,7 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
         schemaId,
         SCHEMA_COLUMN_TIME
     );
-    ResultSet resultSet = mSchemaIdTable.getAdmin().execute(queryText);
+    ResultSet resultSet = mAdmin.execute(queryText);
     List<Row> rows = resultSet.all();
 
     if (0 == rows.size()) {
@@ -598,9 +546,7 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
   private SchemaTableEntry loadFromHashTable(BytesKey schemaHash) throws IOException {
     ByteBuffer tableKey = CassandraByteUtil.bytesToByteBuffer(schemaHash.getBytes());
 
-    ResultSet resultSet = mSchemaHashTable
-        .getAdmin()
-        .execute(mPreparedStatementReadHashTable.bind(tableKey));
+    ResultSet resultSet = mAdmin.execute(mPreparedStatementReadHashTable.bind(tableKey));
 
     List<Row> rows = resultSet.all();
 
@@ -782,9 +728,8 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
    *
    * @param admin for the Kiji instance.
    * @param tableName name of the schema hash table to create.
-   * @return a reference to the created schema hash table.
    */
-  private static CassandraTableInterface installHashTable(CassandraAdmin admin, String tableName) {
+  private static void installHashTable(CassandraAdmin admin, CassandraTableName tableName) {
     // Let's try to make this somewhat readable...
     // TODO: Table should order by DESC for time
     String tableDescription = String.format(
@@ -796,7 +741,7 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
         SCHEMA_COLUMN_HASH_KEY,
         SCHEMA_COLUMN_TIME
     );
-    return admin.createTable(tableName, tableDescription);
+    admin.createTable(tableName, tableDescription);
   }
 
   /**
@@ -804,9 +749,10 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
    *
    * @param admin for the Kiji instance.
    * @param tableName name of the schema ID table to create.
-   * @return a reference to the created schema ID table.
    */
-  private static CassandraTableInterface installIdTable(CassandraAdmin admin, String tableName) {
+  private static void installIdTable(
+      CassandraAdmin admin,
+      CassandraTableName tableName) {
     // TODO: Table should order by DESC for time
     String tableDescription = String.format(
         "CREATE TABLE %s (%s bigint, %s timestamp, %s blob, PRIMARY KEY (%s, %s));",
@@ -817,7 +763,7 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
         SCHEMA_COLUMN_ID_KEY,
         SCHEMA_COLUMN_TIME
     );
-    return admin.createTable(tableName, tableDescription);
+    admin.createTable(tableName, tableDescription);
   }
 
   /**
@@ -825,19 +771,18 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
    *
    * @param admin for the Kiji instance.
    * @param tableName name of the schema ID counter table to create.
-   * @return a reference to the created schema ID counter table.
    * @throws java.io.IOException if there is a problem creating the Cassandra table.
    */
-  private static CassandraTableInterface installCounterTable(
+  private static void installCounterTable(
       CassandraAdmin admin,
-      String tableName) throws IOException {
+      CassandraTableName tableName) throws IOException {
     String tableDescription = String.format(
         "CREATE TABLE %s (%s text PRIMARY KEY, %s counter);",
         tableName,
         SCHEMA_COUNTER_COLUMN_KEY,
         SCHEMA_COUNTER_COLUMN_VALUE
     );
-    CassandraTableInterface ctable = admin.createTable(tableName, tableDescription);
+    admin.createTable(tableName, tableDescription);
 
     // Now set the counter to zero
     String queryText = String.format("UPDATE %s SET %s = %s + 0 WHERE %s='%s';",
@@ -858,8 +803,6 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
     Row row = rows.get(0);
     long counterValue = row.getLong(SCHEMA_COUNTER_COLUMN_VALUE);
     assert(0 == counterValue);
-
-    return ctable;
   }
 
   /**
@@ -867,15 +810,10 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
    *
    * @param admin The C* Admin interface for the HBase cluster to install into.
    * @param kijiURI the KijiURI.
-   * @param conf The Hadoop configuration.
    * @param lockFactory for creating ZooKeeper locks.
    * @throws java.io.IOException on I/O error.
    */
-  public static void install(
-      CassandraAdmin admin,
-      KijiURI kijiURI,
-      Configuration conf,
-      LockFactory lockFactory)
+  public static void install(CassandraAdmin admin, KijiURI kijiURI, LockFactory lockFactory)
       throws IOException {
     // Keep all versions of schema entries:
     //  - entries of the ID table should never be written more than once.
@@ -884,19 +822,17 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
     //        while writing an entry.
     //      - with different schemas on MD5 hash collisions.
 
-    CassandraTableInterface hashTable = installHashTable(
-        admin,
-        CassandraTableName.getSchemaHashTableName(kijiURI).toString());
 
-    CassandraTableInterface idTable = installIdTable(
-        admin,
-        CassandraTableName.getSchemaIdTableName(kijiURI).toString());
+    CassandraTableName hashTable = CassandraTableName.getSchemaHashTableName(kijiURI);
+    CassandraTableName idTable = CassandraTableName.getSchemaIdTableName(kijiURI);
+    CassandraTableName counterTable = CassandraTableName.getSchemaCounterTableName(kijiURI);
 
-    CassandraTableInterface counterTable = installCounterTable(
-        admin,
-        CassandraTableName.getSchemaCounterTableName(kijiURI).toString());
+    installHashTable(admin, hashTable);
+    installIdTable(admin, idTable);
+    installCounterTable(admin, counterTable);
 
     final CassandraSchemaTable schemaTable = new CassandraSchemaTable(
+        admin,
         hashTable,
         idTable,
         counterTable,
@@ -915,7 +851,7 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
    * @param admin C* admin client.
    * @param tableName Name of the table to delete.
    */
-  private static void deleteTable(CassandraAdmin admin, String tableName) {
+  private static void deleteTable(CassandraAdmin admin, CassandraTableName tableName) {
     if (admin.tableExists(tableName)) {
       if (admin.isTableEnabled(tableName)) {
         admin.disableTable(tableName);
@@ -933,16 +869,14 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
    */
   public static void uninstall(CassandraAdmin admin, KijiURI kijiURI)
       throws IOException {
-    final String hashTableName =
-        CassandraTableName.getSchemaHashTableName(kijiURI).toString();
+    final CassandraTableName hashTableName = CassandraTableName.getSchemaHashTableName(kijiURI);
     deleteTable(admin, hashTableName);
 
-    final String idTableName =
-        CassandraTableName.getSchemaIdTableName(kijiURI).toString();
+    final CassandraTableName idTableName = CassandraTableName.getSchemaIdTableName(kijiURI);
     deleteTable(admin, idTableName);
 
-    final String counterTableName =
-        CassandraTableName.getSchemaCounterTableName(kijiURI).toString();
+    final CassandraTableName counterTableName =
+        CassandraTableName.getSchemaCounterTableName(kijiURI);
     deleteTable(admin, counterTableName);
   }
 
@@ -1134,15 +1068,14 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
    * @return the set of schema entries from the schema hash table.
    * @throws java.io.IOException on I/O error.
    */
-  private Set<SchemaEntry> loadSchemaHashTable(
-      CassandraTableInterface hashTable) throws IOException {
+  private Set<SchemaEntry> loadSchemaHashTable(CassandraTableName hashTable) throws IOException {
     LOG.info("Loading entries from schema hash table.");
     final Set<SchemaEntry> entries = new HashSet<SchemaEntry>();
     int hashTableRowCounter = 0;
 
     // Fetch all of the schemas from the schema hash table (all versions)
-    String queryText = String.format("SELECT * FROM %s;", hashTable.getTableName());
-    ResultSet resultSet = hashTable.getAdmin().execute(queryText);
+    String queryText = String.format("SELECT * FROM %s;", hashTable);
+    ResultSet resultSet = mAdmin.execute(queryText);
 
     for (Row row : resultSet) {
       hashTableRowCounter += 1;
@@ -1180,12 +1113,10 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
         LOG.error(String.format(
             "Unable to decode schema hash table entry for row %s, timestamp %d: %s",
             rowKey, timestamp, ioe));
-        continue;
       } catch (AvroRuntimeException are) {
         LOG.error(String.format(
             "Unable to decode schema hash table entry for row %s, timestamp %d: %s",
             rowKey, timestamp, are));
-        continue;
       }
     }
     LOG.info(String.format(
@@ -1200,14 +1131,14 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
    * @return the set of schema entries from the schema ID table.
    * @throws java.io.IOException on I/O error.
    */
-  private Set<SchemaEntry> loadSchemaIdTable(CassandraTableInterface idTable) throws IOException {
+  private Set<SchemaEntry> loadSchemaIdTable(CassandraTableName idTable) throws IOException {
     LOG.info("Loading entries from schema ID table.");
     int idTableRowCounter = 0;
     final Set<SchemaEntry> entries = new HashSet<SchemaEntry>();
 
     // Fetch all of the schemas from the schema ID table (all versions)
-    String queryText = String.format("SELECT * FROM %s;", idTable.getTableName());
-    ResultSet resultSet = idTable.getAdmin().execute(queryText);
+    String queryText = String.format("SELECT * FROM %s;", idTable);
+    ResultSet resultSet = mAdmin.execute(queryText);
 
     for (Row row : resultSet) {
       idTableRowCounter += 1;
@@ -1244,12 +1175,10 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
         LOG.error(String.format(
             "Unable to decode schema ID table entry for row %s, timestamp %d: %s",
             rowKey, timestamp, ioe));
-        continue;
       } catch (AvroRuntimeException are) {
         LOG.error(String.format(
             "Unable to decode schema ID table entry for row %s, timestamp %d: %s",
             rowKey, timestamp, are));
-        continue;
       }
     }
     LOG.info(String.format(

@@ -22,6 +22,7 @@ package org.kiji.schema.impl.cassandra;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import com.datastax.driver.core.ResultSet;
@@ -142,15 +143,12 @@ public class CassandraDataRequestAdapter {
     // Cannot do a scan with paging.
     Preconditions.checkArgument(!(pagingEnabled && bIsScan));
 
-    // Get the Cassandra table name for non-counter values.
-    String nonCounterTableName = CassandraTableName.getKijiLocalityGroupTableName(
-        table.getURI(),
-        table.getName()).toString();
+    // Get the locality group tables
+    Map<String, CassandraTableName> localityGroups = table.getLocalityGroups();
 
     // Get the counter table name.
-    String counterTableName = CassandraTableName.getKijiCounterTableName(
-        table.getURI(),
-        table.getName()).toString();
+    CassandraTableName counterTableName =
+        CassandraTableName.getKijiCounterTableName(table.getURI());
 
     // A single Kiji data request can result in many Cassandra queries, so we use asynchronous IO
     // and keep a list of all of the futures that will contain results from Cassandra.
@@ -182,7 +180,6 @@ public class CassandraDataRequestAdapter {
       // Translate the Kiji column name.
       KijiColumnName kijiColumnName = new KijiColumnName(column.getName());
       LOG.info("Kiji column name for the requested column is " + kijiColumnName);
-      String localityGroup = mColumnNameTranslator.toCassandraLocalityGroup(kijiColumnName);
       String family = mColumnNameTranslator.toCassandraColumnFamily(kijiColumnName);
       String qualifier = mColumnNameTranslator.toCassandraColumnQualifier(kijiColumnName);
 
@@ -191,23 +188,22 @@ public class CassandraDataRequestAdapter {
       // separate session.execute(statement) commands.
 
       // Determine whether we need to read non-counter values and/or counter values.
-      List<String> tableNames = Lists.newArrayList();
+      List<CassandraTableName> tableNames = Lists.newArrayList();
 
       if (maybeContainsNonCounterValues(table, kijiColumnName)) {
-        tableNames.add(nonCounterTableName);
+        tableNames.add(localityGroups.get(kijiColumnName.getFamily()));
       }
 
       if (maybeContainsCounterValues(table, kijiColumnName)) {
         tableNames.add(counterTableName);
       }
 
-      for (String cassandraTableName : tableNames) {
+      for (CassandraTableName cassandraTableName : tableNames) {
         if (bIsScan) {
           Statement statement = CQLUtils.getColumnScanStatement(
               admin,
               table.getLayout(),
               cassandraTableName,
-              localityGroup,
               family,
               qualifier);
           if (pagingEnabled) {
@@ -221,7 +217,6 @@ public class CassandraDataRequestAdapter {
                   table.getLayout(),
                   cassandraTableName,
                   entityId,
-                  localityGroup,
                   family,
                   qualifier,
                   null,
@@ -243,10 +238,18 @@ public class CassandraDataRequestAdapter {
       // execute a SELECT query below (because we wait to execute paged SELECT queries) and so you
       // would never get an iterator back with any row keys at all!  Eek!
 
-      // TODO: do we need to scan the counter table as well?
+      // TODO this is getting really heinous. Can we figure out a better way?
+
       futures.add(
           admin.executeAsync(
-              CQLUtils.getEntityIDScanStatement(admin, table.getLayout(), nonCounterTableName)));
+              CQLUtils.getEntityIDScanStatement(admin, table.getLayout(), counterTableName)));
+
+      for (CassandraTableName localityGroupTable
+          : CassandraTableName.getKijiLocalityGroupTableNames(table.getURI(), table.getLayout())) {
+        futures.add(
+            admin.executeAsync(
+                CQLUtils.getEntityIDScanStatement(admin, table.getLayout(), localityGroupTable)));
+      }
     }
 
     // Wait until all of the futures are done.

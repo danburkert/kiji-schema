@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -31,8 +32,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.zookeeper.KeeperException;
 import org.slf4j.Logger;
@@ -117,12 +116,6 @@ public final class CassandraKijiTable implements KijiTable {
   /** Retain counter. When decreased to 0, the HBase KijiTable may be closed and disposed of. */
   private final AtomicInteger mRetainCount = new AtomicInteger(0);
 
-  /** Hadoop configuration object. */
-  private final Configuration mConf;
-
-  /** Name of the Cassandra Kiji table. */
-  private final String mCassandraTableName;
-
   /** Writer factory for this table. */
   private final KijiWriterFactory mWriterFactory;
 
@@ -132,6 +125,13 @@ public final class CassandraKijiTable implements KijiTable {
   /** Unique identifier for this KijiTable instance as a live Kiji client. */
   private final String mKijiClientId =
       String.format("%s;CassandraKijiTable@%s", JvmId.get(), TABLE_COUNTER.getAndIncrement());
+
+  // TODO: update below when the layout changes
+  /** A map of Kiji column family to Cassandra locality group table. */
+  private final Map<String, CassandraTableName> mLocalityGroups;
+
+  /** The Cassandra table holding the counter columns for this table. */
+  private final CassandraTableName mCounterTable;
 
   /** Monitor for the layout of this table. */
   private final ZooKeeperMonitor mLayoutMonitor;
@@ -298,7 +298,6 @@ public final class CassandraKijiTable implements KijiTable {
    *
    * @param kiji The Kiji instance.
    * @param name The name of the Kiji user-space table to open.
-   * @param conf The Hadoop configuration object.
    * @param admin The C* admin object.
    *
    * @throws java.io.IOException On a C* error.
@@ -307,7 +306,6 @@ public final class CassandraKijiTable implements KijiTable {
   CassandraKijiTable(
       CassandraKiji kiji,
       String name,
-      Configuration conf,
       CassandraAdmin admin)
       throws IOException {
 
@@ -316,14 +314,9 @@ public final class CassandraKijiTable implements KijiTable {
     mKiji = kiji;
     mName = name;
     mAdmin = admin;
-    mConf = conf;
     mTableURI = KijiURI.newBuilder(mKiji.getURI()).withTableName(mName).build();
     LOG.debug("Opening Kiji table '{}' with client version '{}'.",
         mTableURI, VersionInfo.getSoftwareVersion());
-    mCassandraTableName =
-        CassandraTableName.getKijiLocalityGroupTableName(
-            mTableURI,
-            mName).toString();
 
     if (!mKiji.getTableNames().contains(mName)) {
       throw new KijiTableNotFoundException(mTableURI);
@@ -353,6 +346,10 @@ public final class CassandraKijiTable implements KijiTable {
           new CassandraColumnNameTranslator(layout),
           this);
     }
+
+    mLocalityGroups =
+        CassandraTableName.getKijiColumnFamilyLocalityGroups(mTableURI, getLayout());
+    mCounterTable = CassandraTableName.getKijiCounterTableName(mTableURI);
 
     mWriterFactory = new CassandraKijiWriterFactory(this);
     mReaderFactory = new CassandraKijiReaderFactory(this);
@@ -686,6 +683,14 @@ public final class CassandraKijiTable implements KijiTable {
     }
   }
 
+  public Map<String, CassandraTableName> getLocalityGroups() {
+    return mLocalityGroups;
+  }
+
+  public CassandraTableName getCounterTable() {
+    return mCounterTable;
+  }
+
   /** {@inheritDoc} */
   @Override
   public boolean equals(Object obj) {
@@ -754,19 +759,6 @@ public final class CassandraKijiTable implements KijiTable {
           "Found a KijiTable object that was not an instance of HBaseKijiTable.");
     }
     return (CassandraKijiTable) kijiTable;
-  }
-
-  /**
-   * Loads partitioned HFiles directly into the regions of this Kiji table.  Does not make sense for
-   * a Cassandra-backed Kiji table.
-   *
-   * @param hfilePath Path of the HFiles to load.
-   * @throws java.io.IOException on I/O error.
-   */
-  public void bulkLoad(Path hfilePath) throws IOException {
-    throw new UnsupportedOperationException(
-        "Cassandra-backed Kiji tables do not support bulk loads from HFiles."
-    );
   }
 
   /**

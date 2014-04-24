@@ -204,7 +204,7 @@ public final class CassandraKiji implements Kiji {
     final State oldState = mState.getAndSet(State.OPEN);
     try {
       // System table should have already been installed - here were are getting a pointer to it.
-      mSystemTable = CassandraSystemTable.createAssumingTableExists(mURI, mConf, mAdmin);
+      mSystemTable = CassandraSystemTable.createAssumingTableExists(mURI, mAdmin);
 
       mRetainCount.set(1);
       Preconditions.checkState(oldState == State.UNINITIALIZED,
@@ -305,8 +305,7 @@ public final class CassandraKiji implements Kiji {
     Preconditions.checkState(state == State.OPEN,
         "Cannot get schema table for Kiji instance %s in state %s.", this, state);
     if (null == mSchemaTable) {
-      mSchemaTable = CassandraSchemaTable.createAssumingTableExists(
-          mURI, mConf, mAdmin, mLockFactory);
+      mSchemaTable = CassandraSchemaTable.createAssumingTableExists(mURI, mAdmin, mLockFactory);
     }
     return mSchemaTable;
   }
@@ -327,8 +326,7 @@ public final class CassandraKiji implements Kiji {
     Preconditions.checkState(state == State.OPEN,
         "Cannot get meta table for Kiji instance %s in state %s.", this, state);
     if (null == mMetaTable) {
-      mMetaTable = CassandraMetaTable.createAssumingTableExists(
-          mURI, mConf, getSchemaTable(), mAdmin);
+      mMetaTable = CassandraMetaTable.createAssumingTableExists(mURI, mAdmin, getSchemaTable());
     }
     return mMetaTable;
   }
@@ -804,22 +802,18 @@ public final class CassandraKiji implements Kiji {
     }
 
     for (CassandraTableName cassandraTable
-        : CassandraTableName.getCassandraLocalityGroupTableNames(tableURI, layout)) {
-      mAdmin.createTable(cassandraTable, CQLUtils.getCreateTableStatement(cassandraTable, layout));
+        : CassandraTableName.getKijiLocalityGroupTableNames(tableURI, layout)) {
+      mAdmin.createTable(cassandraTable, CQLUtils.getCreateLocalityGroupStatement(cassandraTable, layout));
+      // Add a secondary index on the version.
       mAdmin.execute(CQLUtils.getCreateIndexStatement(cassandraTable, CQLUtils.VERSION_COL));
     }
 
-    // Add a secondary index on the version.
-
-    // Also create a second table, which we can use for counters.
+    // Also create another table, which we can use for counters.
     // Create a C* table name for this Kiji table.
     CassandraTableName counterTableName =
         CassandraTableName.getKijiCounterTableName(tableURI);
-
     String createCounterTableStatement =
         CQLUtils.getCreateCounterTableStatement(counterTableName, layout);
-
-    // Create the table!
     mAdmin.createTable(counterTableName, createCounterTableStatement);
   }
 }

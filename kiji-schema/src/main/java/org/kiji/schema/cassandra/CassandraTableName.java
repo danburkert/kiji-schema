@@ -19,10 +19,13 @@
 
 package org.kiji.schema.cassandra;
 
+import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
 
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 
 import org.kiji.annotations.ApiAudience;
@@ -30,6 +33,7 @@ import org.kiji.annotations.ApiStability;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.avro.LocalityGroupDesc;
 import org.kiji.schema.layout.KijiTableLayout;
+import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout;
 
 /**
  * <p>Multiple instances of Kiji can be installed on a single Cassandra cluster.  Within a Kiji
@@ -293,6 +297,29 @@ public final class CassandraTableName {
   }
 
   /**
+   * Get a map of Kiji column family to the name of the Cassandra table name which holds it.
+   *
+   * @param tableURI of table.
+   * @param tableLayout of table.
+   * @return a map of Kiji column family to Cassandra table name.
+   */
+  public static Map<String, CassandraTableName> getKijiColumnFamilyLocalityGroups(
+      KijiURI tableURI,
+      KijiTableLayout tableLayout) {
+    ImmutableMap.Builder<String, CassandraTableName> familyTables = ImmutableMap.builder();
+
+    for (Entry<String, FamilyLayout> familyLayout : tableLayout.getFamilyMap().entrySet()) {
+      String columnFamily = familyLayout.getKey();
+      String localityGroup = familyLayout.getValue().getLocalityGroup().getName();
+      CassandraTableName table = getKijiLocalityGroupTableName(tableURI, localityGroup);
+      familyTables.put(columnFamily, table);
+    }
+
+    return familyTables.build();
+  }
+
+
+  /**
    * Get the name of the keyspace (formatted for CQL) in C* for the Kiji instance specified in the
    * URI.
    *
@@ -351,11 +378,8 @@ public final class CassandraTableName {
    *
    * @return The Cassandra-formatted name of this table.
    */
+  @Override
   public String toString() {
-    return getKeyspace() + '.' + getTable();
-  }
-
-  public String toStringQuoted() {
     return getQuotedKeyspace() + '.' + getQuotedTable();
   }
 

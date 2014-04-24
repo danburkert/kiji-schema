@@ -243,7 +243,6 @@ public final class CassandraKijiRowData implements KijiRowData {
       // Get the Cassandra key (entity Id), qualifier, timestamp, and value.
       Long timestamp = row.getLong(CQLUtils.VERSION_COL);
 
-      String cassandraRawLocalityGroup = row.getString(CQLUtils.LOCALITY_GROUP_COL);
       String cassandraRawFamily = row.getString(CQLUtils.FAMILY_COL);
       String cassandraRawQualifier = row.getString(CQLUtils.QUALIFIER_COL);
 

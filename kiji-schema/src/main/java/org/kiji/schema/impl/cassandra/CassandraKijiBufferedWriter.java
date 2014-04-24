@@ -38,6 +38,7 @@ import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
 import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.impl.LayoutConsumer;
+import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout;
 import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
 
@@ -272,9 +273,13 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
 
   /** {@inheritDoc} */
   @Override
-  public void deleteRow(EntityId entityId) throws IOException {
-    updateBufferWithDelete(mWriterCommon.getDeleteRowStatement(entityId));
-    updateBufferWithCounterDelete(mWriterCommon.getDeleteCounterRowStatement(entityId));
+  public void deleteRow(EntityId entityID) throws IOException {
+    for (CassandraTableName localityGroup
+        : CassandraTableName.getKijiLocalityGroupTableNames(mTable.getURI(), mTable.getLayout())) {
+      updateBufferWithDelete(
+          mWriterCommon.getDeleteLocalityGroupRowStatement(entityID, localityGroup));
+    }
+    updateBufferWithCounterDelete(mWriterCommon.getDeleteCounterRowStatement(entityID));
   }
 
   /** {@inheritDoc} */

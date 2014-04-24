@@ -21,6 +21,7 @@ package org.kiji.schema.impl.cassandra;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Map;
 
 import com.datastax.driver.core.Statement;
 import com.google.common.base.Preconditions;
@@ -46,9 +47,9 @@ class CassandraKijiWriterCommon {
 
   private final CassandraKijiTable mTable;
 
-  private final String mTableName;
+  private final CassandraTableName mCounterTableName;
 
-  private final String mCounterTableName;
+  private final Map<String, CassandraTableName> mLocalityGroups;
 
   /**
    * Create an object for performing common write operations for a given table.
@@ -58,10 +59,8 @@ class CassandraKijiWriterCommon {
   public CassandraKijiWriterCommon(CassandraKijiTable table) {
     mTable = table;
     mAdmin = mTable.getAdmin();
-    mTableName = CassandraTableName
-        .getKijiLocalityGroupTableName(mTable.getURI(), mTable.getName()).toString();
-    mCounterTableName = CassandraTableName
-        .getKijiCounterTableName(mTable.getURI(), mTable.getName()).toString();
+    mCounterTableName = mTable.getCounterTable();
+    mLocalityGroups = mTable.getLocalityGroups();
   }
 
   /**
@@ -137,9 +136,8 @@ class CassandraKijiWriterCommon {
     return CQLUtils.getInsertStatement(
         mAdmin,
         mTable.getLayout(),
-        mTableName,
+        mLocalityGroups.get(family),
         entityId,
-        translator.toCassandraLocalityGroup(columnName),
         translator.toCassandraColumnFamily(columnName),
         translator.toCassandraColumnQualifier(columnName),
         timestamp,
@@ -172,9 +170,8 @@ class CassandraKijiWriterCommon {
     return CQLUtils.getDeleteCellStatement(
         mAdmin,
         mTable.getLayout(),
-        mTableName,
+        mLocalityGroups.get(family),
         entityId,
-        translator.toCassandraLocalityGroup(kijiColumnName),
         translator.toCassandraColumnFamily(kijiColumnName),
         translator.toCassandraColumnQualifier(kijiColumnName),
         version);
@@ -200,9 +197,8 @@ class CassandraKijiWriterCommon {
     return CQLUtils.getDeleteColumnStatement(
         mAdmin,
         mTable.getLayout(),
-        mTableName,
+        mLocalityGroups.get(family),
         entityId,
-        translator.toCassandraLocalityGroup(kijiColumnName),
         translator.toCassandraColumnFamily(kijiColumnName),
         translator.toCassandraColumnQualifier(kijiColumnName));
   }
@@ -232,7 +228,6 @@ class CassandraKijiWriterCommon {
         mTable.getLayout(),
         mCounterTableName,
         entityId,
-        translator.toCassandraLocalityGroup(kijiColumnName),
         translator.toCassandraColumnFamily(kijiColumnName),
         translator.toCassandraColumnQualifier(kijiColumnName));
   }
@@ -255,9 +250,8 @@ class CassandraKijiWriterCommon {
     return CQLUtils.getDeleteFamilyStatement(
         mAdmin,
         mTable.getLayout(),
-        mTableName,
+        mLocalityGroups.get(family),
         entityId,
-        translator.toCassandraLocalityGroup(kijiColumnName),
         translator.toCassandraColumnFamily(kijiColumnName));
   }
 
@@ -283,19 +277,25 @@ class CassandraKijiWriterCommon {
         mTable.getLayout(),
         mCounterTableName,
         entityId,
-        translator.toCassandraLocalityGroup(kijiColumnName),
         translator.toCassandraColumnFamily(kijiColumnName));
   }
 
   /**
-   * Create a delete statement for an entire row.
+   * Create a delete statement for an entire row of a locality group.
    *
-   * @param entityId of the row to delete.
+   * @param entityId of the row to delete from the locality group.
    * @return a statement that will delete the row.
    * @throws IOException if there is a problem creating the delete statement.
    */
-  public Statement getDeleteRowStatement(EntityId entityId) throws IOException {
-    return CQLUtils.getDeleteRowStatement(mAdmin, mTable.getLayout(), mTableName, entityId);
+  public Statement getDeleteLocalityGroupRowStatement(
+      EntityId entityId,
+      CassandraTableName localityGroup)
+      throws IOException {
+    return CQLUtils.getDeleteLocalityGroupStatement(
+        mAdmin,
+        mTable.getLayout(),
+        localityGroup,
+        entityId);
   }
 
   /**
@@ -306,7 +306,7 @@ class CassandraKijiWriterCommon {
    * @throws IOException if there is a problem creating the delete statement.
    */
   public Statement getDeleteCounterRowStatement(EntityId entityId) throws IOException {
-    return CQLUtils.getDeleteRowStatement(mAdmin, mTable.getLayout(), mCounterTableName, entityId);
+    return CQLUtils.getDeleteLocalityGroupStatement(mAdmin, mTable.getLayout(), mCounterTableName, entityId);
   }
 
   /**

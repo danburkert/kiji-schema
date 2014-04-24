@@ -131,14 +131,12 @@ public final class CassandraColumnNameTranslator extends ShortColumnNameTranslat
    * Create the Kiji column name, given the Cassandra versions of the locality group, family, and
    * qualifier.
    *
-   * @param cassandraLocalityGroup for the column.
    * @param cassandraColumnFamily for the column.
    * @param cassandraColumnQualifier for the column.
    * @return The Kiji column name.
    * @throws NoSuchColumnException if the column does not exist.
    */
   public KijiColumnName toKijiColumnName(
-      String cassandraLocalityGroup,
       String cassandraColumnFamily,
       String cassandraColumnQualifier) throws NoSuchColumnException {
 
@@ -148,17 +146,10 @@ public final class CassandraColumnNameTranslator extends ShortColumnNameTranslat
         cassandraColumnQualifier));
 
     // Get the locality group and the column family out of the
-    ColumnId localityGroupId = ColumnId.fromString(cassandraLocalityGroup);
     ColumnId familyId = ColumnId.fromString(cassandraColumnFamily);
     ColumnId qualifierId = ColumnId.fromString(cassandraColumnQualifier);
 
-    final KijiTableLayout.LocalityGroupLayout localityGroup = mLocalityGroups.get(localityGroupId);
-      if (null == localityGroup) {
-        // TODO: Real error message.
-        throw new NoSuchColumnException("oops!");
-      }
-
-    final FamilyLayout kijiFamily = getKijiFamilyById(localityGroup, familyId);
+    final FamilyLayout kijiFamily = getKijiFamilyById(familyId);
     if (null == kijiFamily) {
       throw new NoSuchColumnException(String.format(
           "No family with ColumnId '%s' in locality group '%s'.",
