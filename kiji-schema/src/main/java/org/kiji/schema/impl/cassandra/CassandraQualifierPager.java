@@ -43,7 +43,7 @@ import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.filter.KijiColumnFilter;
 import org.kiji.schema.filter.KijiColumnRangeFilter;
-import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
+import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
 
 /**
  * Pages through the many qualifiers of a map-type family.

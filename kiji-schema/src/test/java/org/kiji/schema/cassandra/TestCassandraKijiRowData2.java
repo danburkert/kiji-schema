@@ -58,7 +58,7 @@ import org.kiji.schema.impl.cassandra.CassandraDataRequestAdapter;
 import org.kiji.schema.impl.cassandra.CassandraKijiRowData;
 import org.kiji.schema.impl.cassandra.CassandraKijiTable;
 import org.kiji.schema.layout.KijiTableLayouts;
-import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
+import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
 
 public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
   private static final Logger LOG = LoggerFactory.getLogger(TestCassandraKijiRowData2.class);

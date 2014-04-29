@@ -42,7 +42,7 @@ import org.kiji.schema.KijiIOException;
 import org.kiji.schema.KijiPager;
 import org.kiji.schema.KijiRowData;
 import org.kiji.schema.impl.LayoutCapsule;
-import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
+import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
 
 /**

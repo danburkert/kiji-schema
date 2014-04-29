@@ -34,7 +34,7 @@ import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.layout.KijiTableLayout;
-import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
+import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
 
 /**

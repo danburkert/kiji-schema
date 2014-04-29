@@ -40,7 +40,7 @@ import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiDataRequest;
 import org.kiji.schema.KijiTableReader;
 import org.kiji.schema.cassandra.CassandraTableName;
-import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
+import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
 
 /**
  * Wraps a KijiDataRequest to expose methods that generate meaningful objects in Cassandra land.

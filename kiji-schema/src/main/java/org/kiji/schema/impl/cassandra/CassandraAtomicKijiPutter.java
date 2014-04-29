@@ -39,7 +39,7 @@ import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.impl.LayoutConsumer;
 import org.kiji.schema.impl.cassandra.CassandraKijiTableWriter.WriterLayoutCapsule;
 import org.kiji.schema.layout.LayoutUpdatedException;
-import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
+import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
 
 /**
