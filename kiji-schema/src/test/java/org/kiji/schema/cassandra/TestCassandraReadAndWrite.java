@@ -30,8 +30,10 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.apache.hadoop.hbase.HConstants;
 import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Before;
@@ -42,6 +44,7 @@ import org.slf4j.LoggerFactory;
 
 import org.kiji.schema.EntityId;
 import org.kiji.schema.Kiji;
+import org.kiji.schema.KijiCell;
 import org.kiji.schema.KijiDataRequest;
 import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
 import org.kiji.schema.KijiIOException;
@@ -415,6 +418,28 @@ public class TestCassandraReadAndWrite extends CassandraKijiClientTest {
           data.getMostRecentValue("family", "column").toString()
       );
     }
+  }
+
+  @Test
+  public void testHConstantsLatestTimestamp() throws Exception {
+    mWriter.put(mEntityId, "family", "column", HConstants.LATEST_TIMESTAMP, "latest");
+    //mWriter.put(mEntityId, "family", "column", "latest");
+
+    final KijiDataRequest dataRequest = KijiDataRequest.create("family", "column");
+
+    // Sanity check that the write succeeded.
+    KijiRowData rowData = mReader.get(mEntityId, dataRequest);
+    KijiCell cell = rowData.getMostRecentCell("family", "column");
+    assertNotNull(cell);
+    assertEquals(cell.getData().toString(), "latest");
+
+    // Let's just check that the timestamp is within 5 minutes of the system time.
+    Long storedTimestamp = cell.getTimestamp();
+
+    Long currentTime = System.currentTimeMillis();
+
+    assertTrue(currentTime > storedTimestamp);
+    assertTrue(currentTime - storedTimestamp < TimeUnit.MINUTES.toMillis(5));
   }
 }
 

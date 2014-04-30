@@ -367,6 +367,7 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
     // Possibly put everything in to one big put/delete combined queue.
 
     LOG.info("Flushing CassandraKijiBufferedWriter.");
+    LOG.info("Put buffer has " + mPutBuffer.size() + " entries.");
 
     synchronized (mInternalLock) {
       Preconditions.checkState(mState == State.OPEN,
@@ -386,6 +387,7 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
         mCounterDeleteBuffer.clear();
       }
       if (mPutBuffer.size() > 0) {
+        LOG.info("Put buffer has " + mPutBuffer.size() + " entries.");
         BatchStatement putStatement = new BatchStatement(BatchStatement.Type.UNLOGGED);
         putStatement.addAll(mPutBuffer);
         mAdmin.execute(putStatement);

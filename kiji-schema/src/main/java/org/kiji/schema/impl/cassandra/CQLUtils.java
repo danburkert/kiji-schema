@@ -209,7 +209,7 @@ public final class CQLUtils {
    * @param layout to return entity ID columns for
    * @return the entity ID columns of the table.
    */
-  private static List<String> getEntityIDColumns(KijiTableLayout layout) {
+  public static List<String> getEntityIDColumns(KijiTableLayout layout) {
     RowKeyFormat2 keyFormat = (RowKeyFormat2) layout.getDesc().getKeysFormat();
     switch (keyFormat.getEncoding()) {
       case RAW: return Lists.newArrayList(RAW_KEY_COL);
@@ -226,7 +226,7 @@ public final class CQLUtils {
    * @param layout to return partition key columns for.
    * @return the primary key columns for the layout.
    */
-  private static List<String> getPartitionKeyColumns(KijiTableLayout layout) {
+  public static List<String> getPartitionKeyColumns(KijiTableLayout layout) {
     RowKeyFormat2 keyFormat = (RowKeyFormat2) layout.getDesc().getKeysFormat();
     switch (keyFormat.getEncoding()) {
       case RAW: return Lists.newArrayList(RAW_KEY_COL);
@@ -245,7 +245,7 @@ public final class CQLUtils {
    * @param layout to return cluster columns for.
    * @return the primary key columns for the layout.
    */
-  private static List<String> getClusterColumns(KijiTableLayout layout) {
+  public static List<String> getClusterColumns(KijiTableLayout layout) {
     RowKeyFormat2 keyFormat = (RowKeyFormat2) layout.getDesc().getKeysFormat();
     List<String> columns;
     switch (keyFormat.getEncoding()) {

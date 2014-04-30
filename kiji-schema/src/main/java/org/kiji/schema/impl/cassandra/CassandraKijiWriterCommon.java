@@ -24,6 +24,7 @@ import java.nio.ByteBuffer;
 
 import com.datastax.driver.core.Statement;
 import com.google.common.base.Preconditions;
+import org.apache.hadoop.hbase.HConstants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -116,6 +117,12 @@ class CassandraKijiWriterCommon {
       long timestamp,
       T value) throws IOException {
     Preconditions.checkArgument(!isCounterColumn(family, qualifier));
+
+    // In Cassandra Kiji, a write to HConstants.LATEST_TIMESTAMP should be a write with the
+    // current system time.
+    if (timestamp == HConstants.LATEST_TIMESTAMP) {
+      timestamp = System.currentTimeMillis();
+    }
 
     int ttl = getTTL(mTable.getLayout(), family);
 
