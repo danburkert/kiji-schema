@@ -56,7 +56,7 @@ import org.kiji.schema.layout.CellSpec;
 import org.kiji.schema.layout.ColumnReaderSpec;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
-import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
+import org.kiji.schema.layout.impl.cassandra.CassandraShortColumnNameTranslator;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
 
 /**
@@ -107,7 +107,7 @@ public final class CassandraKijiTableReader implements KijiTableReader {
   private static final class ReaderLayoutCapsule {
     private final CellDecoderProvider mCellDecoderProvider;
     private final KijiTableLayout mLayout;
-    private final CassandraColumnNameTranslator mTranslator;
+    private final CassandraShortColumnNameTranslator mTranslator;
 
     /**
      * Default constructor.
@@ -120,7 +120,7 @@ public final class CassandraKijiTableReader implements KijiTableReader {
     private ReaderLayoutCapsule(
         final CellDecoderProvider cellDecoderProvider,
         final KijiTableLayout layout,
-        final CassandraColumnNameTranslator translator) {
+        final CassandraShortColumnNameTranslator translator) {
       mCellDecoderProvider = cellDecoderProvider;
       mLayout = layout;
       mTranslator = translator;
@@ -189,7 +189,7 @@ public final class CassandraKijiTableReader implements KijiTableReader {
       mReaderLayoutCapsule = new ReaderLayoutCapsule(
           provider,
           capsule.getLayout(),
-          (CassandraColumnNameTranslator)capsule.getKijiColumnNameTranslator());
+          (CassandraShortColumnNameTranslator)capsule.getKijiColumnNameTranslator());
     }
   }
 
@@ -351,7 +351,7 @@ public final class CassandraKijiTableReader implements KijiTableReader {
 
     CassandraDataRequestAdapter adapter = new CassandraDataRequestAdapter(
         dataRequest,
-        (CassandraColumnNameTranslator)capsule.getColumnNameTranslator()
+        (CassandraShortColumnNameTranslator)capsule.getColumnNameTranslator()
     );
 
     List<ResultSet> results = adapter.doGet(mTable, entityId);
@@ -444,7 +444,7 @@ public final class CassandraKijiTableReader implements KijiTableReader {
 
     CassandraDataRequestAdapter adapter = new CassandraDataRequestAdapter(
         dataRequest,
-        (CassandraColumnNameTranslator)capsule.getColumnNameTranslator()
+        (CassandraShortColumnNameTranslator)capsule.getColumnNameTranslator()
     );
 
     List<ResultSet> results = adapter.doScan(mTable, kijiScannerOptions);

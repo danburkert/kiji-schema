@@ -1479,8 +1479,7 @@ public final class KijiTableLayout {
    * @throws IOException on I/O error.
    */
   public CellSpec getCellSpec(KijiColumnName column) throws IOException {
-    return CellSpec.fromCellSchema(getCellSchema(column))
-        .setSchemaTable(mSchemaTable);
+    return CellSpec.fromCellSchema(getCellSchema(column)).setSchemaTable(mSchemaTable);
   }
 
   /**

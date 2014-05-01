@@ -42,7 +42,7 @@ import org.kiji.schema.KijiIOException;
 import org.kiji.schema.KijiPager;
 import org.kiji.schema.KijiRowData;
 import org.kiji.schema.impl.LayoutCapsule;
-import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
+import org.kiji.schema.layout.impl.cassandra.CassandraShortColumnNameTranslator;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
 
 /**
@@ -151,7 +151,7 @@ public final class CassandraVersionPager implements KijiPager {
     final LayoutCapsule capsule = mTable.getLayoutCapsule();
     CassandraDataRequestAdapter adapter = new CassandraDataRequestAdapter(
         mDataRequest,
-        (CassandraColumnNameTranslator)capsule.getKijiColumnNameTranslator()
+        (CassandraShortColumnNameTranslator)capsule.getKijiColumnNameTranslator()
     );
 
     // Should be only a single ResultSet here, because this was a data request for a single column.

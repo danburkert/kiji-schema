@@ -1,5 +1,5 @@
 /**
- * (c) Copyright 2012 WibiData, Inc.
+ * (c) Copyright 2014 WibiData, Inc.
  *
  * See the NOTICE file distributed with this work for additional
  * information regarding copyright ownership.
@@ -22,161 +22,53 @@ package org.kiji.schema.layout.impl.cassandra;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.layout.KijiTableLayout;
-import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout;
-import org.kiji.schema.layout.impl.ColumnId;
-import org.kiji.schema.layout.impl.ShortColumnNameTranslator;
 
 /**
- * Translates Kiji column names into shorter families and qualifiers.
- *
- * TODO: Update Cassandra column name translators with short, identity, native.
  *
  */
-@ApiAudience.Private
-public final class CassandraColumnNameTranslator extends ShortColumnNameTranslator {
+public abstract class CassandraColumnNameTranslator {
   private static final Logger LOG = LoggerFactory.getLogger(CassandraColumnNameTranslator.class);
 
   /**
-   * Creates a new <code>CassandraColumnNameTranslator</code> instance.
+   * Creates a new <code>KijiColumnNameTranslator</code> instance.  Supports either
+   * {@link org.kiji.schema.layout.impl.ShortColumnNameTranslator},
+   * {@link org.kiji.schema.layout.impl.IdentityColumnNameTranslator},
+   * {@link org.kiji.schema.layout.impl.HBaseNativeColumnNameTranslator} based on the table layout.
    *
-   * @param tableLayout The layout of the table to translate column names for.
+   * @param layout The layout of the table to translate column names for.
+   * @return KijiColumnNameTranslator of the appropriate type specified by the layout
    */
-  public CassandraColumnNameTranslator(KijiTableLayout tableLayout) {
-    super(tableLayout);
-  }
-
-  /**
-   * Get the translated name of the locality group of a column for Cassandra.
-   *
-   * @param kijiColumnName to translate.
-   * @return the locality group name (translated for Cassandra).
-   * @throws NoSuchColumnException if the column does not exist.
-   */
-  public String toCassandraLocalityGroup(
-      KijiColumnName kijiColumnName) throws NoSuchColumnException {
-    final String familyName = kijiColumnName.getFamily();
-    final FamilyLayout familyLayout = mTableLayout.getFamilyMap().get(familyName);
-    if (null == familyLayout) {
-      throw new NoSuchColumnException(kijiColumnName.toString());
-    }
-    final ColumnId localityGroupId = familyLayout.getLocalityGroup().getId();
-    return localityGroupId.toString();
-  }
-
-  /**
-   * Get name of column family (for Cassandra) for this column.
-   *
-   * @param kijiColumnName to translate.
-   * @return the column family name (translated for Cassandra).
-   * @throws NoSuchColumnException if the column does not exist.
-   */
-  public String toCassandraColumnFamily(
-      KijiColumnName kijiColumnName) throws NoSuchColumnException {
-    final String familyName = kijiColumnName.getFamily();
-    final FamilyLayout familyLayout = mTableLayout.getFamilyMap().get(familyName);
-    if (null == familyLayout) {
-      throw new NoSuchColumnException(kijiColumnName.toString());
-    }
-    //final ColumnId localityGroupId = familyLayout.getLocalityGroup().getId();
-    final ColumnId familyId = familyLayout.getId();
-
-    return familyId.toString();
-  }
-
-  /**
-   * Get the name of the column qualifier, translated for Cassandra, for this column.
-   *
-   * @param kijiColumnName to translate.
-   * @return the name of the column qualifier, translated for Cassandra.
-   * @throws NoSuchColumnException if the column does not exist.
-   */
-  public String toCassandraColumnQualifier(
-      KijiColumnName kijiColumnName) throws NoSuchColumnException {
-    // Check that the family exists before getting to the qualifier!
-    final String familyName = kijiColumnName.getFamily();
-    final FamilyLayout familyLayout = mTableLayout.getFamilyMap().get(familyName);
-    if (null == familyLayout) {
-      throw new NoSuchColumnException(kijiColumnName.toString());
-    }
-
-    final String qualifier = kijiColumnName.getQualifier();
-    if (familyLayout.isGroupType()) {
-      // Group type family.
-      if (null != qualifier) {
-        // Qualifier is specified.
-        final ColumnId columnId = familyLayout.getColumnIdNameMap().inverse().get(qualifier);
-        if (null == columnId) {
-          throw new NoSuchColumnException(kijiColumnName.toString());
-        }
-        return columnId.toString();
-      }
-
-      // Group-type, but qualifier is null.
-      //assert(familyLayout.isGroupType() && null == qualifier);
-
-      // The caller is attempting to translate a Kiji column name that has only a family,
-      // no qualifier.  This is okay.  We'll just return an HBaseColumnName with an empty
-      // qualifier suffix.
-      return null;
-    } else {
-      // Map type family - Don't do any translation on the column name.
-      assert familyLayout.isMapType();
-      return qualifier;
+  public static CassandraColumnNameTranslator from(KijiTableLayout layout) {
+    switch (layout.getDesc().getColumnNameTranslator()) {
+      case SHORT:
+        return new CassandraShortColumnNameTranslator(layout);
+      default:
+        throw new UnsupportedOperationException(
+            String.format("Unsupported ColumnNameTranslator: %s for table %s.",
+                layout.getDesc().getColumnNameTranslator(), layout.getName()));
     }
   }
 
   /**
-   * Create the Kiji column name, given the Cassandra versions of the locality group, family, and
-   * qualifier.
+   * Translates a Cassandra column name to a Kiji column name.
    *
-   * @param cassandraColumnFamily for the column.
-   * @param cassandraColumnQualifier for the column.
+   * @param columnName The Cassandra column name.
    * @return The Kiji column name.
-   * @throws NoSuchColumnException if the column does not exist.
+   * @throws NoSuchColumnException If the column name cannot be found.
    */
-  public KijiColumnName toKijiColumnName(
-      String cassandraColumnFamily,
-      String cassandraColumnQualifier) throws NoSuchColumnException {
+  public abstract KijiColumnName toKijiColumnName(CassandraColumnName columnName)
+      throws NoSuchColumnException;
 
-    LOG.debug(String.format(
-        "Translating C* column name family='%s', qual='%s' to Kiji column name...",
-        cassandraColumnFamily,
-        cassandraColumnQualifier));
-
-    // Get the locality group and the column family out of the
-    ColumnId familyId = ColumnId.fromString(cassandraColumnFamily);
-    ColumnId qualifierId = ColumnId.fromString(cassandraColumnQualifier);
-
-    final FamilyLayout kijiFamily = getKijiFamilyById(familyId);
-    if (null == kijiFamily) {
-      throw new NoSuchColumnException(String.format(
-          "No family with ColumnId '%s' in locality group '%s'.",
-          familyId, localityGroup.getDesc().getName()));
-    }
-
-    if (kijiFamily.isGroupType()) {
-      // Group type family.
-      final FamilyLayout.ColumnLayout kijiColumn = getKijiColumnById(kijiFamily, qualifierId);
-      if (null == kijiColumn) {
-        throw new NoSuchColumnException(String.format(
-            "No column with ColumnId '%s' in family '%s'.",
-            qualifierId, kijiFamily.getDesc().getName()));
-      }
-      final KijiColumnName result =
-          new KijiColumnName(kijiFamily.getDesc().getName(), kijiColumn.getDesc().getName());
-      LOG.debug(String.format("Translated to Kiji group column '%s'.", result));
-      return result;
-    }
-
-      // Map type family.
-      assert kijiFamily.isMapType();
-      final KijiColumnName result =
-          new KijiColumnName(kijiFamily.getDesc().getName(), cassandraColumnQualifier);
-      LOG.debug(String.format("Translated to Kiji map column '%s'.", result));
-      return result;
-  }
+  /**
+   * Translates a Kiji column name into a Cassandra column name.
+   *
+   * @param kijiColumnName The Kiji column name.
+   * @return The translated Cassandra column name.
+   * @throws NoSuchColumnException If the column name cannot be found.
+   */
+  public abstract CassandraColumnName toCassandraColumnName(KijiColumnName kijiColumnName)
+      throws NoSuchColumnException;
 }

@@ -24,6 +24,7 @@ import java.util.Map.Entry;
 import java.util.Set;
 
 import com.google.common.base.Joiner;
+import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
@@ -104,11 +105,17 @@ public final class CassandraTableName {
   /** The first component of all Cassandra keyspaces managed by Kiji. */
   public static final String KEYSPACE_PREFIX = "kiji";
 
-  /** The Cassandra keyspace. */
-  private final String mKeyspace;
+  /** The Kiji instance name. */
+  private final String mInstance;
 
-  /** The Cassandra table name. */
+  /** The Kiji table name, or null. */
   private final String mTable;
+
+  /** The Kiji locality group, or null. */
+  private final String mLocalityGroup;
+
+  /** The Kiji table type. */
+  private final TableType mType;
 
   private enum TableType {
     META_KEY_VALUE("meta_key_value"),
@@ -160,28 +167,29 @@ public final class CassandraTableName {
    * quotes).
    *
    * @param type of the table.
-   * @param instanceName of the table.
-   * @param tableName of the Kiji table, or null.
+   * @param instance of the table.
+   * @param table of the Kiji table, or null.
    * @param localityGroup of the table, or null.
    */
   private CassandraTableName(
       TableType type,
-      String instanceName,
-      String tableName,
+      String instance,
+      String table,
       String localityGroup) {
-    // mKeyspace = "${KEYSPACE_PREFIX}_${instanceName}"
-    // mTable = "${type}[_${table_name}[_${locality_group}]]"
     Preconditions.checkNotNull(type);
-    Preconditions.checkNotNull(instanceName);
+    Preconditions.checkNotNull(instance);
     Preconditions.checkArgument(
-        (type != TableType.KIJI_TABLE_LOCALITY_GROUP && type != TableType.KIJI_TABLE_COUNTER) || tableName != null,
+        (type != TableType.KIJI_TABLE_LOCALITY_GROUP && type != TableType.KIJI_TABLE_COUNTER)
+            || table != null,
         "Table name must be defined for a user Kiji table.");
     Preconditions.checkArgument(
         type != TableType.KIJI_TABLE_LOCALITY_GROUP || localityGroup != null,
         "Locality group must be defined for a user Kiji table.");
 
-    mKeyspace = KEYSPACE_PREFIX + '_' + instanceName;
-    mTable = Joiner.on('_').skipNulls().join(type.getName(), tableName, localityGroup);
+    mType = type;
+    mInstance = instance;
+    mTable = table;
+    mLocalityGroup = localityGroup;
   }
 
   /**
@@ -318,7 +326,6 @@ public final class CassandraTableName {
     return familyTables.build();
   }
 
-
   /**
    * Get the name of the keyspace (formatted for CQL) in C* for the Kiji instance specified in the
    * URI.
@@ -336,7 +343,7 @@ public final class CassandraTableName {
    * @return the keyspace of this Cassandra table name.
    */
   public String getKeyspace() {
-    return mKeyspace;
+    return appendCassandraKeyspace(new StringBuilder()).toString();
   }
 
   /**
@@ -347,7 +354,18 @@ public final class CassandraTableName {
    * @return the quoted keyspace of this Cassandra table name.
    */
   public String getQuotedKeyspace() {
-    return '"' + mKeyspace + '"';
+    return appendCassandraKeyspace(new StringBuilder().append('"')).append('"').toString();
+  }
+
+  /**
+   * Add the unquoted Cassandra keyspace to the provided StringBuilder, and return it.
+   *
+   * @param builder to add the Cassandra keyspace to.
+   * @return the builder.
+   */
+  private StringBuilder appendCassandraKeyspace(StringBuilder builder) {
+    // "${KEYSPACE_PREFIX}_${instanceName}"
+    return builder.append(KEYSPACE_PREFIX).append('_').append(mInstance);
   }
 
   /**
@@ -356,7 +374,7 @@ public final class CassandraTableName {
    * @return the table name of this Cassandra table name.
    */
   public String getTable() {
-    return mTable;
+    return appendCassandraTableName(new StringBuilder()).toString();
   }
 
   /**
@@ -367,7 +385,49 @@ public final class CassandraTableName {
    * @return the quoted table name of this Cassandra table name.
    */
   public String getQuotedTable() {
-    return '"' + mTable + '"';
+    return appendCassandraTableName(new StringBuilder().append('"')).append('"').toString();
+  }
+
+  /**
+   * Add the unquoted Cassandra table name to the provided StringBuilder, and return it.
+   *
+   * @param builder to add the Cassandra table name to.
+   * @return the builder.
+   */
+  private StringBuilder appendCassandraTableName(StringBuilder builder) {
+    // "${type}[_${table_name}[_${locality_group}]]"
+    return Joiner.on('_').skipNulls().appendTo(builder, mType.getName(), mTable, mLocalityGroup);
+  }
+
+  /**
+   * Gets the Kiji instance of this Cassandra table.
+   *
+   * @return the Kiji instance.
+   */
+  public String getKijiInstance() {
+    return mInstance;
+  }
+
+  /**
+   * Gets the Kiji table of this Cassandra table.
+   *
+   * @return the Kiji table.
+   */
+  public String getKijiTable() {
+    return mTable;
+  }
+
+  /**
+   * Gets the Kiji locality group of this Cassandra table.
+   *
+   * Note: If the locality group is translated by the
+   * {@link org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator}, this will be
+   * the translated version.
+   *
+   * @return the Kiji locality group.
+   */
+  public String getKijiLocalityGroup() {
+    return mLocalityGroup;
   }
 
   /**
@@ -380,18 +440,31 @@ public final class CassandraTableName {
    */
   @Override
   public String toString() {
-    return getQuotedKeyspace() + '.' + getQuotedTable();
+    final StringBuilder builder = new StringBuilder();
+    builder.append('"');
+    appendCassandraKeyspace(builder);
+    builder.append("\".\"");
+    appendCassandraTableName(builder);
+    builder.append('"');
+    return builder.toString();
   }
 
   /** {@inheritDoc}. */
   @Override
-  public boolean equals(Object other) {
-    return other instanceof CassandraTableName && toString().equals(other.toString());
+  public boolean equals(Object obj) {
+    if (!(obj instanceof CassandraTableName)) {
+      return false;
+    }
+    final CassandraTableName other = (CassandraTableName) obj;
+    return Objects.equal(mType, other.mType)
+        && Objects.equal(mInstance, other.mInstance)
+        && Objects.equal(mTable, other.mTable)
+        && Objects.equal(mLocalityGroup, other.mLocalityGroup);
   }
 
   /** {@inheritDoc}. */
   @Override
   public int hashCode() {
-    return toString().hashCode();
+    return Objects.hashCode(mType, mInstance, mTable, mLocalityGroup);
   }
 }

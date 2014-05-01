@@ -61,7 +61,7 @@ import org.kiji.schema.impl.LayoutConsumer;
 import org.kiji.schema.impl.Versions;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
-import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
+import org.kiji.schema.layout.impl.cassandra.CassandraShortColumnNameTranslator;
 import org.kiji.schema.layout.impl.ZooKeeperClient;
 import org.kiji.schema.layout.impl.ZooKeeperMonitor;
 import org.kiji.schema.layout.impl.ZooKeeperMonitor.LayoutTracker;
@@ -180,7 +180,7 @@ public final class CassandraKijiTable implements KijiTable {
    */
   public static final class CassandraLayoutCapsule implements LayoutCapsule {
     private final KijiTableLayout mLayout;
-    private final CassandraColumnNameTranslator mTranslator;
+    private final CassandraShortColumnNameTranslator mTranslator;
     //private final KijiTable mTable;
 
     /**
@@ -192,7 +192,7 @@ public final class CassandraKijiTable implements KijiTable {
      */
     private CassandraLayoutCapsule(
         final KijiTableLayout layout,
-        final CassandraColumnNameTranslator translator,
+        final CassandraShortColumnNameTranslator translator,
         final KijiTable table) {
       mLayout = layout;
       mTranslator = translator;
@@ -246,7 +246,7 @@ public final class CassandraKijiTable implements KijiTable {
 
       mLayoutCapsule = new CassandraLayoutCapsule(
           newLayout,
-          new CassandraColumnNameTranslator(newLayout),
+          new CassandraShortColumnNameTranslator(newLayout),
           CassandraKijiTable.this);
 
       // Propagates the new layout to all consumers:
@@ -343,7 +343,7 @@ public final class CassandraKijiTable implements KijiTable {
       mLayoutTracker = null;
       mLayoutCapsule = new CassandraLayoutCapsule(
           layout,
-          new CassandraColumnNameTranslator(layout),
+          new CassandraShortColumnNameTranslator(layout),
           this);
     }
 
@@ -504,7 +504,7 @@ public final class CassandraKijiTable implements KijiTable {
         "Cannot update layout consumers for a KijiTable in state %s.", state);
     layout.setSchemaTable(mKiji.getSchemaTable());
     final LayoutCapsule capsule =
-        new CassandraLayoutCapsule(layout, new CassandraColumnNameTranslator(layout), this);
+        new CassandraLayoutCapsule(layout, new CassandraShortColumnNameTranslator(layout), this);
     synchronized (mLayoutConsumers) {
       for (LayoutConsumer consumer : mLayoutConsumers) {
         consumer.update(capsule);

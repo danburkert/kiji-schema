@@ -43,7 +43,7 @@ import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.filter.KijiColumnFilter;
 import org.kiji.schema.filter.KijiColumnRangeFilter;
-import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
+import org.kiji.schema.layout.impl.cassandra.CassandraShortColumnNameTranslator;
 
 /**
  * Pages through the many qualifiers of a map-type family.
@@ -85,7 +85,7 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
   private String mMinQualifier = null;
 
 
-  private final CassandraColumnNameTranslator mColumnNameTranslator;
+  private final CassandraShortColumnNameTranslator mColumnNameTranslator;
 
   /**
    * Initializes a qualifier pager.
@@ -114,7 +114,7 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
         String.format("Paging is not enabled for column [%s].", family));
     }
 
-    mColumnNameTranslator = (CassandraColumnNameTranslator) table.getColumnNameTranslator();
+    mColumnNameTranslator = (CassandraShortColumnNameTranslator) table.getColumnNameTranslator();
 
     mEntityId = entityId;
     mTable = table;

@@ -56,7 +56,7 @@ import org.kiji.schema.impl.BoundColumnReaderSpec;
 import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.layout.ColumnReaderSpec;
 import org.kiji.schema.layout.KijiTableLayout;
-import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
+import org.kiji.schema.layout.impl.cassandra.CassandraShortColumnNameTranslator;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
 import org.kiji.schema.util.TimestampComparator;
 
@@ -232,8 +232,8 @@ public final class CassandraKijiRowData implements KijiRowData {
     mFilteredMap = new TreeMap<String, NavigableMap<String, NavigableMap<Long, byte[]>>>();
 
     // Need to translate from short names in Cassandra table into longer names in Kiji table.
-    final CassandraColumnNameTranslator columnNameTranslator =
-        new CassandraColumnNameTranslator(mTableLayout);
+    final CassandraShortColumnNameTranslator columnNameTranslator =
+        new CassandraShortColumnNameTranslator(mTableLayout);
 
     // Go through every column in the result set and add the data to the filtered map.
     for (Row row : mRows) {

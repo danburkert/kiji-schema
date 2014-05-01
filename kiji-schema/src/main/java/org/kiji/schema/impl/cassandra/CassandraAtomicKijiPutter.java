@@ -39,7 +39,7 @@ import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.impl.LayoutConsumer;
 import org.kiji.schema.impl.cassandra.CassandraKijiTableWriter.WriterLayoutCapsule;
 import org.kiji.schema.layout.LayoutUpdatedException;
-import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
+import org.kiji.schema.layout.impl.cassandra.CassandraShortColumnNameTranslator;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
 
 /**
@@ -145,7 +145,7 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
         mWriterLayoutCapsule = new WriterLayoutCapsule(
             provider,
             capsule.getLayout(),
-            (CassandraColumnNameTranslator) capsule.getKijiColumnNameTranslator());
+            (CassandraShortColumnNameTranslator) capsule.getKijiColumnNameTranslator());
       }
     }
   }

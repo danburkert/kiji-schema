@@ -307,7 +307,7 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
           String.format("Layout ID '%s' already exists", layoutId));
     }
 
-    //String metaTableName = mTable.getTableName();
+    //String metaTableName = mTable.getTable();
 
     Preconditions.checkNotNull(mPreparedStatementUpdateTableLayout);
     // TODO: This should do a "check-and-put" to match the HBase implementation.

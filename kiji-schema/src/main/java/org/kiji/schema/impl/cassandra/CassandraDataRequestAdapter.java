@@ -40,7 +40,7 @@ import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiDataRequest;
 import org.kiji.schema.KijiTableReader;
 import org.kiji.schema.cassandra.CassandraTableName;
-import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
+import org.kiji.schema.layout.impl.cassandra.CassandraShortColumnNameTranslator;
 
 /**
  * Wraps a KijiDataRequest to expose methods that generate meaningful objects in Cassandra land.
@@ -53,7 +53,7 @@ public class CassandraDataRequestAdapter {
   private final KijiDataRequest mKijiDataRequest;
 
   /** The translator for generating Cassandra column names. */
-  private final CassandraColumnNameTranslator mColumnNameTranslator;
+  private final CassandraShortColumnNameTranslator mColumnNameTranslator;
 
   /**
 
@@ -66,7 +66,7 @@ public class CassandraDataRequestAdapter {
    */
   public CassandraDataRequestAdapter(
       KijiDataRequest kijiDataRequest,
-      CassandraColumnNameTranslator translator) {
+      CassandraShortColumnNameTranslator translator) {
     mKijiDataRequest = kijiDataRequest;
     mColumnNameTranslator = translator;
   }
