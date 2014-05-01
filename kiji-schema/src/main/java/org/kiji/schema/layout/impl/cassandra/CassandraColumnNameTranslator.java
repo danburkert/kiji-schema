@@ -28,6 +28,7 @@ import org.kiji.schema.layout.KijiTableLayout;
 
 /**
  *
+ * TODO: Update Cassandra column name translators with short, identity, native.
  */
 public abstract class CassandraColumnNameTranslator {
   private static final Logger LOG = LoggerFactory.getLogger(CassandraColumnNameTranslator.class);

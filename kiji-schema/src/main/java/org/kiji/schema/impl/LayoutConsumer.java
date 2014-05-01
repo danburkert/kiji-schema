@@ -27,7 +27,7 @@ import org.kiji.annotations.ApiAudience;
  * table layout update.
  */
 @ApiAudience.Private
-public interface LayoutConsumer {
+public interface LayoutConsumer<T> {
 
   /**
    * Replace existing layout dependent state in this object with state from the given LayoutCapsule.
@@ -38,5 +38,5 @@ public interface LayoutConsumer {
    * @param capsule a container representing a snapshot of the layout dependent state of a table.
    * @throws IOException in case of an error updating.
    */
-  void update(LayoutCapsule capsule) throws IOException;
+  void update(T capsule) throws IOException;
 }

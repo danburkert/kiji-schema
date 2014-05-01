@@ -32,6 +32,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Sets;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.zookeeper.KeeperException;
 import org.slf4j.Logger;
@@ -61,6 +62,7 @@ import org.kiji.schema.impl.LayoutConsumer;
 import org.kiji.schema.impl.Versions;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
+import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
 import org.kiji.schema.layout.impl.cassandra.CassandraShortColumnNameTranslator;
 import org.kiji.schema.layout.impl.ZooKeeperClient;
 import org.kiji.schema.layout.impl.ZooKeeperMonitor;
@@ -153,7 +155,7 @@ public final class CassandraKijiTable implements KijiTable {
    * The capsule itself is immutable and should be replaced atomically with a new capsule.
    * References only the LayoutCapsule for the most recent layout for this table.
    */
-  private volatile LayoutCapsule mLayoutCapsule = null;
+  private volatile CassandraLayoutCapsule mLayoutCapsule = null;
 
   /**
    * Monitor used to delay construction of this KijiTable until the LayoutCapsule is initialized
@@ -167,7 +169,7 @@ public final class CassandraKijiTable implements KijiTable {
    * {@link org.kiji.schema.impl.LayoutConsumer#update(org.kiji.schema.impl.LayoutCapsule)} on all
    * registered consumers.
    */
-  private final Set<LayoutConsumer> mLayoutConsumers = new HashSet<LayoutConsumer>();
+  private final Set<LayoutConsumer<CassandraLayoutCapsule>> mLayoutConsumers = Sets.newHashSet();
 
   /**
    * Container class encapsulating the KijiTableLayout and related objects which must all reflect
@@ -178,9 +180,9 @@ public final class CassandraKijiTable implements KijiTable {
    * readers and writers need to be able to override CellSpecs.  Does not include EntityIdFactory
    * because currently there are no valid table layout updates that modify the row key encoding.
    */
-  public static final class CassandraLayoutCapsule implements LayoutCapsule {
+  public static final class CassandraLayoutCapsule {
     private final KijiTableLayout mLayout;
-    private final CassandraShortColumnNameTranslator mTranslator;
+    private final CassandraColumnNameTranslator mTranslator;
     //private final KijiTable mTable;
 
     /**
@@ -188,12 +190,10 @@ public final class CassandraKijiTable implements KijiTable {
      *
      * @param layout the layout of the table.
      * @param translator the KijiColumnNameTranslator for the given layout.
-     * @param table the KijiTable to which this capsule is associated.
      */
     private CassandraLayoutCapsule(
         final KijiTableLayout layout,
-        final CassandraShortColumnNameTranslator translator,
-        final KijiTable table) {
+        final CassandraColumnNameTranslator translator) {
       mLayout = layout;
       mTranslator = translator;
       //mTable = table;
@@ -211,7 +211,7 @@ public final class CassandraKijiTable implements KijiTable {
      * Get the ColumnNameTranslator for the associated layout.
      * @return the ColumnNameTranslator for the associated layout.
      */
-    public KijiColumnNameTranslator getKijiColumnNameTranslator() {
+    public CassandraColumnNameTranslator getCassandraColumnNameTranslator() {
       return mTranslator;
     }
   }
@@ -246,12 +246,11 @@ public final class CassandraKijiTable implements KijiTable {
 
       mLayoutCapsule = new CassandraLayoutCapsule(
           newLayout,
-          new CassandraShortColumnNameTranslator(newLayout),
-          CassandraKijiTable.this);
+          CassandraColumnNameTranslator.from(newLayout));
 
       // Propagates the new layout to all consumers:
       synchronized (mLayoutConsumers) {
-        for (LayoutConsumer consumer : mLayoutConsumers) {
+        for (LayoutConsumer<CassandraLayoutCapsule> consumer : mLayoutConsumers) {
           try {
             consumer.update(mLayoutCapsule);
           } catch (IOException ioe) {
@@ -550,7 +549,7 @@ public final class CassandraKijiTable implements KijiTable {
    * operation, you should use {@link #getLayoutCapsule()} to ensure consistent state.
    * @return the column name translator for the current layout of this table.
    */
-  public KijiColumnNameTranslator getColumnNameTranslator() {
+  public CassandraColumnNameTranslator getColumnNameTranslator() {
     return mLayoutCapsule.getKijiColumnNameTranslator();
   }
 

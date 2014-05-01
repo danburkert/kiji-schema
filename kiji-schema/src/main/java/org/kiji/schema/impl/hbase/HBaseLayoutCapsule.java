@@ -17,19 +17,31 @@
  * limitations under the License.
  */
 
-package org.kiji.schema.impl;
+package org.kiji.schema.impl.hbase;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
 
-/**
- * Interface for classes that contain all layout information that needs to be updated atomically
- * whenever a table layout changes.
- */
-public interface LayoutCapsule {
+public class HBaseLayoutCapsule implements LayoutCapsule {
+  private static final Logger LOG = LoggerFactory.getLogger(HBaseLayoutCapsule.class);
+
+  @Override
+  public KijiTableLayout getLayout() {
+    return null;
+  }
+
+  @Override
+  public KijiColumnNameTranslator getKijiColumnNameTranslator() {
+    return null;
+  }
+
   /**
-   * Get the KijiTableLayout for the associated layout.
-   * @return the KijiTableLayout for the associated layout.
+   * Get the ColumnNameTranslator for the associated layout.
+   * @return the ColumnNameTranslator for the associated layout.
    */
-  KijiTableLayout getLayout();
+  KijiColumnNameTranslator getKijiColumnNameTranslator();
 }

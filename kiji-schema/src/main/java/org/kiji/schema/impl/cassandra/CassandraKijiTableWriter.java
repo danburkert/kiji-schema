@@ -45,6 +45,7 @@ import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.impl.LayoutConsumer;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
+import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
 import org.kiji.schema.layout.impl.cassandra.CassandraShortColumnNameTranslator;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
 
@@ -92,7 +93,7 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
   public static final class WriterLayoutCapsule {
     private final CellEncoderProvider mCellEncoderProvider;
     private final KijiTableLayout mLayout;
-    private final CassandraShortColumnNameTranslator mTranslator;
+    private final CassandraColumnNameTranslator mTranslator;
 
     /**
      * Default constructor.
@@ -104,7 +105,7 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     public WriterLayoutCapsule(
         final CellEncoderProvider cellEncoderProvider,
         final KijiTableLayout layout,
-        final CassandraShortColumnNameTranslator translator) {
+        final CassandraColumnNameTranslator translator) {
       mCellEncoderProvider = cellEncoderProvider;
       mLayout = layout;
       mTranslator = translator;
@@ -115,7 +116,7 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
      *
      * @return the column name translator from this container.
      */
-    public KijiColumnNameTranslator getColumnNameTranslator() {
+    public CassandraColumnNameTranslator getColumnNameTranslator() {
       return mTranslator;
     }
 
@@ -172,7 +173,7 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
       mWriterLayoutCapsule = new WriterLayoutCapsule(
           provider,
           capsule.getLayout(),
-          (CassandraShortColumnNameTranslator)capsule.getKijiColumnNameTranslator());
+          CassandraColumnNameTranslator.from(capsule.getLayout()));
     }
   }
 
@@ -261,16 +262,14 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
       String qualifier
   ) throws IOException {
     final KijiColumnName columnName = new KijiColumnName(family, qualifier);
-    final CassandraShortColumnNameTranslator translator =
-        (CassandraShortColumnNameTranslator) mWriterLayoutCapsule.getColumnNameTranslator();
+    final CassandraColumnNameTranslator translator = mWriterLayoutCapsule.getColumnNameTranslator();
 
     Statement statement = CQLUtils.getColumnGetStatement(
         mAdmin,
         mTable.getLayout(),
         mTable.getCounterTable(),
         entityId,
-        translator.toCassandraColumnFamily(columnName),
-        translator.toCassandraColumnQualifier(columnName),
+        translator.toCassandraColumnName(columnName),
         null,
         null,
         null,
@@ -317,8 +316,7 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
             mTable.getLayout(),
             mTable.getCounterTable(),
             entityId,
-            translator.toCassandraColumnFamily(columnName),
-            translator.toCassandraColumnQualifier(columnName),
+            translator.toCassandraColumnName(columnName),
             counterIncrement));
   }
 

@@ -20,23 +20,23 @@
 package org.kiji.schema.layout.impl.cassandra;
 
 import com.google.common.base.Objects;
+import com.google.common.base.Preconditions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.kiji.annotations.ApiAudience;
-import org.kiji.schema.cassandra.CassandraTableName;
 
 /**
  * A Cassandra column name object that corresponds to a single Kiji column, but in a format suitable
- * for persisting into
+ * for persisting into Cassandra.
  *
  */
 @ApiAudience.Private
 public class CassandraColumnName {
   private static final Logger LOG = LoggerFactory.getLogger(CassandraColumnName.class);
 
-  /** The Cassandra table name. */
-  private final CassandraTableName mTable;
+  /** The column's locality group. */
+  private final String mLocalityGroup;
 
   /** The Cassandra column family. */
   private final String mFamily;
@@ -45,24 +45,31 @@ public class CassandraColumnName {
   private final String mQualifier;
 
   /**
+   * Create a CassandraColumnName with the provided locality group, family, and qualifier.
    *
-   * @param table
-   * @param family
-   * @param qualifier
+   * @param localityGroup of column.
+   * @param family of column.
+   * @param qualifier of column, or null if unqualified column.
    */
-  public CassandraColumnName(CassandraTableName table, String family, String qualifier) {
-    mTable = table;
+  public CassandraColumnName(String localityGroup, String family, String qualifier) {
+    Preconditions.checkNotNull(localityGroup, "Must specify a locality group.");
+    Preconditions.checkNotNull(family, "Must specify a family.");
+    mLocalityGroup = localityGroup;
     mFamily = family;
     mQualifier = qualifier;
   }
 
   /**
-   * Gets the Cassandra table name of this column.
+   * Gets the locality group name of this column.
    *
-   * @return the Cassandra table name of this column.
+   * Note: If the locality group is translated by the
+   * {@link org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator}, this will be
+   * the translated version.
+   *
+   * @return the locality group name of this column.
    */
-  public CassandraTableName getTable() {
-    return mTable;
+  public String getLocalityGroup() {
+    return mLocalityGroup;
   }
 
   /**
@@ -85,7 +92,7 @@ public class CassandraColumnName {
    * {@link org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator}, this will be
    * the translated version.
    *
-   * @return the Cassandra column qualifier of this column.
+   * @return the Cassandra column qualifier of this column, or null if unqualified column.
    */
   public String getQualifier() {
     return mQualifier;
@@ -93,7 +100,7 @@ public class CassandraColumnName {
 
   @Override
   public int hashCode() {
-    return Objects.hashCode(mTable, mFamily, mQualifier);
+    return Objects.hashCode(mLocalityGroup, mFamily, mQualifier);
   }
 
   @Override
@@ -102,15 +109,15 @@ public class CassandraColumnName {
       return false;
     }
     CassandraColumnName other = (CassandraColumnName) obj;
-    return mTable.equals(other.mTable)
-        && mFamily.equals(other.mFamily)
-        && mQualifier.equals(other.mQualifier);
+    return Objects.equal(mLocalityGroup, other.mLocalityGroup)
+        && Objects.equal(mFamily, other.mFamily)
+        && Objects.equal(mQualifier, other.mQualifier);
   }
 
   @Override
   public String toString() {
     return Objects.toStringHelper(this.getClass())
-        .add("Table", mTable)
+        .add("Locality Group", mLocalityGroup)
         .add("Family", mFamily)
         .add("Qualifier", mQualifier)
         .toString();
