@@ -56,7 +56,7 @@ import org.kiji.schema.impl.LayoutConsumer;
 import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout;
 import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout.ColumnLayout;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
-import org.kiji.schema.layout.impl.LayoutCapsule;
+import org.kiji.schema.layout.impl.hbase.HBaseLayoutCapsule;
 import org.kiji.schema.platform.SchemaPlatformBridge;
 
 /**
@@ -121,10 +121,10 @@ public final class HBaseKijiBufferedWriter implements KijiBufferedWriter {
   private State mState = State.UNINITIALIZED;
 
   /** Provides for the updating of this Writer in response to a table layout update. */
-  private final class InnerLayoutUpdater implements LayoutConsumer {
+  private final class InnerLayoutUpdater implements LayoutConsumer<HBaseLayoutCapsule> {
     /** {@inheritDoc} */
     @Override
-    public void update(final LayoutCapsule capsule) throws IOException {
+    public void update(final HBaseLayoutCapsule capsule) throws IOException {
       synchronized (mInternalLock) {
         if (mState == State.CLOSED) {
           LOG.debug("BufferedWriter instance is closed; ignoring layout update.");
@@ -161,7 +161,7 @@ public final class HBaseKijiBufferedWriter implements KijiBufferedWriter {
         mWriterLayoutCapsule = new HBaseKijiTableWriter.WriterLayoutCapsule(
             provider,
             capsule.getLayout(),
-            capsule.getKijiColumnNameTranslator());
+            capsule.getColumnNameTranslator());
       }
     }
   }
@@ -404,8 +404,7 @@ public final class HBaseKijiBufferedWriter implements KijiBufferedWriter {
             .createDelete(hbaseRow, HConstants.LATEST_TIMESTAMP);
         for (byte[] hbaseQualifier
                  : result.getFamilyMap(hbaseColumnName.getFamily()).keySet()) {
-          LOG.debug("Deleting HBase column " + hbaseColumnName.getFamilyAsString()
-              + ":" + Bytes.toString(hbaseQualifier));
+          LOG.debug("Deleting HBase column {}.", hbaseColumnName);
           delete.deleteColumns(hbaseColumnName.getFamily(), hbaseQualifier, upToTimestamp);
         }
         updateBuffer(delete);

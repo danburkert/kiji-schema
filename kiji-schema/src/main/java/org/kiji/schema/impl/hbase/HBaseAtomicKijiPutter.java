@@ -42,7 +42,7 @@ import org.kiji.schema.impl.LayoutConsumer;
 import org.kiji.schema.impl.hbase.HBaseKijiTableWriter.WriterLayoutCapsule;
 import org.kiji.schema.layout.LayoutUpdatedException;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
-import org.kiji.schema.layout.impl.LayoutCapsule;
+import org.kiji.schema.layout.impl.hbase.HBaseLayoutCapsule;
 
 /**
  * HBase implementation of AtomicKijiPutter.
@@ -120,10 +120,10 @@ public final class HBaseAtomicKijiPutter implements AtomicKijiPutter {
   private boolean mLayoutOutOfDate = false;
 
   /** Provides for the updating of this Writer in response to a table layout update. */
-  private final class InnerLayoutUpdater implements LayoutConsumer {
+  private final class InnerLayoutUpdater implements LayoutConsumer<HBaseLayoutCapsule> {
     /** {@inheritDoc} */
     @Override
-    public void update(final LayoutCapsule capsule) throws IOException {
+    public void update(final HBaseLayoutCapsule capsule) throws IOException {
       if (mState.get() == State.CLOSED) {
         LOG.debug("AtomicKijiPutter instance is closed; ignoring layout update.");
         return;
@@ -153,7 +153,7 @@ public final class HBaseAtomicKijiPutter implements AtomicKijiPutter {
         mWriterLayoutCapsule = new WriterLayoutCapsule(
             provider,
             capsule.getLayout(),
-            capsule.getKijiColumnNameTranslator());
+            capsule.getColumnNameTranslator());
       }
     }
   }

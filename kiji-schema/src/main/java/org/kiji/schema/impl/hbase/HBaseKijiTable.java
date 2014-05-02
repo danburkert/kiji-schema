@@ -61,10 +61,11 @@ import org.kiji.schema.avro.RowKeyFormat2;
 import org.kiji.schema.hbase.KijiManagedHBaseTableName;
 import org.kiji.schema.impl.HTableInterfaceFactory;
 import org.kiji.schema.impl.LayoutConsumer;
-import org.kiji.schema.layout.KijiColumnNameTranslator;
+import org.kiji.schema.layout.HBaseColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.LayoutCapsule;
 import org.kiji.schema.layout.impl.TableLayoutMonitor;
+import org.kiji.schema.layout.impl.hbase.HBaseLayoutCapsule;
 import org.kiji.schema.util.Debug;
 import org.kiji.schema.util.DebugResourceTracker;
 import org.kiji.schema.util.ResourceUtils;
@@ -117,9 +118,6 @@ public final class HBaseKijiTable implements KijiTable {
   /** Tracks the state of this kiji table. */
   private final AtomicReference<State> mState = new AtomicReference<State>(State.UNINITIALIZED);
 
-  /** String representation of the call stack at the time this object is constructed. */
-  private final String mConstructorStack;
-
   /** HTableInterfaceFactory for creating new HTables associated with this KijiTable. */
   private final HTableInterfaceFactory mHTableFactory;
 
@@ -145,7 +143,7 @@ public final class HBaseKijiTable implements KijiTable {
   private final String mHBaseTableName;
 
   /** Monitor for the layout of this table. */
-  private final TableLayoutMonitor mLayoutMonitor;
+  private final TableLayoutMonitor<HBaseLayoutCapsule> mLayoutMonitor;
 
   /**
    * Construct an opened Kiji table stored in HBase.
@@ -164,12 +162,8 @@ public final class HBaseKijiTable implements KijiTable {
       String name,
       Configuration conf,
       HTableInterfaceFactory htableFactory,
-      TableLayoutMonitor layoutMonitor)
+      TableLayoutMonitor<HBaseLayoutCapsule> layoutMonitor)
       throws IOException {
-    mConstructorStack = (CLEANUP_LOG.isDebugEnabled())
-        ? Debug.getStackTrace()
-        : ENABLE_CONSTRUCTOR_STACK_LOGGING_MESSAGE;
-
     mKiji = kiji;
     mKiji.retain();
 
@@ -198,7 +192,10 @@ public final class HBaseKijiTable implements KijiTable {
     // Table is now open and must be released properly:
     mRetainCount.set(1);
 
-    DebugResourceTracker.get().registerResource(this, mConstructorStack);
+    String constructorStack = (CLEANUP_LOG.isDebugEnabled())
+        ? Debug.getStackTrace()
+        : ENABLE_CONSTRUCTOR_STACK_LOGGING_MESSAGE;
+    DebugResourceTracker.get().registerResource(this, constructorStack);
 
     final State oldState = mState.getAndSet(State.OPEN);
     Preconditions.checkState(oldState == State.UNINITIALIZED,
@@ -253,7 +250,8 @@ public final class HBaseKijiTable implements KijiTable {
    * @param consumer the LayoutConsumer to be registered.
    * @throws IOException in case of an error updating the LayoutConsumer.
    */
-  public void registerLayoutConsumer(LayoutConsumer consumer) throws IOException {
+  public void registerLayoutConsumer(LayoutConsumer<HBaseLayoutCapsule> consumer)
+      throws IOException {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot register a new layout consumer to a KijiTable in state %s.", state);
@@ -321,8 +319,8 @@ public final class HBaseKijiTable implements KijiTable {
    * operation, you should use {@link #getLayoutCapsule()} to ensure consistent state.
    * @return the column name translator for the current layout of this table.
    */
-  public KijiColumnNameTranslator getColumnNameTranslator() {
-    return getLayoutCapsule().getKijiColumnNameTranslator();
+  public HBaseColumnNameTranslator getColumnNameTranslator() {
+    return getLayoutCapsule().getColumnNameTranslator();
   }
 
   /**
@@ -330,7 +328,7 @@ public final class HBaseKijiTable implements KijiTable {
    * corresponding KijiColumnNameTranslator.  Do not cache this object or its contents.
    * @return a layout capsule representing the current state of this table's layout.
    */
-  public LayoutCapsule getLayoutCapsule() {
+  public HBaseLayoutCapsule getLayoutCapsule() {
     return mLayoutMonitor.getLayoutCapsule();
   }
 

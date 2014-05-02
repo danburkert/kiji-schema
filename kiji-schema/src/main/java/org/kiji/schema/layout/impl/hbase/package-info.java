@@ -1,5 +1,5 @@
 /**
- * (c) Copyright 2012 WibiData, Inc.
+ * (c) Copyright 2014 WibiData, Inc.
  *
  * See the NOTICE file distributed with this work for additional
  * information regarding copyright ownership.
@@ -17,21 +17,12 @@
  * limitations under the License.
  */
 
-package org.kiji.schema.hbase;
-
-import static org.junit.Assert.assertArrayEquals;
-import static org.junit.Assert.assertEquals;
-
-import org.apache.hadoop.hbase.util.Bytes;
-import org.junit.Test;
-
-public class TestHBaseColumnName {
-  @Test
-  public void testHBaseColumnName() {
-    HBaseColumnName column = new HBaseColumnName(Bytes.toBytes("foo"), Bytes.toBytes("bar"));
-    assertArrayEquals(Bytes.toBytes("foo"), column.getFamily());
-    assertEquals("foo", Bytes.toString(column.getFamily()));
-    assertArrayEquals(Bytes.toBytes("bar"), column.getQualifier());
-    assertEquals("bar", Bytes.toString(column.getQualifier()));
-  }
-}
+/**
+ * Implementation for HBase-specific Kiji layout management classes.
+ *
+ * <p>
+ * Users generally shouldn't need to reference any of these classes directly, but rather use the
+ * classes presented by the {@link org.kiji.schema.layout} package.
+ * </p>
+ */
+package org.kiji.schema.layout.impl.hbase;

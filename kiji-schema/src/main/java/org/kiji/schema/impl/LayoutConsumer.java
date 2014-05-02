@@ -26,18 +26,20 @@ import org.kiji.schema.layout.impl.LayoutCapsule;
 /**
  * Interface for classes which hold table layout references which must be updated in response to a
  * table layout update.
+ *
+ * @param <T> concrete type of LayoutCapsule which the LayoutConsumer handles.
  */
 @ApiAudience.Private
-public interface LayoutConsumer {
+public interface LayoutConsumer<T extends LayoutCapsule<?>> {
 
   /**
-   * Replace existing layout dependent state in this object with state from the given LayoutCapsule.
-   * The table for which this layout consumer was opened is responsible for calling this method in
-   * response to an update to the table layout before the table should report that its update was
-   * successful.
+   * Replace existing layout dependent state in this object with state from the given
+   * {@link LayoutCapsule}. The table for which this layout consumer was opened is responsible for
+   * calling this method in response to an update to the table layout before the table should report
+   * that its update was successful.
    *
-   * @param capsule a container representing a snapshot of the layout dependent state of a table.
+   * @param capsule a {@link LayoutCapsule} containing the most recent layout of the table.
    * @throws IOException in case of an error updating.
    */
-  void update(LayoutCapsule capsule) throws IOException;
+  void update(T capsule) throws IOException;
 }

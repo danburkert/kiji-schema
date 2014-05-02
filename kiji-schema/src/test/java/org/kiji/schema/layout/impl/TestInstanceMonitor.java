@@ -36,6 +36,8 @@ import org.kiji.schema.KijiClientTest;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.avro.TableLayoutDesc;
 import org.kiji.schema.layout.KijiTableLayouts;
+import org.kiji.schema.layout.impl.hbase.HBaseLayoutCapsule;
+import org.kiji.schema.layout.impl.hbase.HBaseLayoutCapsule.HBaseLayoutCapsuleFactory;
 import org.kiji.schema.zookeeper.TableUsersTracker;
 import org.kiji.schema.zookeeper.TestTableUsersTracker.QueueingTableUsersUpdateHandler;
 import org.kiji.schema.zookeeper.ZooKeeperUtils;
@@ -54,9 +56,10 @@ public class TestInstanceMonitor extends KijiClientTest {
     mTableURI = KijiURI.newBuilder(kiji.getURI()).withTableName(layout.getName()).build();
     mZKClient = ZooKeeperUtils.getZooKeeperClient(mTableURI);
 
-    mInstanceMonitor = new InstanceMonitor(
+    mInstanceMonitor = new InstanceMonitor<HBaseLayoutCapsule>(
         kiji.getSystemTable().getDataVersion(),
         kiji.getURI(),
+        HBaseLayoutCapsuleFactory.get(),
         kiji.getSchemaTable(),
         kiji.getMetaTable(),
         mZKClient).start();

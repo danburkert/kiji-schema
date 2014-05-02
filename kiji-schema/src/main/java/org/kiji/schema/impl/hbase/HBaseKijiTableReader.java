@@ -61,11 +61,11 @@ import org.kiji.schema.impl.BoundColumnReaderSpec;
 import org.kiji.schema.impl.LayoutConsumer;
 import org.kiji.schema.layout.CellSpec;
 import org.kiji.schema.layout.ColumnReaderSpec;
+import org.kiji.schema.layout.HBaseColumnNameTranslator;
 import org.kiji.schema.layout.InvalidLayoutException;
-import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
-import org.kiji.schema.layout.impl.LayoutCapsule;
+import org.kiji.schema.layout.impl.hbase.HBaseLayoutCapsule;
 
 /**
  * Reads from a kiji table by sending the requests directly to the HBase tables.
@@ -114,7 +114,7 @@ public final class HBaseKijiTableReader implements KijiTableReader {
   private static final class ReaderLayoutCapsule {
     private final CellDecoderProvider mCellDecoderProvider;
     private final KijiTableLayout mLayout;
-    private final KijiColumnNameTranslator mTranslator;
+    private final HBaseColumnNameTranslator mTranslator;
 
     /**
      * Default constructor.
@@ -127,7 +127,7 @@ public final class HBaseKijiTableReader implements KijiTableReader {
     private ReaderLayoutCapsule(
         final CellDecoderProvider cellDecoderProvider,
         final KijiTableLayout layout,
-        final KijiColumnNameTranslator translator) {
+        final HBaseColumnNameTranslator translator) {
       mCellDecoderProvider = cellDecoderProvider;
       mLayout = layout;
       mTranslator = translator;
@@ -137,7 +137,7 @@ public final class HBaseKijiTableReader implements KijiTableReader {
      * Get the column name translator for the current layout.
      * @return the column name translator for the current layout.
      */
-    private KijiColumnNameTranslator getColumnNameTranslator() {
+    private HBaseColumnNameTranslator getColumnNameTranslator() {
       return mTranslator;
     }
 
@@ -161,10 +161,10 @@ public final class HBaseKijiTableReader implements KijiTableReader {
   }
 
   /** Provides for the updating of this Reader in response to a table layout update. */
-  private final class InnerLayoutUpdater implements LayoutConsumer {
+  private final class InnerLayoutUpdater implements LayoutConsumer<HBaseLayoutCapsule> {
     /** {@inheritDoc} */
     @Override
-    public void update(LayoutCapsule capsule) throws IOException {
+    public void update(HBaseLayoutCapsule capsule) throws IOException {
       if (mState.get() == State.CLOSED) {
         LOG.debug("KijiTableReader instance is closed; ignoring layout update.");
         return;
@@ -200,7 +200,7 @@ public final class HBaseKijiTableReader implements KijiTableReader {
       mReaderLayoutCapsule = new ReaderLayoutCapsule(
           provider,
           capsule.getLayout(),
-          capsule.getKijiColumnNameTranslator());
+          capsule.getColumnNameTranslator());
     }
   }
 
@@ -441,9 +441,7 @@ public final class HBaseKijiTableReader implements KijiTableReader {
 
     // Parse the results.  If a Result is null, then the corresponding KijiRowData should also
     // be null.  This indicates that there was an error retrieving this row.
-    List<KijiRowData> rowDataList = parseResults(results, entityIds, dataRequest, tableLayout);
-
-    return rowDataList;
+    return parseResults(results, entityIds, dataRequest);
   }
 
   /** {@inheritDoc} */
@@ -520,12 +518,14 @@ public final class HBaseKijiTableReader implements KijiTableReader {
    * @param results The results to parse.
    * @param entityIds The matching set of EntityIds.
    * @param dataRequest The KijiDataRequest.
-   * @param tableLayout The table layout.
    * @return The list of KijiRowData returned by these results.
    * @throws IOException If there is an error.
    */
-  private List<KijiRowData> parseResults(Result[] results, List<EntityId> entityIds,
-      KijiDataRequest dataRequest, KijiTableLayout tableLayout) throws IOException {
+  private List<KijiRowData> parseResults(
+      Result[] results,
+      List<EntityId> entityIds,
+      KijiDataRequest dataRequest)
+      throws IOException {
     List<KijiRowData> rowDataList = new ArrayList<KijiRowData>(results.length);
 
     for (int i = 0; i < results.length; i++) {

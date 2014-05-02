@@ -52,12 +52,12 @@ import org.kiji.schema.avro.SchemaType;
 import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
 import org.kiji.schema.impl.LayoutConsumer;
-import org.kiji.schema.layout.KijiColumnNameTranslator;
+import org.kiji.schema.layout.HBaseColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout;
 import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout.ColumnLayout;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
-import org.kiji.schema.layout.impl.LayoutCapsule;
+import org.kiji.schema.layout.impl.hbase.HBaseLayoutCapsule;
 import org.kiji.schema.platform.SchemaPlatformBridge;
 
 /**
@@ -105,7 +105,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
   public static final class WriterLayoutCapsule {
     private final CellEncoderProvider mCellEncoderProvider;
     private final KijiTableLayout mLayout;
-    private final KijiColumnNameTranslator mTranslator;
+    private final HBaseColumnNameTranslator mTranslator;
 
     /**
      * Default constructor.
@@ -117,7 +117,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
     public WriterLayoutCapsule(
         final CellEncoderProvider cellEncoderProvider,
         final KijiTableLayout layout,
-        final KijiColumnNameTranslator translator) {
+        final HBaseColumnNameTranslator translator) {
       mCellEncoderProvider = cellEncoderProvider;
       mLayout = layout;
       mTranslator = translator;
@@ -128,7 +128,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
      *
      * @return the column name translator from this container.
      */
-    public KijiColumnNameTranslator getColumnNameTranslator() {
+    public HBaseColumnNameTranslator getColumnNameTranslator() {
       return mTranslator;
     }
 
@@ -152,10 +152,10 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
   }
 
   /** Provides for the updating of this Writer in response to a table layout update. */
-  private final class InnerLayoutUpdater implements LayoutConsumer {
+  private final class InnerLayoutUpdater implements LayoutConsumer<HBaseLayoutCapsule> {
     /** {@inheritDoc} */
     @Override
-    public void update(final LayoutCapsule capsule) throws IOException {
+    public void update(final HBaseLayoutCapsule capsule) throws IOException {
       final State state = mState.get();
       if (state == State.CLOSED) {
         LOG.debug("Writer is closed: ignoring layout update.");
@@ -185,7 +185,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
       mWriterLayoutCapsule = new WriterLayoutCapsule(
           provider,
           capsule.getLayout(),
-          capsule.getKijiColumnNameTranslator());
+          capsule.getColumnNameTranslator());
     }
   }
 
@@ -433,8 +433,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
           .createDelete(hbaseRow, HConstants.LATEST_TIMESTAMP);
       for (byte[] hbaseQualifier
                : result.getFamilyMap(hbaseColumnName.getFamily()).keySet()) {
-        LOG.debug("Deleting HBase column " + hbaseColumnName.getFamilyAsString()
-            + ":" + Bytes.toString(hbaseQualifier));
+        LOG.debug("Deleting HBase column {}.", hbaseColumnName);
         delete.deleteColumns(hbaseColumnName.getFamily(), hbaseQualifier, upToTimestamp);
       }
       mHTable.delete(delete);

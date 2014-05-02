@@ -45,7 +45,7 @@ import org.kiji.schema.filter.KijiColumnRangeFilter;
 import org.kiji.schema.filter.StripValueColumnFilter;
 import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.impl.KijiPaginationFilter;
-import org.kiji.schema.layout.impl.LayoutCapsule;
+import org.kiji.schema.layout.impl.hbase.HBaseLayoutCapsule;
 import org.kiji.schema.util.Debug;
 
 /**
@@ -162,9 +162,9 @@ public final class HBaseQualifierPager implements Iterator<String[]>, Closeable 
 
     LOG.debug("HBaseMapPager data request: {} and page size {}", nextPageDataRequest, pageSize);
 
-    final LayoutCapsule capsule = mTable.getLayoutCapsule();
+    final HBaseLayoutCapsule capsule = mTable.getLayoutCapsule();
     final HBaseDataRequestAdapter adapter = new HBaseDataRequestAdapter(
-        nextPageDataRequest, capsule.getKijiColumnNameTranslator());
+        nextPageDataRequest, capsule.getColumnNameTranslator());
     try {
       final Get hbaseGet = adapter.toGet(mEntityId, capsule.getLayout());
       if (LOG.isDebugEnabled()) {
@@ -180,7 +180,7 @@ public final class HBaseQualifierPager implements Iterator<String[]>, Closeable 
         final HBaseColumnName hbaseColumn =
             new HBaseColumnName(kvs[i].getFamily(), kvs[i].getQualifier());
         final KijiColumnName kijiColumn =
-            capsule.getKijiColumnNameTranslator().toKijiColumnName(hbaseColumn);
+            capsule.getColumnNameTranslator().toKijiColumnName(hbaseColumn);
         qualifiers[i] = kijiColumn.getQualifier();
       }
 

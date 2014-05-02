@@ -38,7 +38,7 @@ import org.kiji.schema.avro.LocalityGroupDesc;
 import org.kiji.schema.avro.TableLayoutDesc;
 import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.hbase.KijiManagedHBaseTableName;
-import org.kiji.schema.layout.KijiColumnNameTranslator;
+import org.kiji.schema.layout.HBaseColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayouts;
 import org.kiji.schema.testutil.AbstractKijiIntegrationTest;
@@ -98,8 +98,8 @@ public class IntegrationTestHBaseKijiLayoutAdmin extends AbstractKijiIntegration
       EXPECTED_MEMSTORE_FLUSHSIZE, KijiTableLayouts.FULL_FEATURED);
     assertEquals(message, EXPECTED_MEMSTORE_FLUSHSIZE, actualMemstoreFlushsize);
 
-    KijiColumnNameTranslator columnNameTranslator =
-      KijiColumnNameTranslator.from(KijiTableLayout.newLayout(fullFeaturedLayout));
+    HBaseColumnNameTranslator columnNameTranslator =
+      HBaseColumnNameTranslator.from(KijiTableLayout.newLayout(fullFeaturedLayout));
     HBaseColumnName columnName = columnNameTranslator.toHBaseColumnName(
       new KijiColumnName(FULL_FEATURED_TABLE_FAMILY_NAME, FULL_FEATURED_TABLE_QUALIFIER_NAME));
 
@@ -158,8 +158,8 @@ public class IntegrationTestHBaseKijiLayoutAdmin extends AbstractKijiIntegration
     long actualMemstoreFlushsize = hTableDescriptor.getMemStoreFlushSize();
     assertEquals(EXPECTED_MEMSTORE_FLUSHSIZE + 1000L, actualMemstoreFlushsize);
 
-    KijiColumnNameTranslator columnNameTranslator =
-      KijiColumnNameTranslator.from(KijiTableLayout.newLayout(fullFeaturedLayout));
+    HBaseColumnNameTranslator columnNameTranslator =
+      HBaseColumnNameTranslator.from(KijiTableLayout.newLayout(fullFeaturedLayout));
     KijiColumnName kijiColumnName = new KijiColumnName(FULL_FEATURED_TABLE_FAMILY_NAME,
       FULL_FEATURED_TABLE_QUALIFIER_NAME);
     HBaseColumnName columnName = columnNameTranslator.toHBaseColumnName(kijiColumnName);
@@ -218,8 +218,8 @@ public class IntegrationTestHBaseKijiLayoutAdmin extends AbstractKijiIntegration
     long actualMemstoreFlushsize = hTableDescriptor.getMemStoreFlushSize();
     assertEquals(updatedMemstoreFlushsize, actualMemstoreFlushsize);
 
-    KijiColumnNameTranslator columnNameTranslator =
-      KijiColumnNameTranslator.from(KijiTableLayout.newLayout(simpleLayout));
+    HBaseColumnNameTranslator columnNameTranslator =
+      HBaseColumnNameTranslator.from(KijiTableLayout.newLayout(simpleLayout));
     KijiColumnName kijiColumnName = new KijiColumnName(SIMPLE_TABLE_FAMILY_NAME,
       SIMPLE_TABLE_QUALIFIER_NAME);
     HBaseColumnName columnName = columnNameTranslator.toHBaseColumnName(kijiColumnName);
