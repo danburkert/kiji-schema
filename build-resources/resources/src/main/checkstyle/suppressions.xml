@@ -34,9 +34,15 @@
   <!-- Don't worry about checkstyle on apache foundation code. -->
   <suppress checks=".*" files="src/main/java/org/apache/"/>
 
+  <!-- Skip checkstyle on google code we copied in here. -->
+  <suppress checks=".*" files="src/main/java/com/google/"/>
+
   <!-- Don't worry about checkstyle on slf4j code. -->
   <suppress checks=".*" files="src/main/java/org/slf4j/"/>
 
   <!-- Don't worry about checkstyle on protocol buffer code. -->
   <suppress checks=".*" files="src/test/java/org/kiji/proto/"/>
+
+  <!-- Internal helper methods. -->
+  <suppress checks="ParameterNumber" files="src/main/java/org/kiji/schema/impl/cassandra/CQLUtils.java"/>
 </suppressions>

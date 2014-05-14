@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.util.List;
 
+import com.google.common.collect.ImmutableMap;
 import org.apache.hadoop.conf.Configuration;
 
 import org.kiji.annotations.ApiAudience;
@@ -91,43 +92,83 @@ import org.kiji.schema.util.ReferenceCountable;
 @Inheritance.Sealed
 public interface Kiji extends KijiTableFactory, ReferenceCountable<Kiji> {
   /**
-   * Provider for the default Kiji factory.
-   *
-   * Ensures that there is only one KijiFactory instance.
+   * Used as a key in the runtime hints map supplied to the {@link KijiFactory} and
+   * {@link org.kiji.schema.impl.KijiInstallerProvider} providers. The value at this key indicates
+   * the type of Kiji factory or
+   * installer which should be created.
+   */
+  String KIJI_TYPE_KEY = "KIJI_TYPE";
+
+  /**
+   * An enumeration over the types of Kiji instances available. A Kiji type is specific to the type
+   * of backing datastore, for example, HBase or Cassandra.
+   */
+  public enum Type {
+    HBASE,     // A Kiji instance backed by HBase
+    CASSANDRA, // A Kiji instance backed by Cassandra
+  }
+
+  /**
+   * Provides {@link KijiFactory} and {@link Kiji} instances. This is a singleton object.
    */
   public static final class Factory {
-    /** KijiFactory instance. */
-    private static KijiFactory mInstance;
 
-    /** @return the default KijiFactory. */
+    /**
+     * Legacy method.  Always returns an HBase-backed KijiFactory instance.
+     *
+     * @return the default HBase KijiFactory.
+     */
     public static KijiFactory get() {
+      KijiFactory instance;
       synchronized (Kiji.Factory.class) {
-        if (null == mInstance) {
-          mInstance = Lookups.getPriority(KijiFactory.class).lookup();
-        }
-        return mInstance;
+        instance = Lookups
+            .getPriority(KijiFactory.class)
+            .lookup(ImmutableMap.of(KIJI_TYPE_KEY, Type.HBASE.toString()));
+        assert(null != instance);
       }
+      return instance;
+    }
+
+    /**
+     * Returns a KijiFactory for the appropriate Kiji type, based on the URI.
+     *
+     * @param uri for the Kiji instance to build with the factory.
+     * @return the default KijiFactory.
+     */
+    public static KijiFactory get(KijiURI uri) {
+      KijiFactory instance;
+      synchronized (Kiji.Factory.class) {
+        instance = Lookups
+            .getPriority(KijiFactory.class)
+            .lookup(ImmutableMap.of(KIJI_TYPE_KEY, uri.getKijiType().toString()));
+        assert(null != instance);
+      }
+      return instance;
     }
 
     /**
      * Opens a Kiji instance by URI.
      *
-     * <p> Caller does not need to call Kiji.retain(),
-     *     but must call Kiji.release() when done with it.
+     * <p>
+     *   Caller should not call Kiji.retain(), but must call Kiji.release() after the returned Kiji
+     *   will no longer be used.
+     * </p>
      *
      * @param uri URI specifying the Kiji instance to open.
      * @return the specified Kiji instance.
      * @throws IOException on I/O error.
      */
     public static Kiji open(KijiURI uri) throws IOException {
-      return get().open(uri);
+      return get(uri).open(uri);
     }
 
     /**
      * Opens a Kiji instance by URI.
      *
-     * <p> Caller does not need to call Kiji.retain(),
-     *     but must call Kiji.release() when done with it.
+     * <p>
+     *   Caller should not call Kiji.retain(), but must call Kiji.release() after the returned Kiji
+     *   will no longer be used.
+     * </p>
      *
      * @param uri URI specifying the Kiji instance to open.
      * @param conf Hadoop configuration.
@@ -135,7 +176,7 @@ public interface Kiji extends KijiTableFactory, ReferenceCountable<Kiji> {
      * @throws IOException on I/O error.
      */
     public static Kiji open(KijiURI uri, Configuration conf) throws IOException {
-      return get().open(uri, conf);
+      return get(uri).open(uri, conf);
     }
 
     /** Utility class may not be instantiated. */

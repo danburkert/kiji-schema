@@ -119,7 +119,7 @@ public class IntegrationHelper extends Configured {
    * @throws Exception If there is an error.
    */
   public void installKiji(KijiURI kijiURI) throws Exception {
-    KijiInstaller.get().install(kijiURI, getConf());
+    KijiInstaller.get().install(kijiURI);
   }
 
   /**
@@ -128,7 +128,7 @@ public class IntegrationHelper extends Configured {
    * @throws Exception If there is an error.
    */
   public void uninstallKiji(KijiURI kijiURI) throws Exception {
-    KijiInstaller.get().uninstall(kijiURI, getConf());
+    KijiInstaller.get().uninstall(kijiURI);
   }
 
   /**

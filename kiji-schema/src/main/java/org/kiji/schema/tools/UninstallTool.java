@@ -90,14 +90,15 @@ public final class UninstallTool extends BaseTool {
       }
 
       getPrintStream().println();
-      if (!inputConfirmation("Are you sure? This action will delete all meta and user data "
-          + "from hbase and cannot be undone!", mKijiURI.getInstance())) {
+      if (!inputConfirmation(
+          String.format("Are you sure? This action will delete all meta and user data from"
+                  + " %s and cannot be undone!", mKijiURI.getKijiType()), mKijiURI.getInstance())) {
         getPrintStream().println("Delete aborted.");
         return FAILURE;
       }
     }
     try {
-      KijiInstaller.get().uninstall(mKijiURI, getConf());
+      KijiInstaller.get().uninstall(mKijiURI);
       getPrintStream().println("Deleted kiji instance: " + mKijiURI.toString());
       return SUCCESS;
     } catch (IOException ioe) {

@@ -26,7 +26,6 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
-
 import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseConfiguration;
@@ -174,7 +173,7 @@ public class KijiClientTest {
         mTestName.getMethodName(),
         mKijiInstanceCounter.getAndIncrement());
     final KijiURI uri = KijiURI.newBuilder(clusterURI).withInstanceName(instanceName).build();
-    KijiInstaller.get().install(uri, mConf);
+    KijiInstaller.get().install(uri);
     final Kiji kiji = Kiji.Factory.open(uri, mConf);
 
     mKijis.add(kiji);
@@ -192,8 +191,9 @@ public class KijiClientTest {
    */
   public void deleteTestKiji(Kiji kiji) throws Exception {
     Preconditions.checkState(mKijis.contains(kiji));
+    KijiURI uri = kiji.getURI();
     kiji.release();
-    KijiInstaller.get().uninstall(kiji.getURI(), mConf);
+    KijiInstaller.get().uninstall(uri);
     mKijis.remove(kiji);
   }
 
@@ -205,8 +205,9 @@ public class KijiClientTest {
   public final void teardownKijiTest() throws Exception {
     LOG.debug("Tearing down {}", mTestId);
     for (Kiji kiji : mKijis) {
+      KijiURI uri = kiji.getURI();
       kiji.release();
-      KijiInstaller.get().uninstall(kiji.getURI(), mConf);
+      KijiInstaller.get().uninstall(uri);
     }
     mKijis = null;
     mKiji = null;

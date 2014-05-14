@@ -19,11 +19,11 @@
 
 package org.kiji.schema.tools;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,7 +33,6 @@ import org.kiji.schema.KConstants;
 import org.kiji.schema.KijiAlreadyExistsException;
 import org.kiji.schema.KijiInstaller;
 import org.kiji.schema.KijiURI;
-import org.kiji.schema.hbase.HBaseFactory;
 import org.kiji.schema.impl.hbase.HBaseSystemTable;
 
 /**
@@ -54,7 +53,7 @@ public final class InstallTool extends BaseTool {
   private KijiURI mKijiURI = null;
 
   /** Unmodifiable empty map. */
-  private static final Map<String, String> EMPTY_MAP = Collections.emptyMap();
+  private static final Map<String, String> EMPTY_MAP = ImmutableMap.of();
 
   /** {@inheritDoc} */
   @Override
@@ -89,17 +88,14 @@ public final class InstallTool extends BaseTool {
   @Override
   protected int run(List<String> nonFlagArgs) throws Exception {
     getPrintStream().println("Creating kiji instance: " + mKijiURI);
-    getPrintStream().println("Creating meta tables for kiji instance in hbase...");
+    getPrintStream().println("Creating meta tables for kiji instance...");
     final Map<String, String> initialProperties = (null == mPropertiesFile)
-            ? EMPTY_MAP
-            : HBaseSystemTable.loadPropertiesFromFileToMap(mPropertiesFile);
+        ? EMPTY_MAP
+        : HBaseSystemTable.loadPropertiesFromFileToMap(mPropertiesFile);
+
     try {
-      KijiInstaller.get().install(
-          mKijiURI,
-          HBaseFactory.Provider.get(),
-          initialProperties,
-          getConf());
-      getPrintStream().println("Successfully created kiji instance: " + mKijiURI);
+      KijiInstaller.get().install(mKijiURI, initialProperties);
+      getPrintStream().println("Successfully created Kiji instance: " + mKijiURI);
       return SUCCESS;
     } catch (KijiAlreadyExistsException kaee) {
       getPrintStream().printf("Kiji instance '%s' already exists.%n", mKijiURI);

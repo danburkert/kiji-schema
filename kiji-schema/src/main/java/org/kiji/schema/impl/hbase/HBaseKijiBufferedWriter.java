@@ -53,10 +53,12 @@ import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
 import org.kiji.schema.impl.LayoutConsumer;
+import org.kiji.schema.impl.hbase.HBaseKijiTableWriter.WriterLayoutCapsule;
+import org.kiji.schema.layout.HBaseColumnNameTranslator;
+import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout;
 import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout.ColumnLayout;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
-import org.kiji.schema.layout.impl.LayoutCapsule;
 import org.kiji.schema.platform.SchemaPlatformBridge;
 
 /**
@@ -91,7 +93,7 @@ public final class HBaseKijiBufferedWriter implements KijiBufferedWriter {
    * All state which should be modified atomically to reflect an update to the underlying table's
    * layout.
    */
-  private volatile HBaseKijiTableWriter.WriterLayoutCapsule mWriterLayoutCapsule = null;
+  private volatile WriterLayoutCapsule mWriterLayoutCapsule = null;
 
   /** Local write buffers. */
   private Map<EntityId, Put> mPutBuffer = new HashMap<EntityId, Put>();
@@ -122,9 +124,10 @@ public final class HBaseKijiBufferedWriter implements KijiBufferedWriter {
 
   /** Provides for the updating of this Writer in response to a table layout update. */
   private final class InnerLayoutUpdater implements LayoutConsumer {
-    /** {@inheritDoc} */
+    /** {@inheritDoc}
+     * @param layout*/
     @Override
-    public void update(final LayoutCapsule capsule) throws IOException {
+    public void update(final KijiTableLayout layout) throws IOException {
       synchronized (mInternalLock) {
         if (mState == State.CLOSED) {
           LOG.debug("BufferedWriter instance is closed; ignoring layout update.");
@@ -138,30 +141,29 @@ public final class HBaseKijiBufferedWriter implements KijiBufferedWriter {
 
         final CellEncoderProvider provider = new CellEncoderProvider(
             mTable.getURI(),
-            capsule.getLayout(),
+            layout,
             mTable.getKiji().getSchemaTable(),
             DefaultKijiCellEncoderFactory.get());
         // If the capsule is null this is the initial setup and we do not need a log message.
         if (mWriterLayoutCapsule != null) {
           LOG.debug(
               "Updating layout used by HBaseKijiBufferedWriter: "
-              + "{} for table: {} from version: {} to: {}",
+                  + "{} for table: {} from version: {} to: {}",
               this,
               mTable.getURI(),
               mWriterLayoutCapsule.getLayout().getDesc().getLayoutId(),
-              capsule.getLayout().getDesc().getLayoutId());
+              layout.getDesc().getLayoutId());
         } else {
           LOG.debug(
               "Initializing HBaseKijiBufferedWriter: {} for table: "
                   + "{} with table layout version: {}",
               this,
               mTable.getURI(),
-              capsule.getLayout().getDesc().getLayoutId());
+              layout.getDesc().getLayoutId()
+          );
         }
-        mWriterLayoutCapsule = new HBaseKijiTableWriter.WriterLayoutCapsule(
-            provider,
-            capsule.getLayout(),
-            capsule.getKijiColumnNameTranslator());
+        mWriterLayoutCapsule =
+            new WriterLayoutCapsule(provider, layout, HBaseColumnNameTranslator.from(layout));
       }
     }
   }
@@ -242,7 +244,7 @@ public final class HBaseKijiBufferedWriter implements KijiBufferedWriter {
   public <T> void put(EntityId entityId, String family, String qualifier, long timestamp, T value)
       throws IOException {
     final KijiColumnName columnName = new KijiColumnName(family, qualifier);
-    final HBaseKijiTableWriter.WriterLayoutCapsule capsule = mWriterLayoutCapsule;
+    final WriterLayoutCapsule capsule = mWriterLayoutCapsule;
     final HBaseColumnName hbaseColumnName =
         capsule.getColumnNameTranslator().toHBaseColumnName(columnName);
 
@@ -299,7 +301,7 @@ public final class HBaseKijiBufferedWriter implements KijiBufferedWriter {
   @Override
   public void deleteFamily(EntityId entityId, String family, long upToTimestamp)
       throws IOException {
-    final HBaseKijiTableWriter.WriterLayoutCapsule capsule = mWriterLayoutCapsule;
+    final WriterLayoutCapsule capsule = mWriterLayoutCapsule;
     final FamilyLayout familyLayout = capsule.getLayout().getFamilyMap().get(family);
     if (null == familyLayout) {
       throw new NoSuchColumnException(String.format("Family '%s' not found.", family));
