@@ -52,11 +52,11 @@ import org.kiji.schema.KijiPager;
 import org.kiji.schema.KijiRowData;
 import org.kiji.schema.KijiTableReaderBuilder;
 import org.kiji.schema.NoSuchColumnException;
-import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.impl.BoundColumnReaderSpec;
 import org.kiji.schema.layout.ColumnReaderSpec;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
+import org.kiji.schema.layout.TranslatedColumnName;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
 import org.kiji.schema.layout.impl.LayoutCapsule;
 import org.kiji.schema.util.TimestampComparator;
@@ -208,7 +208,7 @@ public final class HBaseKijiRowData implements KijiRowData {
       mKVs = rowdata.mResult.raw();
       mNumVersions = 0;
       // Find the first index for this column.
-      final HBaseColumnName colName = mColumnNameTranslator.toHBaseColumnName(mColumn);
+      final TranslatedColumnName colName = mColumnNameTranslator.toTranslatedColumnName(mColumn);
       mCurrentIdx = findInsertionPoint(mKVs, new KeyValue(eId.getHBaseRowKey(), colName.getFamily(),
           colName.getQualifier()));
       mNextCell = getNextCell();
@@ -252,7 +252,7 @@ public final class HBaseKijiRowData implements KijiRowData {
           final KeyValue kv = mKVs[mCurrentIdx];
           // Filter KeyValues by Kiji column family.
           final KijiColumnName colName = mColumnNameTranslator.toKijiColumnName(
-              new HBaseColumnName(kv.getFamily(), kv.getQualifier()));
+              new TranslatedColumnName(kv.getFamily(), kv.getQualifier()));
           nextCell = new KijiCell<T>(mColumn.getFamily(), colName.getQualifier(),
               kv.getTimestamp(), mDecoder.decodeCell(kv.getValue()));
         }
@@ -291,7 +291,7 @@ public final class HBaseKijiRowData implements KijiRowData {
         // Filter KeyValues by Kiji column family.
         try {
           final KijiColumnName colName = mColumnNameTranslator.toKijiColumnName(
-            new HBaseColumnName(kv.getFamily(), kv.getQualifier()));
+            new TranslatedColumnName(kv.getFamily(), kv.getQualifier()));
           if (!colName.getQualifier().equals(mNextCell.getQualifier())) {
             if (mColumn.isFullyQualified()) {
               return mKVs.length;
@@ -455,14 +455,14 @@ public final class HBaseKijiRowData implements KijiRowData {
       // Loop over the columns in the family.
       for (NavigableMap.Entry<byte[], NavigableMap<Long, byte[]>> columnEntry
                : familyEntry.getValue().entrySet()) {
-        final HBaseColumnName hbaseColumnName =
-            new HBaseColumnName(familyEntry.getKey(), columnEntry.getKey());
+        final TranslatedColumnName hbaseColumnName =
+            new TranslatedColumnName(familyEntry.getKey(), columnEntry.getKey());
 
         // Translate the HBase column name to a Kiji column name.
         KijiColumnName kijiColumnName;
         try {
           kijiColumnName = columnNameTranslator.toKijiColumnName(
-              new HBaseColumnName(familyEntry.getKey(), columnEntry.getKey()));
+              new TranslatedColumnName(familyEntry.getKey(), columnEntry.getKey()));
         } catch (NoSuchColumnException e) {
           LOG.info("Ignoring HBase column '{}:{}' because it doesn't contain Kiji data.",
               Bytes.toStringBinary(hbaseColumnName.getFamily()),

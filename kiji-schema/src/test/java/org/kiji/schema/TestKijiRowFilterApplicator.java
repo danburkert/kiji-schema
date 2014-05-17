@@ -31,23 +31,21 @@ import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp;
 import org.apache.hadoop.hbase.filter.Filter;
 import org.apache.hadoop.hbase.filter.SingleColumnValueFilter;
 import org.apache.hadoop.hbase.util.Bytes;
-
 import org.codehaus.jackson.JsonNode;
 import org.codehaus.jackson.node.JsonNodeFactory;
-
 import org.junit.Before;
 import org.junit.Test;
 
 import org.kiji.schema.filter.KijiRowFilter;
 import org.kiji.schema.filter.KijiRowFilterApplicator;
 import org.kiji.schema.filter.KijiRowFilterDeserializer;
-import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
 import org.kiji.schema.impl.hbase.HBaseDataRequestAdapter;
 import org.kiji.schema.layout.CellSpec;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayouts;
+import org.kiji.schema.layout.TranslatedColumnName;
 import org.kiji.schema.util.ScanEquals;
 
 public class TestKijiRowFilterApplicator extends KijiClientTest {
@@ -95,14 +93,14 @@ public class TestKijiRowFilterApplicator extends KijiClientTest {
           Bytes.toBytes("foo"), context.getHBaseRowKey("foo"));
 
       final KijiColumnName column = new KijiColumnName("family", "new");
-      final HBaseColumnName hbaseColumn = context.getHBaseColumnName(column);
-      final HBaseColumnName expected = mColumnNameTranslator.toHBaseColumnName(column);
+      final TranslatedColumnName translatedColumn = context.getTranslatedColumnName(column);
+      final TranslatedColumnName expected = mColumnNameTranslator.toTranslatedColumnName(column);
       assertArrayEquals("Family name not translated correctly by KijiRowFilter.Context",
-          expected.getFamily(), hbaseColumn.getFamily());
+          expected.getFamily(), translatedColumn.getFamily());
       assertArrayEquals("Qualifier name not translated correctly by KijiRowFilter.Context",
-          expected.getQualifier(), hbaseColumn.getQualifier());
+          expected.getQualifier(), translatedColumn.getQualifier());
       final DecodedCell<Integer> kijiCell =
-          new DecodedCell<Integer>(Schema.create(Schema.Type.INT), Integer.valueOf(42));
+          new DecodedCell<Integer>(Schema.create(Schema.Type.INT), 42);
       assertArrayEquals("Cell value not translated correctly by KijiRowFilter.Context",
           mCellEncoder.encode(kijiCell),
           context.getHBaseCellValue(column, kijiCell));

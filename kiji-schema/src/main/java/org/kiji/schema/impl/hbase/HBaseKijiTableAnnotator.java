@@ -19,6 +19,7 @@
 package org.kiji.schema.impl.hbase;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
@@ -27,6 +28,7 @@ import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+import org.apache.commons.lang.ArrayUtils;
 import org.apache.hadoop.hbase.util.Bytes;
 
 import org.kiji.annotations.ApiAudience;
@@ -34,8 +36,8 @@ import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiTable;
 import org.kiji.schema.KijiTableAnnotator;
 import org.kiji.schema.NoSuchColumnException;
-import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
+import org.kiji.schema.layout.TranslatedColumnName;
 
 /** HBase implementation of {@link org.kiji.schema.KijiTableAnnotator}. */
 @ApiAudience.Private
@@ -120,8 +122,9 @@ public final class HBaseKijiTableAnnotator implements KijiTableAnnotator {
   static String getMetaTableKey(
       final String key
   ) {
-    Preconditions.checkArgument(isValidAnnotationKey(key), "Annotation key: %s does not conform to "
-        + "required pattern: %s", key, ALLOWED_ANNOTATION_KEY_PATTERN);
+    Preconditions.checkArgument(isValidAnnotationKey(key),
+        "Annotation key: %s does not conform to required pattern: %s",
+        key, ALLOWED_ANNOTATION_KEY_PATTERN);
     return String.format("%s.%s", METATABLE_KEY_PREFIX, key);
   }
 
@@ -142,10 +145,17 @@ public final class HBaseKijiTableAnnotator implements KijiTableAnnotator {
       final String key
   ) throws NoSuchColumnException {
     final KijiColumnNameTranslator translator = table.getColumnNameTranslator();
-    Preconditions.checkArgument(isValidAnnotationKey(key), "Annotation key: %s does not conform to "
-        + "required pattern: %s", key, ALLOWED_ANNOTATION_KEY_PATTERN);
-    return String.format("%s%s.%s",
-        METATABLE_KEY_PREFIX, translator.toHBaseColumnName(columnName), key);
+    Preconditions.checkArgument(isValidAnnotationKey(key),
+        "Annotation key: %s does not conform to required pattern: %s",
+        key, ALLOWED_ANNOTATION_KEY_PATTERN);
+
+    TranslatedColumnName translatedColumnName = translator.toTranslatedColumnName(columnName);
+
+    return String.format("%s%s:%s.%s",
+        METATABLE_KEY_PREFIX,
+        Bytes.toString(translatedColumnName.getFamily()),
+        Bytes.toString(translatedColumnName.getQualifier()),
+        key);
   }
 
   /**
@@ -178,14 +188,20 @@ public final class HBaseKijiTableAnnotator implements KijiTableAnnotator {
   ) throws NoSuchColumnException {
     final KijiColumnNameTranslator translator = table.getColumnNameTranslator();
     // Everything between the prefix and the annotation key.
-    final String hbaseColumnString =
-        metaTableKey.substring(METATABLE_KEY_PREFIX.length(), metaTableKey.lastIndexOf("."));
-    // Everything before the first ':'.
-    final String hbaseFamily = hbaseColumnString.substring(0, hbaseColumnString.indexOf(":"));
-    // Everything after the first ':'. The +1 excludes the ':' itself.
-    final String hbaseQualifier = hbaseColumnString.substring(hbaseColumnString.indexOf(":") + 1);
+    final byte[] translatedColumnBytes =
+        Bytes.toBytes(
+            metaTableKey.substring(
+                METATABLE_KEY_PREFIX.length(),
+                metaTableKey.lastIndexOf(".")));
 
-    final HBaseColumnName hbaseColumn = new HBaseColumnName(hbaseFamily, hbaseQualifier);
+    int index = ArrayUtils.indexOf(translatedColumnBytes, (byte) ':');
+
+    byte[] translatedFamily = Arrays.copyOfRange(translatedColumnBytes, 0, index);
+    byte[] translatedQualifier =
+        Arrays.copyOfRange(translatedColumnBytes, index + 1, translatedColumnBytes.length);
+
+    final TranslatedColumnName hbaseColumn =
+        new TranslatedColumnName(translatedFamily, translatedQualifier);
     return translator.toKijiColumnName(hbaseColumn);
   }
 
@@ -295,8 +311,8 @@ public final class HBaseKijiTableAnnotator implements KijiTableAnnotator {
           mTable.getKiji().getMetaTable().getValue(mTable.getName(), metaTableKey));
     } catch (IOException ioe) {
       if (ioe.getMessage().equals(String.format(
-          "Could not find any values associated with table %s and key %s",
-          mTable.getName(), metaTableKey))) {
+              "Could not find any values associated with table %s and key %s",
+              mTable.getName(), metaTableKey))) {
         return null;
       } else {
         throw ioe;

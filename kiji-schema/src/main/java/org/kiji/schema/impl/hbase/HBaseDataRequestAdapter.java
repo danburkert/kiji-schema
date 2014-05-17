@@ -48,6 +48,7 @@ import org.kiji.schema.hbase.HBaseScanOptions;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout;
+import org.kiji.schema.layout.TranslatedColumnName;
 import org.kiji.schema.platform.SchemaPlatformBridge;
 
 /**
@@ -194,8 +195,8 @@ public final class HBaseDataRequestAdapter {
 
     for (KijiDataRequest.Column columnRequest : mKijiDataRequest.getColumns()) {
       final KijiColumnName kijiColumnName = columnRequest.getColumnName();
-      final HBaseColumnName hbaseColumnName =
-          mColumnNameTranslator.toHBaseColumnName(kijiColumnName);
+      final TranslatedColumnName hbaseColumnName =
+          mColumnNameTranslator.toTranslatedColumnName(kijiColumnName);
 
       if (!columnRequest.isPagingEnabled()) {
         completelyPaged = false;
@@ -222,10 +223,10 @@ public final class HBaseDataRequestAdapter {
           for (String qualifier : fLayout.getColumnMap().keySet()) {
             final KijiColumnName fqKijiColumnName =
                 new KijiColumnName(kijiColumnName.getFamily(), qualifier);
-            final HBaseColumnName fqHBaseColumnName =
-                mColumnNameTranslator.toHBaseColumnName(fqKijiColumnName);
-            addColumn(get, fqHBaseColumnName);
-            columnFilters.addFilter(toFilter(columnRequest, fqHBaseColumnName, filterContext));
+            final TranslatedColumnName fqTranslatedColumnName =
+                mColumnNameTranslator.toTranslatedColumnName(fqKijiColumnName);
+            addColumn(get, fqTranslatedColumnName);
+            columnFilters.addFilter(toFilter(columnRequest, fqTranslatedColumnName, filterContext));
           }
 
         } else if (fLayout.isMapType()) {
@@ -269,7 +270,7 @@ public final class HBaseDataRequestAdapter {
    * @param column Fully-qualified HBase column to add to the Get request.
    * @return the Get request.
    */
-  private static Get addColumn(Get get, HBaseColumnName column) {
+  private static Get addColumn(Get get, TranslatedColumnName column) {
     // Calls to Get.addColumn() invalidate previous calls to Get.addFamily(),
     // so we only do it if:
     //   1. No data from the family has been added to the request yet,
@@ -315,7 +316,7 @@ public final class HBaseDataRequestAdapter {
    */
   private static Filter toFilter(
       KijiDataRequest.Column columnRequest,
-      HBaseColumnName hbaseColumnName,
+      TranslatedColumnName hbaseColumnName,
       KijiColumnFilter.Context filterContext)
       throws IOException {
 
@@ -410,7 +411,11 @@ public final class HBaseDataRequestAdapter {
     @Override
     public HBaseColumnName getHBaseColumnName(KijiColumnName kijiColumnName)
         throws NoSuchColumnException {
-      return mTranslator.toHBaseColumnName(kijiColumnName);
+      final TranslatedColumnName translatedColumnName =
+          mTranslator.toTranslatedColumnName(kijiColumnName);
+      return new HBaseColumnName(
+          translatedColumnName.getFamily(),
+          translatedColumnName.getQualifier());
     }
   }
 }

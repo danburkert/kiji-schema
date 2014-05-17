@@ -19,37 +19,28 @@
 
 package org.kiji.schema.layout;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.kiji.annotations.ApiAudience;
 import org.kiji.annotations.ApiStability;
 import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.NoSuchColumnException;
-import org.kiji.schema.hbase.HBaseColumnName;
-import org.kiji.schema.layout.impl.HBaseNativeColumnNameTranslator;
-import org.kiji.schema.layout.impl.IdentityColumnNameTranslator;
-import org.kiji.schema.layout.impl.ShortColumnNameTranslator;
+import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout;
+import org.kiji.schema.layout.impl.hbase.HBaseNativeColumnNameTranslator;
+import org.kiji.schema.layout.impl.hbase.IdentityColumnNameTranslator;
+import org.kiji.schema.layout.impl.hbase.ShortColumnNameTranslator;
 
 /**
- * Translates between HTable and Kiji table column names.
- *
- * <p>This abstract class defines an interface for mapping between names of HBase HTable
- * families/qualifiers and Kiji table family/qualifiers.</p>
+ * Translates {@link KijiColumnName}s to {@link TranslatedColumnName}s and vice-versa.
  */
 @ApiAudience.Framework
 @ApiStability.Experimental
 public abstract class KijiColumnNameTranslator {
-  private static final Logger LOG = LoggerFactory.getLogger(KijiColumnNameTranslator.class);
-
   /**
-   * Creates a new <code>KijiColumnNameTranslator</code> instance.  Supports either
-   * {@link org.kiji.schema.layout.impl.ShortColumnNameTranslator},
-   * {@link org.kiji.schema.layout.impl.IdentityColumnNameTranslator},
-   * {@link org.kiji.schema.layout.impl.HBaseNativeColumnNameTranslator} based on the table layout.
+   * Creates a new {@link KijiColumnNameTranslator} instance. Supports either
+   * {@link ShortColumnNameTranslator}, {@link IdentityColumnNameTranslator}, or
+   * {@link HBaseNativeColumnNameTranslator} based on the table layout.
    *
    * @param tableLayout The layout of the table to translate column names for.
-   * @return KijiColumnNameTranslator of the appropriate type specified by the layout
+   * @return KijiColumnNameTranslator of the appropriate type specified by the layout.
    */
   public static KijiColumnNameTranslator from(KijiTableLayout tableLayout) {
     switch (tableLayout.getDesc().getColumnNameTranslator()) {
@@ -60,42 +51,40 @@ public abstract class KijiColumnNameTranslator {
     case HBASE_NATIVE:
       return new HBaseNativeColumnNameTranslator(tableLayout);
     default:
-       throw new UnsupportedOperationException("Unsupported ColumnNameTranslator: "
-         + tableLayout.getDesc().getColumnNameTranslator().toString()
-         + " for column: " + tableLayout.getName());
+       throw new UnsupportedOperationException(
+           String.format("Unsupported ColumnNameTranslator: %s for column: %s.",
+               tableLayout.getDesc().getColumnNameTranslator(),
+               tableLayout.getName()));
     }
   }
 
   /**
-   * Translates an HBase column name to a Kiji column name.
+   * Translate a {@link TranslatedColumnName} to a {@link KijiColumnName}.
    *
-   * @param hbaseColumnName The HBase column name.
+   * @param translatedColumnName The translated column name.
    * @return The Kiji column name.
    * @throws NoSuchColumnException If the column name cannot be found.
    */
-  public abstract KijiColumnName toKijiColumnName(HBaseColumnName hbaseColumnName)
+  public abstract KijiColumnName toKijiColumnName(TranslatedColumnName translatedColumnName)
       throws NoSuchColumnException;
 
   /**
-   * Translates a Kiji column name into an HBase column name.
+   * Translates a {@link KijiColumnName} to a {@link TranslatedColumnName}.
    *
    * @param kijiColumnName The Kiji column name.
-   * @return The HBase column name.
+   * @return The translated column name.
    * @throws NoSuchColumnException If the column name cannot be found.
    */
-  public abstract HBaseColumnName toHBaseColumnName(KijiColumnName kijiColumnName)
+  public abstract TranslatedColumnName toTranslatedColumnName(KijiColumnName kijiColumnName)
       throws NoSuchColumnException;
 
   /**
-   * Translates a Kiji LocalityGroup into an HBase family name.
+   * Translates a Kiji locality group to the translated name.
+   *
+   * <p>In the case of HBase, this translated name corresponds to the HBase column family.</p>
    *
    * @param localityGroup The Kiji locality group.
-   * @return The HBase column name.
+   * @return The translated locality group.
    */
-  public abstract byte[] toHBaseFamilyName(KijiTableLayout.LocalityGroupLayout localityGroup);
-
-  /**
-   * @return the table layout.
-   */
-  public abstract KijiTableLayout getTableLayout();
+  public abstract byte[] translateLocalityGroup(LocalityGroupLayout localityGroup);
 }

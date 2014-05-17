@@ -87,7 +87,7 @@ public final class HTableSchemaTranslator {
   private static HColumnDescriptor toHColumnDescriptor(
       LocalityGroupLayout localityGroup,
       KijiColumnNameTranslator kijiColumnNameTranslator) {
-    byte[] hbaseFamilyName = kijiColumnNameTranslator.toHBaseFamilyName(localityGroup);
+    byte[] hbaseFamilyName = kijiColumnNameTranslator.translateLocalityGroup(localityGroup);
 
     LocalityGroupDesc groupDesc = localityGroup.getDesc();
     return new HColumnDescriptor(

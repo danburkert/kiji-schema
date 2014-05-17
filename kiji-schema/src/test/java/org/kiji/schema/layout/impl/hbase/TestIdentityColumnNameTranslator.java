@@ -17,10 +17,9 @@
  * limitations under the License.
  */
 
-package org.kiji.schema.layout;
+package org.kiji.schema.layout.impl.hbase;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
 
 import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.Before;
@@ -28,7 +27,10 @@ import org.junit.Test;
 
 import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.NoSuchColumnException;
-import org.kiji.schema.hbase.HBaseColumnName;
+import org.kiji.schema.layout.KijiColumnNameTranslator;
+import org.kiji.schema.layout.KijiTableLayout;
+import org.kiji.schema.layout.KijiTableLayouts;
+import org.kiji.schema.layout.TranslatedColumnName;
 
 public class TestIdentityColumnNameTranslator {
   private KijiTableLayout mTableLayout;
@@ -37,29 +39,34 @@ public class TestIdentityColumnNameTranslator {
   public void readLayout() throws Exception {
     mTableLayout =
         KijiTableLayout.newLayout(KijiTableLayouts.getLayout(
-            KijiTableLayouts.FULL_FEATURED_IDENTITY));
+                KijiTableLayouts.FULL_FEATURED_IDENTITY));
   }
 
   @Test
   public void testTranslateFromKijiToHBase() throws Exception {
     KijiColumnNameTranslator translator = KijiColumnNameTranslator.from(mTableLayout);
 
-    HBaseColumnName infoName = translator.toHBaseColumnName(new KijiColumnName("info:name"));
-    assertEquals("default", infoName.getFamilyAsString());
-    assertEquals("info:name", infoName.getQualifierAsString());
+    TranslatedColumnName
+        infoName = translator.toTranslatedColumnName(new KijiColumnName("info:name"));
+    assertEquals("default", Bytes.toString(infoName.getFamily()));
+    assertEquals("info:name", Bytes.toString(infoName.getQualifier()));
 
-    HBaseColumnName infoEmail = translator.toHBaseColumnName(new KijiColumnName("info:email"));
-    assertEquals("default", infoEmail.getFamilyAsString());
-    assertEquals("info:email", infoEmail.getQualifierAsString());
+    TranslatedColumnName infoEmail = translator.toTranslatedColumnName(
+        new KijiColumnName(
+            "info:email"));
+    assertEquals("default", Bytes.toString(infoEmail.getFamily()));
+    assertEquals("info:email", Bytes.toString(infoEmail.getQualifier()));
 
-    HBaseColumnName recommendationsProduct = translator.toHBaseColumnName(
+    TranslatedColumnName recommendationsProduct = translator.toTranslatedColumnName(
         new KijiColumnName("recommendations:product"));
-    assertEquals("inMemory", recommendationsProduct.getFamilyAsString());
-    assertEquals("recommendations:product", recommendationsProduct.getQualifierAsString());
+    assertEquals("inMemory", Bytes.toString(recommendationsProduct.getFamily()));
+    assertEquals("recommendations:product", Bytes.toString(recommendationsProduct.getQualifier()));
 
-    HBaseColumnName purchases = translator.toHBaseColumnName(new KijiColumnName("purchases:foo"));
-    assertEquals("inMemory", purchases.getFamilyAsString());
-    assertEquals("purchases:foo", purchases.getQualifierAsString());
+    TranslatedColumnName purchases = translator.toTranslatedColumnName(
+        new KijiColumnName(
+            "purchases:foo"));
+    assertEquals("inMemory", Bytes.toString(purchases.getFamily()));
+    assertEquals("purchases:foo", Bytes.toString(purchases.getQualifier()));
   }
 
   @Test
@@ -67,86 +74,60 @@ public class TestIdentityColumnNameTranslator {
     KijiColumnNameTranslator translator = KijiColumnNameTranslator.from(mTableLayout);
 
     KijiColumnName infoName =
-        translator.toKijiColumnName(getHBaseColumnName("default", "info:name"));
+        translator.toKijiColumnName(getTranslatedColumnName("default", "info:name"));
     assertEquals("info:name", infoName.toString());
 
     KijiColumnName infoEmail =
-        translator.toKijiColumnName(getHBaseColumnName("default", "info:email"));
+        translator.toKijiColumnName(getTranslatedColumnName("default", "info:email"));
     assertEquals("info:email", infoEmail.toString());
 
     KijiColumnName recommendationsProduct = translator.toKijiColumnName(
-        getHBaseColumnName("inMemory", "recommendations:product"));
+        getTranslatedColumnName("inMemory", "recommendations:product"));
     assertEquals("recommendations:product", recommendationsProduct.toString());
 
     KijiColumnName purchases =
-        translator.toKijiColumnName(getHBaseColumnName("inMemory", "purchases:foo"));
+        translator.toKijiColumnName(getTranslatedColumnName("inMemory", "purchases:foo"));
     assertEquals("purchases:foo", purchases.toString());
   }
 
   /**
    * Tests that an exception is thrown when the HBase family doesn't match a Kiji locality group.
    */
-  @Test
+  @Test(expected = NoSuchColumnException.class)
   public void testNoSuchKijiLocalityGroup() throws Exception {
     KijiColumnNameTranslator translator = KijiColumnNameTranslator.from(mTableLayout);
-
-    try {
-      translator.toKijiColumnName(
-          getHBaseColumnName("fakeLocalityGroup", "fakeFamily:fakeQualifier"));
-      fail("An exception should have been thrown.");
-    } catch (NoSuchColumnException nsce) {
-      assertEquals("No locality group with ID/HBase family: 'fakeLocalityGroup'.",
-          nsce.getMessage());
-    }
+    translator.toKijiColumnName(
+        getTranslatedColumnName("fakeLocGroup", "fakeFamily:fakeQualifier"));
   }
 
   /**
    * Tests that an exception is thrown when the first part of the HBase qualifier doesn't
    * match a Kiji family.
    */
-  @Test
+  @Test(expected = NoSuchColumnException.class)
   public void testNoSuchKijiFamily() throws Exception {
     KijiColumnNameTranslator translator = KijiColumnNameTranslator.from(mTableLayout);
-    try {
-      translator.toKijiColumnName(getHBaseColumnName("inMemory", "fakeFamily:fakeQualifier"));
-      fail("An exception should have been thrown.");
-    } catch (NoSuchColumnException nsce) {
-      assertEquals("No family with ColumnId 'fakeFamily' in locality group 'inMemory'.",
-          nsce.getMessage());
-    }
+    translator.toKijiColumnName(getTranslatedColumnName("inMemory", "fakeFamily:fakeQualifier"));
   }
 
   /**
    * Tests that an exception is thrown when the second part of the HBase qualifier doesn't
    * match a Kiji column.
    */
-  @Test
+  @Test(expected = NoSuchColumnException.class)
   public void testNoSuchKijiColumn() throws Exception {
     KijiColumnNameTranslator translator = KijiColumnNameTranslator.from(mTableLayout);
-
-    try {
-      translator.toKijiColumnName(getHBaseColumnName("inMemory", "recommendations:fakeQualifier"));
-      fail("An exception should have been thrown.");
-    } catch (NoSuchColumnException nsce) {
-      assertEquals("No column with ColumnId 'fakeQualifier' in family 'recommendations'.",
-          nsce.getMessage());
-    }
+    translator.toKijiColumnName(
+        getTranslatedColumnName("inMemory", "recommendations:fakeQualifier"));
   }
 
   /**
    * Tests that an exception is thrown when the HBase qualifier is corrupt (no separator).
    */
-  @Test
+  @Test(expected = NoSuchColumnException.class)
   public void testCorruptQualifier() throws Exception {
     KijiColumnNameTranslator translator = KijiColumnNameTranslator.from(mTableLayout);
-
-    try {
-      translator.toKijiColumnName(getHBaseColumnName("inMemory", "fakeFamilyfakeQualifier"));
-      fail("An exception should have been thrown.");
-    } catch (NoSuchColumnException nsce) {
-      assertEquals("Missing separator (:) from HBase qualifier (fakeFamilyfakeQualifier). "
-          + "Unable to parse Kiji family/qualifier pair.", nsce.getMessage());
-    }
+    translator.toKijiColumnName(getTranslatedColumnName("inMemory", "fakeFamilyfakeQualifier"));
   }
 
   /**
@@ -156,8 +137,8 @@ public class TestIdentityColumnNameTranslator {
   @Test
   public void testMultipleSeparators() throws Exception {
     KijiColumnNameTranslator translator = KijiColumnNameTranslator.from(mTableLayout);
-      KijiColumnName kijiColumnName =
-          translator.toKijiColumnName(getHBaseColumnName("inMemory", "purchases:left:right"));
+    KijiColumnName kijiColumnName =
+        translator.toKijiColumnName(getTranslatedColumnName("inMemory", "purchases:left:right"));
     assertEquals("purchases", kijiColumnName.getFamily());
     assertEquals("left:right", kijiColumnName.getQualifier());
   }
@@ -165,26 +146,20 @@ public class TestIdentityColumnNameTranslator {
   /**
    * Tests that an exception is thrown when trying to translate a non-existent Kiji column.
    */
-  @Test
+  @Test(expected = NoSuchColumnException.class)
   public void testNoSuchHBaseColumn() throws Exception {
     KijiColumnNameTranslator translator = KijiColumnNameTranslator.from(mTableLayout);
-
-    try {
-      translator.toHBaseColumnName(new KijiColumnName("doesnt:exist"));
-      fail("An exception should have been thrown.");
-    } catch (NoSuchColumnException nsce) {
-      assertEquals("doesnt:exist", nsce.getMessage());
-    }
+    translator.toTranslatedColumnName(new KijiColumnName("doesnt:exist"));
   }
 
   /**
-   * Turns a family:qualifier string into an HBaseColumnName.
+   * Turns a family:qualifier string into an TranslatedColumnName.
    *
    * @param family The HBase family.
    * @param qualifier the HBase qualifier.
-   * @return An HBaseColumnName instance.
+   * @return An TranslatedColumnName instance.
    */
-  private static HBaseColumnName getHBaseColumnName(String family, String qualifier) {
-    return new HBaseColumnName(Bytes.toBytes(family), Bytes.toBytes(qualifier));
+  private static TranslatedColumnName getTranslatedColumnName(String family, String qualifier) {
+    return new TranslatedColumnName(Bytes.toBytes(family), Bytes.toBytes(qualifier));
   }
 }

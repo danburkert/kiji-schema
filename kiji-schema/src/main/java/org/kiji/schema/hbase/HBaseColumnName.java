@@ -27,9 +27,12 @@ import org.kiji.annotations.ApiStability;
 
 /**
  * An HBase column name.
+ *
+ * @deprecated use {@link org.kiji.schema.layout.TranslatedColumnName} instead.
  */
 @ApiAudience.Public
 @ApiStability.Evolving
+@Deprecated
 public final class HBaseColumnName {
   /** The HBase column family. */
   private final byte[] mFamily;

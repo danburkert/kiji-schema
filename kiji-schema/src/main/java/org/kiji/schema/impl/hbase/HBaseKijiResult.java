@@ -52,10 +52,10 @@ import org.kiji.schema.KijiDataRequest;
 import org.kiji.schema.KijiIOException;
 import org.kiji.schema.KijiResult;
 import org.kiji.schema.NoSuchColumnException;
-import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.impl.BoundColumnReaderSpec;
 import org.kiji.schema.layout.ColumnReaderSpec;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
+import org.kiji.schema.layout.TranslatedColumnName;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
 
 /** HBase implementation of KijiResult. */
@@ -544,15 +544,15 @@ public final class HBaseKijiResult implements KijiResult {
       final KijiColumnName column,
       final long timestamp
   ) {
-    final HBaseColumnName hBaseColumnName;
+    final TranslatedColumnName translatedColumnName;
     try {
-      hBaseColumnName = mColumnNameTranslator.toHBaseColumnName(column);
+      translatedColumnName = mColumnNameTranslator.toTranslatedColumnName(column);
     } catch (NoSuchColumnException nsce) {
       throw new KijiIOException(nsce);
     }
     return new KeyValue(mEntityId.getHBaseRowKey(),
-        hBaseColumnName.getFamily(),
-        hBaseColumnName.getQualifier(),
+        translatedColumnName.getFamily(),
+        translatedColumnName.getQualifier(),
         timestamp,
         new byte[0]);
   }
@@ -601,9 +601,10 @@ public final class HBaseKijiResult implements KijiResult {
   private KijiColumnName kcnFromKeyValue(
       final KeyValue kv
   ) {
-    final HBaseColumnName hBaseColumnName = new HBaseColumnName(kv.getFamily(), kv.getQualifier());
+    final TranslatedColumnName
+        translatedColumnName = new TranslatedColumnName(kv.getFamily(), kv.getQualifier());
     try {
-      return mColumnNameTranslator.toKijiColumnName(hBaseColumnName);
+      return mColumnNameTranslator.toKijiColumnName(translatedColumnName);
     } catch (NoSuchColumnException nsce) {
       throw new KijiIOException(nsce);
     }
@@ -744,7 +745,7 @@ public final class HBaseKijiResult implements KijiResult {
           column,
           decoder,
           mColumnNameTranslator,
-          mColumnNameTranslator.getTableLayout(),
+          mTable.getLayout(),
           mTable,
           optionalQualifierIterator);
     } else {

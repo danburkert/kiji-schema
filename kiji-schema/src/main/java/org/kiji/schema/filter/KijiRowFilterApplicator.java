@@ -39,6 +39,7 @@ import org.kiji.schema.layout.CellSpec;
 import org.kiji.schema.layout.InvalidLayoutException;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
+import org.kiji.schema.layout.TranslatedColumnName;
 
 /**
  * Applies a KijiRowFilter to various row-savvy objects.
@@ -85,15 +86,18 @@ public final class KijiRowFilterApplicator {
     @Override
     public HBaseColumnName getHBaseColumnName(KijiColumnName kijiColumnName)
         throws NoSuchColumnException {
-      return mColumnNameTranslator.toHBaseColumnName(kijiColumnName);
+      TranslatedColumnName translatedColumnName =
+          mColumnNameTranslator.toTranslatedColumnName(kijiColumnName);
+      return new HBaseColumnName(
+          translatedColumnName.getFamily(),
+          translatedColumnName.getQualifier());
     }
 
     /** {@inheritDoc} */
     @Override
     public byte[] getHBaseCellValue(KijiColumnName column, DecodedCell<?> kijiCell)
         throws IOException {
-      final CellSpec cellSpec = mColumnNameTranslator.getTableLayout().getCellSpec(column)
-          .setSchemaTable(mSchemaTable);
+      final CellSpec cellSpec = mTableLayout.getCellSpec(column).setSchemaTable(mSchemaTable);
       final KijiCellEncoder encoder = DefaultKijiCellEncoderFactory.get().create(cellSpec);
       return encoder.encode(kijiCell);
     }

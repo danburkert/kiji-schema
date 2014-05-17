@@ -55,10 +55,10 @@ import org.kiji.schema.KijiRowData;
 import org.kiji.schema.KijiRowScanner;
 import org.kiji.schema.KijiTable;
 import org.kiji.schema.KijiTableReader;
-import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayouts;
+import org.kiji.schema.layout.TranslatedColumnName;
 import org.kiji.schema.util.InstanceBuilder;
 
 public class TestHBaseDataRequestAdapter extends KijiClientTest {
@@ -88,10 +88,10 @@ public class TestHBaseDataRequestAdapter extends KijiClientTest {
     KijiDataRequest request = builder.build();
 
     Scan expectedScan = new Scan();
-    HBaseColumnName hbaseColumn = mColumnNameTranslator.toHBaseColumnName(
+    TranslatedColumnName hbaseColumn = mColumnNameTranslator.toTranslatedColumnName(
         new KijiColumnName("info:name"));
     expectedScan.addColumn(hbaseColumn.getFamily(), hbaseColumn.getQualifier());
-    HBaseColumnName hPurchasesColumn = mColumnNameTranslator.toHBaseColumnName(
+    TranslatedColumnName hPurchasesColumn = mColumnNameTranslator.toTranslatedColumnName(
         new KijiColumnName("purchases"));
     expectedScan.addFamily(hPurchasesColumn.getFamily());
 
@@ -157,10 +157,10 @@ public class TestHBaseDataRequestAdapter extends KijiClientTest {
 
     EntityId entityId = mEntityIdFactory.getEntityId("entity");
     Get expectedGet = new Get(entityId.getHBaseRowKey());
-    HBaseColumnName hbaseColumn = mColumnNameTranslator.toHBaseColumnName(
+    TranslatedColumnName hbaseColumn = mColumnNameTranslator.toTranslatedColumnName(
         new KijiColumnName("info:name"));
     expectedGet.addColumn(hbaseColumn.getFamily(), hbaseColumn.getQualifier());
-    HBaseColumnName hPurchasesColumn = mColumnNameTranslator.toHBaseColumnName(
+    TranslatedColumnName hPurchasesColumn = mColumnNameTranslator.toTranslatedColumnName(
         new KijiColumnName("purchases"));
     expectedGet.addFamily(hPurchasesColumn.getFamily());
 

@@ -17,24 +17,22 @@
  * limitations under the License.
  */
 
-package org.kiji.schema.platform;
+package org.kiji.schema.layout;
 
-import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
 
+import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-public class TestSchemaPlatformBridge {
-  private static final Logger LOG = LoggerFactory.getLogger(TestSchemaPlatformBridge.class);
-
+public class TestTranslatedColumnName {
   @Test
-  public void testGetBridge() {
-    LOG.info("Hadoop version: " + org.apache.hadoop.util.VersionInfo.getVersion());
-    LOG.info("HBase version: " + org.apache.hadoop.hbase.util.VersionInfo.getVersion());
-
-    SchemaPlatformBridge bridge = SchemaPlatformBridge.get();
-    assertNotNull(bridge);
-    LOG.info("Got platform bridge: " + bridge.getClass().getName());
+  public void testHBaseColumnName() {
+    TranslatedColumnName column =
+        new TranslatedColumnName(Bytes.toBytes("foo"), Bytes.toBytes("bar"));
+    assertArrayEquals(Bytes.toBytes("foo"), column.getFamily());
+    assertEquals("foo", Bytes.toString(column.getFamily()));
+    assertArrayEquals(Bytes.toBytes("bar"), column.getQualifier());
+    assertEquals("bar", Bytes.toString(column.getQualifier()));
   }
 }

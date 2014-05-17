@@ -36,6 +36,7 @@ import org.kiji.schema.KijiDataRequest;
 import org.kiji.schema.KijiIOException;
 import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.hbase.HBaseColumnName;
+import org.kiji.schema.layout.TranslatedColumnName;
 
 /**
  * The abstract base class for filters that exclude data from KijiRows.
@@ -127,9 +128,31 @@ public abstract class KijiRowFilter {
      * @param kijiColumnName The name of a kiji column.
      * @return The name of the HBase column that stores the kiji column data.
      * @throws NoSuchColumnException If there is no such column in the kiji table.
+     * @deprecated use {@link #getTranslatedColumnName(org.kiji.schema.KijiColumnName)} instead.
      */
+    @Deprecated
     public abstract HBaseColumnName getHBaseColumnName(KijiColumnName kijiColumnName)
         throws NoSuchColumnException;
+
+    /**
+     * Converts a Kiji column name to a translated column name.
+     *
+     * <p>Kiji optimizes cell storage in HBase by mapping user-provided column names to
+     * compact identifiers (usually just a single byte). For example, what you refer to as
+     * a column name "my_kiji_column" might actually be stored in HBase as a column name
+     * with a single letter "B". Because of this, KijiRowFilter implementations that
+     * reference Kiji column names should use this method to obtain the name of corresponding
+     * optimized HBase column name.</p>
+     *
+     * @param kijiColumnName The name of a kiji column.
+     * @return The translated name of the column that stores the kiji column data.
+     * @throws NoSuchColumnException If there is no such column in the kiji table.
+     */
+    public TranslatedColumnName getTranslatedColumnName(KijiColumnName kijiColumnName)
+        throws NoSuchColumnException {
+      final HBaseColumnName hbaseColumnName = getHBaseColumnName(kijiColumnName);
+      return new TranslatedColumnName(hbaseColumnName.getFamily(), hbaseColumnName.getQualifier());
+    }
 
     /**
      * Converts a Kiji cell value into an HBase cell value.

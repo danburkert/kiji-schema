@@ -43,8 +43,8 @@ import org.kiji.schema.filter.Filters;
 import org.kiji.schema.filter.KijiColumnFilter;
 import org.kiji.schema.filter.KijiColumnRangeFilter;
 import org.kiji.schema.filter.StripValueColumnFilter;
-import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.impl.KijiPaginationFilter;
+import org.kiji.schema.layout.TranslatedColumnName;
 import org.kiji.schema.layout.impl.LayoutCapsule;
 import org.kiji.schema.util.Debug;
 
@@ -177,8 +177,8 @@ public final class HBaseQualifierPager implements Iterator<String[]>, Closeable 
       final KeyValue[] kvs = result.raw();
       final String[] qualifiers = new String[kvs.length];
       for (int i = 0; i < kvs.length; ++i) {
-        final HBaseColumnName hbaseColumn =
-            new HBaseColumnName(kvs[i].getFamily(), kvs[i].getQualifier());
+        final TranslatedColumnName hbaseColumn =
+            new TranslatedColumnName(kvs[i].getFamily(), kvs[i].getQualifier());
         final KijiColumnName kijiColumn =
             capsule.getKijiColumnNameTranslator().toKijiColumnName(hbaseColumn);
         qualifiers[i] = kijiColumn.getQualifier();

@@ -51,13 +51,13 @@ import org.kiji.schema.avro.Node;
 import org.kiji.schema.avro.SchemaStorage;
 import org.kiji.schema.avro.SchemaType;
 import org.kiji.schema.avro.TableLayoutDesc;
-import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.impl.AvroCellEncoder;
 import org.kiji.schema.impl.hbase.HBaseKijiRowData;
 import org.kiji.schema.impl.hbase.HBaseKijiTable;
 import org.kiji.schema.layout.CellSpec;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayouts;
+import org.kiji.schema.layout.TranslatedColumnName;
 import org.kiji.schema.layout.impl.LayoutCapsule;
 import org.kiji.schema.util.InstanceBuilder;
 
@@ -157,18 +157,23 @@ public class TestHBaseKijiRowData extends KijiClientTest {
 
     final LayoutCapsule capsule = mTable.getLayoutCapsule();
     final KijiColumnNameTranslator translator = capsule.getKijiColumnNameTranslator();
-    HBaseColumnName hcolumn = translator.toHBaseColumnName(new KijiColumnName("family", "empty"));
+    TranslatedColumnName hcolumn =
+        translator.toTranslatedColumnName(new KijiColumnName("family", "empty"));
     mHBaseFamily = hcolumn.getFamily();
     mHBaseEmpty = hcolumn.getQualifier();
-    mHBaseQual0 = translator.toHBaseColumnName(new KijiColumnName("family:qual0")).getQualifier();
-    mHBaseQual1 = translator.toHBaseColumnName(new KijiColumnName("family:qual1")).getQualifier();
-    mHBaseQual2 = translator.toHBaseColumnName(new KijiColumnName("family:qual2")).getQualifier();
-    mHBaseQual3 = translator.toHBaseColumnName(new KijiColumnName("family:qual3")).getQualifier();
-    mHBaseNodequal0 = translator.toHBaseColumnName(new KijiColumnName("family:nodequal0"))
+    mHBaseQual0 =
+        translator.toTranslatedColumnName(new KijiColumnName("family:qual0")).getQualifier();
+    mHBaseQual1 =
+        translator.toTranslatedColumnName(new KijiColumnName("family:qual1")).getQualifier();
+    mHBaseQual2 =
+        translator.toTranslatedColumnName(new KijiColumnName("family:qual2")).getQualifier();
+    mHBaseQual3 =
+        translator.toTranslatedColumnName(new KijiColumnName("family:qual3")).getQualifier();
+    mHBaseNodequal0 = translator.toTranslatedColumnName(new KijiColumnName("family:nodequal0"))
         .getQualifier();
-    mHBaseNodequal1 = translator.toHBaseColumnName(new KijiColumnName("family:nodequal1"))
+    mHBaseNodequal1 = translator.toTranslatedColumnName(new KijiColumnName("family:nodequal1"))
         .getQualifier();
-    mHBaseMapFamily = translator.toHBaseColumnName(new KijiColumnName("map")).getFamily();
+    mHBaseMapFamily = translator.toTranslatedColumnName(new KijiColumnName("map")).getFamily();
 
     mEntityIdFactory = EntityIdFactory.getFactory(capsule.getLayout());
   }

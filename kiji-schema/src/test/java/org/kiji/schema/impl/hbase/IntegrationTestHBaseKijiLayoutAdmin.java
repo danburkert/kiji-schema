@@ -26,7 +26,6 @@ import com.google.common.collect.Lists;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.regionserver.StoreFile;
-
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -36,11 +35,11 @@ import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.avro.BloomType;
 import org.kiji.schema.avro.LocalityGroupDesc;
 import org.kiji.schema.avro.TableLayoutDesc;
-import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.hbase.KijiManagedHBaseTableName;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayouts;
+import org.kiji.schema.layout.TranslatedColumnName;
 import org.kiji.schema.testutil.AbstractKijiIntegrationTest;
 
 /** This test validates some admin operations that {@link HBaseKiji} is responsible for. */
@@ -100,8 +99,8 @@ public class IntegrationTestHBaseKijiLayoutAdmin extends AbstractKijiIntegration
 
     KijiColumnNameTranslator columnNameTranslator =
       KijiColumnNameTranslator.from(KijiTableLayout.newLayout(fullFeaturedLayout));
-    HBaseColumnName columnName = columnNameTranslator.toHBaseColumnName(
-      new KijiColumnName(FULL_FEATURED_TABLE_FAMILY_NAME, FULL_FEATURED_TABLE_QUALIFIER_NAME));
+    TranslatedColumnName columnName = columnNameTranslator.toTranslatedColumnName(
+        new KijiColumnName(FULL_FEATURED_TABLE_FAMILY_NAME, FULL_FEATURED_TABLE_QUALIFIER_NAME));
 
     // Check the block size value
     HColumnDescriptor columnDescriptor = hTableDescriptor.getFamily(columnName.getFamily());
@@ -162,7 +161,7 @@ public class IntegrationTestHBaseKijiLayoutAdmin extends AbstractKijiIntegration
       KijiColumnNameTranslator.from(KijiTableLayout.newLayout(fullFeaturedLayout));
     KijiColumnName kijiColumnName = new KijiColumnName(FULL_FEATURED_TABLE_FAMILY_NAME,
       FULL_FEATURED_TABLE_QUALIFIER_NAME);
-    HBaseColumnName columnName = columnNameTranslator.toHBaseColumnName(kijiColumnName);
+    TranslatedColumnName columnName = columnNameTranslator.toTranslatedColumnName(kijiColumnName);
 
     // Check the block size value
     HColumnDescriptor columnDescriptor = hTableDescriptor.getFamily(columnName.getFamily());
@@ -222,7 +221,7 @@ public class IntegrationTestHBaseKijiLayoutAdmin extends AbstractKijiIntegration
       KijiColumnNameTranslator.from(KijiTableLayout.newLayout(simpleLayout));
     KijiColumnName kijiColumnName = new KijiColumnName(SIMPLE_TABLE_FAMILY_NAME,
       SIMPLE_TABLE_QUALIFIER_NAME);
-    HBaseColumnName columnName = columnNameTranslator.toHBaseColumnName(kijiColumnName);
+    TranslatedColumnName columnName = columnNameTranslator.toTranslatedColumnName(kijiColumnName);
 
     // Check the block size value
     HColumnDescriptor columnDescriptor = hTableDescriptor.getFamily(columnName.getFamily());

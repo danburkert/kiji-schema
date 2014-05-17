@@ -40,9 +40,9 @@ import org.kiji.schema.KijiDataRequest;
 import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
 import org.kiji.schema.KijiIOException;
 import org.kiji.schema.NoSuchColumnException;
-import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
+import org.kiji.schema.layout.TranslatedColumnName;
 
 /**
  * Wraps calls to HBase to provide iteration and decoding of paged data.
@@ -282,7 +282,8 @@ public class HBasePagedVersionIterator<T> implements Iterator<KijiCell<T>> {
   private KijiColumnName fromKeyValue(
       final KeyValue kv
   ) {
-    final HBaseColumnName hbaseColumnName = new HBaseColumnName(kv.getFamily(), kv.getQualifier());
+    final TranslatedColumnName
+        hbaseColumnName = new TranslatedColumnName(kv.getFamily(), kv.getQualifier());
     try {
       return mColumnNameTranslator.toKijiColumnName(hbaseColumnName);
     } catch (NoSuchColumnException nsce) {

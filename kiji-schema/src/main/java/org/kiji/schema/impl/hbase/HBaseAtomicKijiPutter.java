@@ -36,11 +36,11 @@ import org.kiji.schema.AtomicKijiPutter;
 import org.kiji.schema.EntityId;
 import org.kiji.schema.KijiCellEncoder;
 import org.kiji.schema.KijiColumnName;
-import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
 import org.kiji.schema.impl.LayoutConsumer;
 import org.kiji.schema.impl.hbase.HBaseKijiTableWriter.WriterLayoutCapsule;
 import org.kiji.schema.layout.LayoutUpdatedException;
+import org.kiji.schema.layout.TranslatedColumnName;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
 import org.kiji.schema.layout.impl.LayoutCapsule;
 
@@ -244,8 +244,8 @@ public final class HBaseAtomicKijiPutter implements AtomicKijiPutter {
         "Cannot checkAndCommit a transaction on an AtomicKijiPutter instance in state %s.", state);
     final WriterLayoutCapsule capsule = getWriterLayoutCapsule();
     final KijiColumnName kijiColumnName = new KijiColumnName(family, qualifier);
-    final HBaseColumnName columnName =
-        capsule.getColumnNameTranslator().toHBaseColumnName(kijiColumnName);
+    final TranslatedColumnName columnName =
+        capsule.getColumnNameTranslator().toTranslatedColumnName(kijiColumnName);
     final byte[] encoded;
 
     // If passed value is null, then let encoded value be null.
@@ -298,8 +298,8 @@ public final class HBaseAtomicKijiPutter implements AtomicKijiPutter {
         "Cannot put cell to an AtomicKijiPutter instance in state %s.", state);
     final WriterLayoutCapsule capsule = getWriterLayoutCapsule();
     final KijiColumnName kijiColumnName = new KijiColumnName(family, qualifier);
-    final HBaseColumnName columnName =
-        capsule.getColumnNameTranslator().toHBaseColumnName(kijiColumnName);
+    final TranslatedColumnName columnName =
+        capsule.getColumnNameTranslator().toTranslatedColumnName(kijiColumnName);
 
     final KijiCellEncoder cellEncoder =
         capsule.getCellEncoderProvider().getEncoder(family, qualifier);
