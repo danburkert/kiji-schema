@@ -34,12 +34,11 @@ import org.kiji.annotations.ApiAudience;
 import org.kiji.annotations.Inheritance;
 import org.kiji.schema.EntityId;
 import org.kiji.schema.KijiBufferedWriter;
-import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
+import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
-import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.impl.LayoutConsumer;
-import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
+import org.kiji.schema.layout.impl.cassandra.CassandraLayoutCapsule;
 
 /**
  * Cassandra implementation of a batch KijiTableWriter.
@@ -109,10 +108,10 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
   private State mState = State.UNINITIALIZED;
 
   /** Provides for the updating of this Writer in response to a table layout update. */
-  private final class InnerLayoutUpdater implements LayoutConsumer {
+  private final class InnerLayoutUpdater implements LayoutConsumer<CassandraLayoutCapsule> {
     /** {@inheritDoc} */
     @Override
-    public void update(final LayoutCapsule capsule) throws IOException {
+    public void update(final CassandraLayoutCapsule capsule) throws IOException {
       synchronized (mInternalLock) {
         if (mState == State.CLOSED) {
           LOG.debug("BufferedWriter instance is closed; ignoring layout update.");
@@ -149,7 +148,7 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
         mWriterLayoutCapsule = new CassandraKijiTableWriter.WriterLayoutCapsule(
             provider,
             capsule.getLayout(),
-            (CassandraColumnNameTranslator) capsule.getKijiColumnNameTranslator());
+            capsule.getColumnNameTranslator());
       }
     }
   }
@@ -176,16 +175,6 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
           "Cannot open CassandraKijiBufferedWriter instance in state %s.", mState);
       mState = State.OPEN;
     }
-
-    // TODO: Refactor this query text (and preparation for it) elsewhere.
-    // Create the CQL statement to insert data.
-    // Get a reference to the full name of the C* table for this column.
-    // TODO: Refactor this name-creation code somewhere cleaner.
-    KijiManagedCassandraTableName cTableName = KijiManagedCassandraTableName.getKijiTableName(
-        mTable.getURI(),
-        mTable.getName()
-    );
-
     mWriterCommon = new CassandraKijiWriterCommon(mTable);
   }
 
@@ -273,7 +262,12 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
   /** {@inheritDoc} */
   @Override
   public void deleteRow(EntityId entityId) throws IOException {
-    updateBufferWithDelete(mWriterCommon.getDeleteRowStatement(entityId));
+    // TODO: Could check whether this family has an non-counter / counter columns before delete.
+    // TODO: Should we wait for these calls to complete before returning?
+    for (CassandraTableName tableName :
+        CassandraTableName.getKijiLocalityGroupTableNames(mTable.getURI(), mTable.getLayout())) {
+      mAdmin.executeAsync(mWriterCommon.getDeleteRowStatement(entityId, tableName));
+    }
     updateBufferWithCounterDelete(mWriterCommon.getDeleteCounterRowStatement(entityId));
   }
 

@@ -22,14 +22,15 @@ package org.kiji.schema.impl.cassandra;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
+import com.google.common.base.Function;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
+import org.apache.curator.framework.CuratorFramework;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.zookeeper.KeeperException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,35 +40,33 @@ import org.kiji.schema.Kiji;
 import org.kiji.schema.KijiAlreadyExistsException;
 import org.kiji.schema.KijiMetaTable;
 import org.kiji.schema.KijiNotInstalledException;
-import org.kiji.schema.KijiRowKeySplitter;
 import org.kiji.schema.KijiSchemaTable;
 import org.kiji.schema.KijiSystemTable;
-import org.kiji.schema.KijiTable;
 import org.kiji.schema.KijiURI;
-import org.kiji.schema.avro.RowKeyEncoding;
 import org.kiji.schema.avro.RowKeyFormat;
 import org.kiji.schema.avro.TableLayoutDesc;
-import org.kiji.schema.cassandra.CassandraFactory;
-import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
-import org.kiji.schema.hbase.HBaseFactory;
+import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.impl.Versions;
 import org.kiji.schema.layout.InvalidLayoutException;
 import org.kiji.schema.layout.KijiTableLayout;
-import org.kiji.schema.layout.impl.ZooKeeperClient;
-import org.kiji.schema.layout.impl.ZooKeeperMonitor;
+import org.kiji.schema.layout.impl.InstanceMonitor;
+import org.kiji.schema.layout.impl.cassandra.CassandraLayoutCapsule;
+import org.kiji.schema.layout.impl.cassandra.CassandraLayoutCapsule.CassandraLayoutCapsuleFactory;
 import org.kiji.schema.security.CassandraKijiSecurityManager;
 import org.kiji.schema.security.KijiSecurityException;
 import org.kiji.schema.security.KijiSecurityManager;
 import org.kiji.schema.util.Debug;
-import org.kiji.schema.util.JvmId;
+import org.kiji.schema.util.DebugResourceTracker;
 import org.kiji.schema.util.LockFactory;
 import org.kiji.schema.util.ProtocolVersion;
+import org.kiji.schema.util.ReferenceCountedCache;
 import org.kiji.schema.util.ResourceUtils;
 import org.kiji.schema.util.VersionInfo;
+import org.kiji.schema.zookeeper.ZooKeeperUtils;
 
 /**
  * Kiji instance class that contains configuration and table information.
- * Multiple instances of Kiji can be installed onto a single C* cluster.
+ * Multiple instances of Kiji can be installed onto a single Cassandra cluster.
  * This class represents a single one of those instances.
  *
  * <p>
@@ -79,30 +78,45 @@ import org.kiji.schema.util.VersionInfo;
  */
 @ApiAudience.Private
 public final class CassandraKiji implements Kiji {
-
   private static final Logger LOG = LoggerFactory.getLogger(CassandraKiji.class);
   private static final Logger CLEANUP_LOG =
       LoggerFactory.getLogger("cleanup." + CassandraKiji.class.getName());
+  private static final String ENABLE_CONSTRUCTOR_STACK_LOGGING_MESSAGE = String.format(
+      "Enable DEBUG log level for logger: %s for a stack trace of the construction of this object.",
+      CLEANUP_LOG.getName());
 
-  /** Global counter to generate unique CassandraKiji client IDs. */
-  private static final AtomicLong INSTANCE_COUNTER = new AtomicLong(0);
-
-  /** The hadoop configuration. */
-  private final Configuration mConf;
+  /** Global cache of ZooKeeper connections keyed on ensemble addresses. */
+  private static final ReferenceCountedCache<KijiURI, CuratorFramework> ZK_CLIENT_CACHE =
+      ReferenceCountedCache.create(new Function<KijiURI, CuratorFramework>() {
+        /** {@inheritDoc}. */
+        @Override
+        public CuratorFramework apply(KijiURI instanceURI) {
+          Preconditions.checkNotNull(instanceURI);
+          return ZooKeeperUtils.getZooKeeperClient(instanceURI);
+        }
+      });
 
   /** Factory for CassandraTableInterface instances. */
-  private CassandraAdmin mAdmin;
-
-  /** Factory for locks. */
-  private final LockFactory mLockFactory;
+  private final CassandraAdmin mAdmin;
 
   /** URI for this CassandraKiji instance. */
   private final KijiURI mURI;
 
   /** States of a Kiji instance. */
   private static enum State {
+    /**
+     * Initialization begun but not completed.  Retain counter and DebugResourceTracker counters
+     * have not been incremented yet.
+     */
     UNINITIALIZED,
+    /**
+     * Finished initialization.  Both retain counters and DebugResourceTracker counters have been
+     * incremented.  Resources are successfully opened and this Kiji's methods may be used.
+     */
     OPEN,
+    /**
+     * Closed.  Other methods are no longer supported.  Resources and connections have been closed.
+     */
     CLOSED
   }
 
@@ -119,14 +133,10 @@ public final class CassandraKiji implements Kiji {
   private final String mConstructorStack;
 
   /** ZooKeeper client for this Kiji instance. */
-  private final ZooKeeperClient mZKClient;
+  private final CuratorFramework mZKClient;
 
-  /** Monitor to register Kiji instance users. */
-  private final ZooKeeperMonitor mMonitor;
-
-  /** Unique identifier for this Kiji instance as a live Kiji client. */
-  private final String mKijiClientId =
-      String.format("%s;CassandraKiji@%s", JvmId.get(), INSTANCE_COUNTER.getAndIncrement());
+  /** Provides table layout updates and user registrations. */
+  private final InstanceMonitor<CassandraLayoutCapsule> mInstanceMonitor;
 
   /**
    * Cached copy of the system version, oblivious to system table mutation while the connection to
@@ -137,18 +147,18 @@ public final class CassandraKiji implements Kiji {
   private final ProtocolVersion mSystemVersion;
 
   /** The schema table for this kiji instance, or null if it has not been opened yet. */
-  private CassandraSchemaTable mSchemaTable;
+  private final CassandraSchemaTable mSchemaTable;
 
   /** The system table for this kiji instance. The system table is always open. */
   private final CassandraSystemTable mSystemTable;
 
   /** The meta table for this kiji instance, or null if it has not been opened yet. */
-  private CassandraMetaTable mMetaTable;
+  private final CassandraMetaTable mMetaTable;
 
   /**
    * The security manager for this instance, lazily initialized through {@link #getSecurityManager}.
    */
-  private KijiSecurityManager mSecurityManager;
+  private KijiSecurityManager mSecurityManager = null;
 
   /**
    * Creates a new <code>CassandraKiji</code> instance.
@@ -157,38 +167,25 @@ public final class CassandraKiji implements Kiji {
    * <p> Caller does not need to use retain(), but must call release() when done with it.
    *
    * @param kijiURI the KijiURI.
-   * @param conf Hadoop Configuration. Deep copied internally.
-   * @param admin CassandraAdmin wrapper around open C* session.
+   * @param admin CassandraAdmin wrapper around open Cassandra session.
    * @param lockFactory Factory for locks.
-   * @throws java.io.IOException on I/O error.
+   * @throws IOException on I/O error.
    */
   CassandraKiji(
       KijiURI kijiURI,
-      Configuration conf,
       CassandraAdmin admin,
       LockFactory lockFactory)
       throws IOException {
-
-    mConstructorStack = CLEANUP_LOG.isDebugEnabled() ? Debug.getStackTrace() : null;
-
-    // Deep copy the configuration.
-    mConf = new Configuration(conf);
-
     // Validate arguments.
     mAdmin = Preconditions.checkNotNull(admin);
-    mLockFactory = Preconditions.checkNotNull(lockFactory);
     mURI = Preconditions.checkNotNull(kijiURI);
-
-    // Configure the ZooKeeper quorum:
-    mConf.setStrings("hbase.zookeeper.quorum", mURI.getZookeeperQuorum().toArray(new String[0]));
-    mConf.setInt("hbase.zookeeper.property.clientPort", mURI.getZookeeperClientPort());
+    Preconditions.checkNotNull(lockFactory);
 
     // Check for an instance name.
     Preconditions.checkArgument(mURI.getInstance() != null,
         "KijiURI '%s' does not specify a Kiji instance name.", mURI);
 
     if (LOG.isDebugEnabled()) {
-      Debug.logConfiguration(mConf);
       LOG.debug(
           "Opening kiji instance '{}'"
           + " with client software version '{}'"
@@ -196,54 +193,59 @@ public final class CassandraKiji implements Kiji {
           mURI, VersionInfo.getSoftwareVersion(), VersionInfo.getClientDataVersion());
     }
 
-    // Load these lazily.
-    mSchemaTable = null;
-    mMetaTable = null;
-    mSecurityManager = null;
-    final State oldState = mState.getAndSet(State.OPEN);
     try {
-      // System table should have already been installed - here were are getting a pointer to it.
-      mSystemTable = CassandraSystemTable.createAssumingTableExists(mURI, mConf, mAdmin);
+      mSystemTable = new CassandraSystemTable(mURI, mAdmin);
+    } catch (KijiNotInstalledException knie) {
+      close();
+      throw knie;
+    }
+    mSchemaTable = CassandraSchemaTable.createAssumingTableExists(mURI, mAdmin, lockFactory);
+    mMetaTable = CassandraMetaTable.createAssumingTableExists(mURI, mSchemaTable, mAdmin);
 
-      mRetainCount.set(1);
-      Preconditions.checkState(oldState == State.UNINITIALIZED,
-          "Cannot open Kiji instance in state %s.", oldState);
-      LOG.debug("Kiji instance '{}' is now opened.", mURI);
+    mSystemVersion = mSystemTable.getDataVersion();
+    LOG.debug("Kiji instance '{}' has data version '{}'.", mURI, mSystemVersion);
 
-      mSystemVersion = mSystemTable.getDataVersion();
-      LOG.debug("Kiji instance '{}' has data version '{}'.", mURI, mSystemVersion);
-
-      // Make sure the data version for the client matches the cluster.
-      LOG.debug("Validating version for Kiji instance '{}'.", mURI);
-      VersionInfo.validateVersion(this);
+    // Make sure the data version for the client matches the cluster.
+    LOG.debug("Validating version for Kiji instance '{}'.", mURI);
+    try {
+      VersionInfo.validateVersion(mSystemTable);
     } catch (IOException ioe) {
-      // If an IOException occurred the object will not be constructed so need to clean it up.
       close();
       throw ioe;
-    } catch (KijiNotInstalledException kie) {
-      // Some clients handle this unchecked Exception so do the same here.
+    } catch (KijiNotInstalledException knie) {
       close();
-      throw kie;
+      throw knie;
     }
 
-    // TODO(SCHEMA-491) Share ZooKeeperClient instances when possible.
     if (mSystemVersion.compareTo(Versions.MIN_SYS_VER_FOR_LAYOUT_VALIDATION) >= 0) {
       // system-2.0 clients must connect to ZooKeeper:
       //  - to register themselves as table users;
       //  - to receive table layout updates.
-      mZKClient = HBaseFactory.Provider.get().getZooKeeperClient(mURI);
-      try {
-        mMonitor = new ZooKeeperMonitor(mZKClient);
-        mMonitor.registerInstanceUser(mURI, mKijiClientId, mSystemVersion.toString());
-      } catch (KeeperException ke) {
-        // Unrecoverable KeeperException:
-        throw new IOException(ke);
-      }
+      mZKClient = ZK_CLIENT_CACHE.get(mURI);
     } else {
       // system-1.x clients do not need a ZooKeeper connection.
       mZKClient = null;
-      mMonitor = null;
     }
+
+    mInstanceMonitor = new InstanceMonitor<CassandraLayoutCapsule>(
+        mSystemVersion,
+        mURI,
+        CassandraLayoutCapsuleFactory.get(),
+        mSchemaTable,
+        mMetaTable,
+        mZKClient);
+    mInstanceMonitor.start();
+
+    mRetainCount.set(1);
+    final State oldState = mState.getAndSet(State.OPEN);
+    Preconditions.checkState(oldState == State.UNINITIALIZED,
+        "Casnnot open Kiji instance in state %s.", oldState);
+    LOG.debug("Kiji instance '{}' is no opened.", mURI);
+
+    mConstructorStack = (CLEANUP_LOG.isDebugEnabled())
+        ? Debug.getStackTrace()
+        : ENABLE_CONSTRUCTOR_STACK_LOGGING_MESSAGE;
+    DebugResourceTracker.get().registerResource(this, mConstructorStack);
   }
 
   /**
@@ -285,10 +287,17 @@ public final class CassandraKiji implements Kiji {
     }
   }
 
-  /** {@inheritDoc} */
+  /**
+   * Unlike HBase, Cassandra does not have use Hadoop's configuration, so this implementation always
+   * throws an {@link java.lang.UnsupportedOperationException}
+   *
+   * @return never.
+   * @throws UnsupportedOperationException always.
+   */
   @Override
   public Configuration getConf() {
-    return mConf;
+    throw new UnsupportedOperationException(
+        "Cassandra-backed Kiji tables do not have a Hadoop configuration.");
   }
 
   /** {@inheritDoc} */
@@ -303,10 +312,6 @@ public final class CassandraKiji implements Kiji {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot get schema table for Kiji instance %s in state %s.", this, state);
-    if (null == mSchemaTable) {
-      mSchemaTable = CassandraSchemaTable.createAssumingTableExists(
-          mURI, mConf, mAdmin, mLockFactory);
-    }
     return mSchemaTable;
   }
 
@@ -325,10 +330,6 @@ public final class CassandraKiji implements Kiji {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot get meta table for Kiji instance %s in state %s.", this, state);
-    if (null == mMetaTable) {
-      mMetaTable = CassandraMetaTable.createAssumingTableExists(
-          mURI, mConf, getSchemaTable(), mAdmin);
-    }
     return mMetaTable;
   }
 
@@ -343,11 +344,6 @@ public final class CassandraKiji implements Kiji {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot get HBase admin for Kiji instance %s in state %s.", this, state);
-    if (null == mAdmin) {
-      CassandraFactory cassandraFactory = CassandraFactory.Provider.get();
-      CassandraAdminFactory adminFactory = cassandraFactory.getCassandraAdminFactory(mURI);
-      mAdmin = adminFactory.create(mURI);
-    }
     return mAdmin;
   }
 
@@ -365,7 +361,7 @@ public final class CassandraKiji implements Kiji {
         "Cannot get security manager for Kiji instance %s in state %s.", this, state);
     if (null == mSecurityManager) {
       if (isSecurityEnabled()) {
-        mSecurityManager = CassandraKijiSecurityManager.create(mURI, getConf(), mAdmin);
+        mSecurityManager = CassandraKijiSecurityManager.create(mURI, mAdmin);
       } else {
         throw new KijiSecurityException("Cannot create a KijiSecurityManager for security version "
             + mSystemTable.getSecurityVersion() + ". Version must be "
@@ -377,18 +373,21 @@ public final class CassandraKiji implements Kiji {
 
   /** {@inheritDoc} */
   @Override
-  public KijiTable openTable(String tableName) throws IOException {
+  public CassandraKijiTable openTable(String tableName) throws IOException {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot open table in Kiji instance %s in state %s.", this, state);
-    return new CassandraKijiTable(this, tableName, mConf, mAdmin);
+    return new CassandraKijiTable(
+        this,
+        tableName,
+        mAdmin,
+        mInstanceMonitor.getTableLayoutMonitor(tableName));
   }
 
   /** {@inheritDoc} */
   @Deprecated
   @Override
-  public void createTable(String tableName, KijiTableLayout tableLayout)
-      throws IOException {
+  public void createTable(String tableName, KijiTableLayout tableLayout) throws IOException {
     if (!tableName.equals(tableLayout.getName())) {
       throw new RuntimeException(String.format(
           "Table name from layout descriptor '%s' does match table name '%s'.",
@@ -400,92 +399,101 @@ public final class CassandraKiji implements Kiji {
 
   /** {@inheritDoc} */
   @Override
-  public void createTable(TableLayoutDesc tableLayout)
-      throws IOException {
-    createTable(tableLayout, 1);
+  public void createTable(TableLayoutDesc tableLayout) throws IOException {
+    // For this first-cut attempt at creating a C* Kiji table, all of the code for going from a Kiji
+    // TableLayoutDesc to a C* table is in this method.  Later we'll refactor this!
+
+    final KijiURI tableURI = KijiURI.newBuilder(mURI).withTableName(tableLayout.getName()).build();
+
+    // This will validate the layout and may throw an InvalidLayoutException.
+    final KijiTableLayout layout = KijiTableLayout.newLayout(tableLayout);
+
+    if (getMetaTable().tableExists(tableLayout.getName())) {
+      throw new KijiAlreadyExistsException(
+          String.format("Kiji table '%s' already exists.", tableURI), tableURI);
+    }
+
+    if (tableLayout.getKeysFormat() instanceof RowKeyFormat) {
+      throw new InvalidLayoutException(
+          "CassandraKiji does not support 'RowKeyFormat', instead use 'RowKeyFormat2'.");
+    }
+
+    getMetaTable().updateTableLayout(tableLayout.getName(), tableLayout);
+
+    if (mSystemVersion.compareTo(Versions.SYSTEM_2_0) >= 0) {
+      // system-2.0 clients retrieve the table layout from ZooKeeper as a stream of notifications.
+      // Invariant: ZooKeeper hold the most recent layout of the table.
+      LOG.debug("Writing initial table layout in ZooKeeper for table {}.", tableURI);
+      ZooKeeperUtils.setTableLayout(mZKClient, tableURI, layout.getDesc().getLayoutId());
+    }
+
+    // Create locality group tables.
+    final Set<CassandraTableName> tables =
+        CassandraTableName.getKijiLocalityGroupTableNames(tableURI, layout);
+    for (CassandraTableName table : tables) {
+      LOG.
+      mAdmin.createTable(table, CQLUtils.getCreateLocalityGroupStatement(table, layout));
+      // Add a secondary index on the version
+      mAdmin.execute(CQLUtils.getCreateIndexStatement(table, CQLUtils.VERSION_COL));
+    }
+
+    // Create the counter table.
+    CassandraTableName counterTable = CassandraTableName.getKijiCounterTableName(tableURI);
+    String createCounterTableStatement = CQLUtils.getCreateCounterTableStatement(counterTable, layout);
+    mAdmin.createTable(counterTable, createCounterTableStatement);
   }
 
-  /** {@inheritDoc} */
+  /**
+   * Unlike HBase, Cassandra does not have regions, so this implementation always throws an
+   * {@link java.lang.UnsupportedOperationException}
+   *
+   * @throws IOException never.
+   * @throws UnsupportedOperationException always.
+   */
   @Deprecated
   @Override
   public void createTable(String tableName, KijiTableLayout tableLayout, int numRegions)
       throws IOException {
-    if (!tableName.equals(tableLayout.getName())) {
-      throw new RuntimeException(String.format(
-          "Table name from layout descriptor '%s' does match table name '%s'.",
-          tableLayout.getName(), tableName));
-    }
-
-    createTable(tableLayout.getDesc(), numRegions);
+    throw new UnsupportedOperationException("Cassandra-backed Kiji tables do not have regions.");
   }
 
-  /** {@inheritDoc} */
+  /**
+   * Unlike HBase, Cassandra does not have regions, so this implementation always throws an
+   * {@link java.lang.UnsupportedOperationException}
+   *
+   * @throws IOException never.
+   * @throws UnsupportedOperationException always.
+   */
   @Override
-  // TODO: Remove for C*, numRegions don't make sense
-  public void createTable(TableLayoutDesc tableLayout, int numRegions)
-      throws IOException {
-    Preconditions.checkArgument((numRegions >= 1), "numRegions must be positive: " + numRegions);
-    if (numRegions > 1) {
-      if (KijiTableLayout.getEncoding(tableLayout.getKeysFormat())
-          == RowKeyEncoding.RAW) {
-        throw new IllegalArgumentException(
-            "May not use numRegions > 1 if row key hashing is disabled in the layout");
-      }
-
-      createTable(tableLayout, KijiRowKeySplitter.get().getSplitKeys(numRegions,
-          KijiRowKeySplitter.getRowKeyResolution(tableLayout)));
-    } else {
-      createTable(tableLayout, null);
-    }
+  public void createTable(TableLayoutDesc tableLayout, int numRegions) throws IOException {
+    throw new UnsupportedOperationException("Cassandra-backed Kiji tables do not have regions.");
   }
 
-  /** {@inheritDoc} */
+  /**
+   * Unlike HBase, Cassandra does not have regions, so this implementation always throws an
+   * {@link java.lang.UnsupportedOperationException}
+   *
+   * @throws IOException never.
+   * @throws UnsupportedOperationException always.
+   */
   @Deprecated
   @Override
-  // TODO: Remove for C*, splitKeys don't make sense
   public void createTable(String tableName, KijiTableLayout tableLayout, byte[][] splitKeys)
       throws IOException {
-    if (getMetaTable().tableExists(tableName)) {
-      final KijiURI tableURI =
-          KijiURI.newBuilder(mURI).withTableName(tableName).build();
-      throw new KijiAlreadyExistsException(String.format(
-          "Kiji table '%s' already exists.", tableURI), tableURI);
-    }
-
-    if (!tableName.equals(tableLayout.getName())) {
-      throw new RuntimeException(String.format(
-          "Table name from layout descriptor '%s' does match table name '%s'.",
-          tableLayout.getName(), tableName));
-    }
-
-    createTable(tableLayout.getDesc(), splitKeys);
+    throw new UnsupportedOperationException("Cassandra-backed Kiji tables do not have regions.");
   }
 
-  /** {@inheritDoc} */
+  /**
+   * Unlike HBase, Cassandra does not have regions, so this implementation always throws an
+   * {@link java.lang.UnsupportedOperationException}
+   *
+   * @throws IOException never.
+   * @throws UnsupportedOperationException always.
+   */
   @Override
   // TODO: Remove for C*, splitKeys don't make sense
   public void createTable(TableLayoutDesc tableLayout, byte[][] splitKeys) throws IOException {
-    final State state = mState.get();
-    Preconditions.checkState(state == State.OPEN,
-        "Cannot create table in Kiji instance %s in state %s.", this, state);
-
-    final KijiURI tableURI = KijiURI.newBuilder(mURI).withTableName(tableLayout.getName()).build();
-    LOG.debug("Creating Kiji table '{}'.", tableURI);
-
-    ensureValidationCompatibility(tableLayout);
-
-    // If security is enabled, apply the permissions to the new table.
-    if (isSecurityEnabled()) {
-      getSecurityManager().lock();
-      try {
-        createTableUnchecked(tableLayout);
-        getSecurityManager().applyPermissionsToNewTable(tableURI);
-      } finally {
-        getSecurityManager().unlock();
-      }
-    } else {
-      createTableUnchecked(tableLayout);
-    }
+    throw new UnsupportedOperationException("Cassandra-backed Kiji tables do not have regions.");
   }
 
   /** {@inheritDoc} */
@@ -607,25 +615,25 @@ public final class CassandraKiji implements Kiji {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot delete table in Kiji instance %s in state %s.", this, state);
-    // Delete from Cassandra.
-    String mainTable = KijiManagedCassandraTableName.getKijiTableName(mURI, tableName).toString();
-    String counterTable =
-        KijiManagedCassandraTableName.getKijiCounterTableName(mURI, tableName).toString();
-    CassandraAdmin admin = getCassandraAdmin();
 
-    admin.disableTable(mainTable);
-    admin.deleteTable(mainTable);
+    final KijiURI tableURI = KijiURI.newBuilder(mURI).withTableName(tableName).build();
+    final KijiTableLayout layout = mMetaTable.getTableLayout(tableName);
 
-    admin.disableTable(counterTable);
-    admin.deleteTable(counterTable);
+    // Drop locality group tables.
+    final Set<CassandraTableName> tables =
+        CassandraTableName.getKijiLocalityGroupTableNames(tableURI, layout);
+    for (CassandraTableName table : tables) {
+      mAdmin.disableTable(table);
+      mAdmin.deleteTable(table);
+    }
+
+    // Drop counter table.
+    CassandraTableName counterTable = CassandraTableName.getKijiCounterTableName(tableURI);
+    mAdmin.disableTable(counterTable);
+    mAdmin.deleteTable(counterTable);
 
     // Delete from the meta table.
     getMetaTable().deleteTable(tableName);
-
-    // If the table persists immediately after deletion attempt, then give up.
-    if (admin.tableExists(mainTable)) {
-      LOG.warn("C* table " + mainTable + " survives deletion attempt. Giving up...");
-    }
   }
 
   /** {@inheritDoc} */
@@ -648,28 +656,25 @@ public final class CassandraKiji implements Kiji {
         "Cannot close Kiji instance %s in state %s.", this, oldState);
 
     LOG.debug("Closing {}.", this);
-    if (mMonitor != null) {
-      try {
-        mMonitor.unregisterInstanceUser(mURI, mKijiClientId, mSystemVersion.toString());
-      } catch (KeeperException ke) {
-        // Unrecoverable ZooKeeper error:
-        throw new IOException(ke);
-      }
-      mMonitor.close();
-    }
-    if (mZKClient != null) {
-      mZKClient.release();
-    }
 
+    ResourceUtils.closeOrLog(mInstanceMonitor);
     ResourceUtils.closeOrLog(mMetaTable);
     ResourceUtils.closeOrLog(mSystemTable);
     ResourceUtils.closeOrLog(mSchemaTable);
-    ResourceUtils.closeOrLog(mSecurityManager);
     ResourceUtils.closeOrLog(mAdmin);
-    mSchemaTable = null;
-    mMetaTable = null;
-    mAdmin = null;
+
+    synchronized (this) {
+      ResourceUtils.closeOrLog(mSecurityManager);
+    }
+
+    if (mZKClient != null) {
+      ZK_CLIENT_CACHE.release(mURI);
+    }
+
     mSecurityManager = null;
+    if (oldState != State.UNINITIALIZED) {
+      DebugResourceTracker.get().unregisterResource(this);
+    }
     LOG.debug("{} closed.", this);
   }
 
@@ -724,10 +729,10 @@ public final class CassandraKiji implements Kiji {
   protected void finalize() throws Throwable {
     final State state = mState.get();
     if (state != State.CLOSED) {
-      CLEANUP_LOG.warn("Finalizing unreleased HBaseKiji instance {} in state {}.", this, state);
+      CLEANUP_LOG.warn("Finalizing unreleased CassandraKiji instance {} in state {}.", this, state);
       if (CLEANUP_LOG.isDebugEnabled()) {
         CLEANUP_LOG.debug(
-            "HBaseKiji '{}' was constructed through:\n{}",
+            "CassandraKiji '{}' was constructed through:\n{}",
             mURI,
             mConstructorStack);
       }
@@ -753,82 +758,7 @@ public final class CassandraKiji implements Kiji {
    * @return the ZooKeeper client for this Kiji instance.
    *     Null if the data version &le; {@code system-2.0}.
    */
-  ZooKeeperClient getZKClient() {
+  CuratorFramework getZKClient() {
     return mZKClient;
-  }
-
-
-  /**
-   * Creates a Kiji table in a Cassandra instance, without checking for validation compatibility and
-   * without applying permissions.
-   *
-   * @param tableLayout The initial layout of the table (with unassigned column ids).
-   * @throws java.io.IOException on I/O error.
-   * @throws org.kiji.schema.KijiAlreadyExistsException if the table already exists.
-   */
-  private void createTableUnchecked(TableLayoutDesc tableLayout) throws IOException {
-
-    // For this first-cut attempt at creating a C* Kiji table, all of the code for going from a Kiji
-    // TableLayoutDesc to a C* table is in this method.  Later we'll refactor this!
-
-    final KijiURI tableURI = KijiURI.newBuilder(mURI).withTableName(tableLayout.getName()).build();
-
-    // This will validate the layout and may throw an InvalidLayoutException.
-    final KijiTableLayout layout = KijiTableLayout.newLayout(tableLayout);
-
-    if (getMetaTable().tableExists(tableLayout.getName())) {
-      throw new KijiAlreadyExistsException(
-          String.format("Kiji table '%s' already exists.", tableURI), tableURI);
-    }
-
-    if (tableLayout.getKeysFormat() instanceof RowKeyFormat) {
-      throw new InvalidLayoutException(
-          "CassandraKiji does not support 'RowKeyFormat', instead use 'RowKeyFormat2'.");
-    }
-
-    getMetaTable().updateTableLayout(tableLayout.getName(), tableLayout);
-
-    if (mSystemVersion.compareTo(Versions.SYSTEM_2_0) >= 0) {
-      // system-2.0 clients retrieve the table layout from ZooKeeper as a stream of notifications.
-      // Invariant: ZooKeeper hold the most recent layout of the table.
-      LOG.debug("Writing initial table layout in ZooKeeper for table {}.", tableURI);
-      try {
-        final ZooKeeperMonitor monitor = new ZooKeeperMonitor(mZKClient);
-        try {
-          final byte[] layoutId = Bytes.toBytes(layout.getDesc().getLayoutId());
-          monitor.notifyNewTableLayout(tableURI, layoutId, -1);
-        } finally {
-          monitor.close();
-        }
-      } catch (KeeperException ke) {
-        throw new IOException(ke);
-      }
-    }
-
-    // Super-primitive right now.  Assume that max versions is always 1.
-
-    // Get a reference to the name of the Kiji table.
-    String kijiTableName = tableLayout.getName();
-
-    // Create a C* table name for this Kiji table.
-    String tableName =
-        KijiManagedCassandraTableName.getKijiTableName(mURI, kijiTableName).toString();
-
-    // Create the table!
-    mAdmin.createTable(tableName, CQLUtils.getCreateTableStatement(tableName, layout));
-
-    // Add a secondary index on the version.
-    mAdmin.execute(CQLUtils.getCreateIndexStatement(tableName, CQLUtils.VERSION_COL));
-
-    // Also create a second table, which we can use for counters.
-    // Create a C* table name for this Kiji table.
-    String counterTableName =
-        KijiManagedCassandraTableName.getKijiCounterTableName(mURI, kijiTableName).toString();
-
-    String createCounterTableStatement =
-        CQLUtils.getCreateCounterTableStatement(counterTableName, layout);
-
-    // Create the table!
-    mAdmin.createTable(counterTableName, createCounterTableStatement);
   }
 }

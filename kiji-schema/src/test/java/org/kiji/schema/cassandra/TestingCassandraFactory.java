@@ -245,7 +245,7 @@ public final class TestingCassandraFactory implements CassandraFactory {
   // Locks and ZooKeeper stuff
   /** {@inheritDoc} */
   @Override
-  public LockFactory getLockFactory(KijiURI uri, Configuration conf) throws IOException {
+  public LockFactory getLockFactory(KijiURI uri) throws IOException {
     final String fakeID = getFakeCassandraID(uri);
     if (fakeID != null) {
       synchronized (mLock) {
@@ -258,7 +258,7 @@ public final class TestingCassandraFactory implements CassandraFactory {
         return newFactory;
       }
     }
-    return DELEGATE.getLockFactory(uri, conf);
+    return DELEGATE.getLockFactory(uri);
   }
 
   /** Resets the testing HBase factory. */
@@ -329,12 +329,6 @@ public final class TestingCassandraFactory implements CassandraFactory {
       }
       return mMiniZkCluster;
     }
-  }
-
-  /** {@inheritDoc} */
-  @Override
-  public ZooKeeperClient getZooKeeperClient(KijiURI uri) throws IOException {
-    return ZooKeeperClient.getZooKeeperClient(getZooKeeperEnsemble(uri));
   }
 
   /** {@inheritDoc} */

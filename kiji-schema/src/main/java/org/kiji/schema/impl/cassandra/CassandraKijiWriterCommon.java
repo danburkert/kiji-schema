@@ -31,10 +31,11 @@ import org.slf4j.LoggerFactory;
 import org.kiji.schema.EntityId;
 import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.NoSuchColumnException;
-import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
+import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.layout.KijiTableLayout;
-import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
+import org.kiji.schema.layout.impl.cassandra.CassandraColumnName;
+import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
 
 /**
  * Contains code common to a TableWriter and BufferedWriter.
@@ -46,10 +47,6 @@ class CassandraKijiWriterCommon {
 
   private final CassandraKijiTable mTable;
 
-  private final String mTableName;
-
-  private final String mCounterTableName;
-
   /**
    * Create an object for performing common write operations for a given table.
    *
@@ -58,10 +55,6 @@ class CassandraKijiWriterCommon {
   public CassandraKijiWriterCommon(CassandraKijiTable table) {
     mTable = table;
     mAdmin = mTable.getAdmin();
-    mTableName = KijiManagedCassandraTableName
-        .getKijiTableName(mTable.getURI(), mTable.getName()).toString();
-    mCounterTableName = KijiManagedCassandraTableName
-        .getKijiCounterTableName(mTable.getURI(), mTable.getName()).toString();
   }
 
   /**
@@ -126,9 +119,14 @@ class CassandraKijiWriterCommon {
 
     int ttl = getTTL(mTable.getLayout(), family);
 
-    final KijiColumnName columnName = new KijiColumnName(family, qualifier);
-    final CassandraColumnNameTranslator translator =
-        (CassandraColumnNameTranslator) mTable.getColumnNameTranslator();
+    final KijiColumnName kijiColumnName = new KijiColumnName(family, qualifier);
+    final CassandraColumnNameTranslator translator = mTable.getColumnNameTranslator();
+    final CassandraColumnName columnName = translator.toCassandraColumnName(kijiColumnName);
+
+    final CassandraTableName tableName =
+        CassandraTableName.getKijiLocalityGroupTableName(
+            mTable.getURI(),
+            columnName.getLocalityGroup());
 
     final ByteBuffer valueBytes =
         CassandraByteUtil.bytesToByteBuffer(
@@ -137,11 +135,9 @@ class CassandraKijiWriterCommon {
     return CQLUtils.getInsertStatement(
         mAdmin,
         mTable.getLayout(),
-        mTableName,
+        tableName,
         entityId,
-        translator.toCassandraLocalityGroup(columnName),
-        translator.toCassandraColumnFamily(columnName),
-        translator.toCassandraColumnQualifier(columnName),
+        columnName,
         timestamp,
         valueBytes,
         ttl);
@@ -165,18 +161,20 @@ class CassandraKijiWriterCommon {
   ) throws IOException {
     checkFamily(family);
 
-    final CassandraColumnNameTranslator translator =
-        (CassandraColumnNameTranslator) mTable.getColumnNameTranslator();
     final KijiColumnName kijiColumnName = new KijiColumnName(family, qualifier);
+    final CassandraColumnNameTranslator translator = mTable.getColumnNameTranslator();
+    final CassandraColumnName columnName = translator.toCassandraColumnName(kijiColumnName);
+    final CassandraTableName tableName =
+        CassandraTableName.getKijiLocalityGroupTableName(
+            mTable.getURI(),
+            columnName.getLocalityGroup());
 
     return CQLUtils.getDeleteCellStatement(
         mAdmin,
         mTable.getLayout(),
-        mTableName,
+        tableName,
         entityId,
-        translator.toCassandraLocalityGroup(kijiColumnName),
-        translator.toCassandraColumnFamily(kijiColumnName),
-        translator.toCassandraColumnQualifier(kijiColumnName),
+        columnName,
         version);
   }
 
@@ -193,18 +191,20 @@ class CassandraKijiWriterCommon {
       throws IOException {
     checkFamily(family);
 
-    final CassandraColumnNameTranslator translator =
-        (CassandraColumnNameTranslator) mTable.getColumnNameTranslator();
     final KijiColumnName kijiColumnName = new KijiColumnName(family, qualifier);
+    final CassandraColumnNameTranslator translator = mTable.getColumnNameTranslator();
+    final CassandraColumnName columnName = translator.toCassandraColumnName(kijiColumnName);
+    final CassandraTableName tableName =
+        CassandraTableName.getKijiLocalityGroupTableName(
+            mTable.getURI(),
+            columnName.getLocalityGroup());
 
     return CQLUtils.getDeleteColumnStatement(
         mAdmin,
         mTable.getLayout(),
-        mTableName,
+        tableName,
         entityId,
-        translator.toCassandraLocalityGroup(kijiColumnName),
-        translator.toCassandraColumnFamily(kijiColumnName),
-        translator.toCassandraColumnQualifier(kijiColumnName));
+        columnName);
   }
 
   /**
@@ -223,18 +223,18 @@ class CassandraKijiWriterCommon {
   ) throws IOException {
     checkFamily(family);
 
-    final CassandraColumnNameTranslator translator =
-        (CassandraColumnNameTranslator) mTable.getColumnNameTranslator();
     final KijiColumnName kijiColumnName = new KijiColumnName(family, qualifier);
+    final CassandraColumnNameTranslator translator = mTable.getColumnNameTranslator();
+    final CassandraColumnName columnName = translator.toCassandraColumnName(kijiColumnName);
+    final CassandraTableName tableName =
+        CassandraTableName.getKijiCounterTableName(mTable.getURI());
 
     return CQLUtils.getDeleteColumnStatement(
         mAdmin,
         mTable.getLayout(),
-        mCounterTableName,
+        tableName,
         entityId,
-        translator.toCassandraLocalityGroup(kijiColumnName),
-        translator.toCassandraColumnFamily(kijiColumnName),
-        translator.toCassandraColumnQualifier(kijiColumnName));
+        columnName);
   }
 
   /**
@@ -248,17 +248,20 @@ class CassandraKijiWriterCommon {
   public Statement getDeleteFamilyStatement(EntityId entityId, String family) throws IOException {
     checkFamily(family);
 
-    final CassandraColumnNameTranslator translator =
-        (CassandraColumnNameTranslator) mTable.getColumnNameTranslator();
     final KijiColumnName kijiColumnName = new KijiColumnName(family, null);
+    final CassandraColumnNameTranslator translator = mTable.getColumnNameTranslator();
+    final CassandraColumnName columnName = translator.toCassandraColumnName(kijiColumnName);
+    final CassandraTableName tableName =
+        CassandraTableName.getKijiLocalityGroupTableName(
+            mTable.getURI(),
+            columnName.getLocalityGroup());
 
-    return CQLUtils.getDeleteFamilyStatement(
+    return CQLUtils.getDeleteColumnStatement(
         mAdmin,
         mTable.getLayout(),
-        mTableName,
+        tableName,
         entityId,
-        translator.toCassandraLocalityGroup(kijiColumnName),
-        translator.toCassandraColumnFamily(kijiColumnName));
+        columnName);
   }
 
 
@@ -274,39 +277,47 @@ class CassandraKijiWriterCommon {
       throws IOException {
     checkFamily(family);
 
-    final CassandraColumnNameTranslator translator =
-        (CassandraColumnNameTranslator) mTable.getColumnNameTranslator();
     final KijiColumnName kijiColumnName = new KijiColumnName(family, null);
+    final CassandraColumnNameTranslator translator = mTable.getColumnNameTranslator();
+    final CassandraColumnName columnName = translator.toCassandraColumnName(kijiColumnName);
+    final CassandraTableName tableName =
+        CassandraTableName.getKijiCounterTableName(mTable.getURI());
 
-    return CQLUtils.getDeleteFamilyStatement(
+    return CQLUtils.getDeleteColumnStatement(
         mAdmin,
         mTable.getLayout(),
-        mCounterTableName,
+        tableName,
         entityId,
-        translator.toCassandraLocalityGroup(kijiColumnName),
-        translator.toCassandraColumnFamily(kijiColumnName));
-  }
-
-  /**
-   * Create a delete statement for an entire row.
-   *
-   * @param entityId of the row to delete.
-   * @return a statement that will delete the row.
-   * @throws IOException if there is a problem creating the delete statement.
-   */
-  public Statement getDeleteRowStatement(EntityId entityId) throws IOException {
-    return CQLUtils.getDeleteRowStatement(mAdmin, mTable.getLayout(), mTableName, entityId);
+        columnName);
   }
 
   /**
    * Create a delete statement for the counters within a row.
    *
    * @param entityId of the row to delete.
-   * @return a statement that will delete the row.
+   * @return a statement that will delete the counters in the row.
    * @throws IOException if there is a problem creating the delete statement.
    */
   public Statement getDeleteCounterRowStatement(EntityId entityId) throws IOException {
-    return CQLUtils.getDeleteRowStatement(mAdmin, mTable.getLayout(), mCounterTableName, entityId);
+    final CassandraTableName tableName =
+        CassandraTableName.getKijiCounterTableName(mTable.getURI());
+    return CQLUtils.getDeleteLocalityGroupStatement(mAdmin, mTable.getLayout(), tableName, entityId);
+  }
+
+  /**
+   * Create a delete statement for a row within a locality group.
+   *
+   * @param entityId of the row to delete.
+   * @param localityGroup to delete the row from.
+   * @return a statement that will delete the row in the provided locality group.
+   * @return IOException if there is a problem creating the delete statement.
+   */
+  public Statement getDeleteRowStatement(EntityId entityId, CassandraTableName localityGroup) {
+    return CQLUtils.getDeleteLocalityGroupStatement(
+        mAdmin,
+        mTable.getLayout(),
+        localityGroup,
+        entityId);
   }
 
   /**

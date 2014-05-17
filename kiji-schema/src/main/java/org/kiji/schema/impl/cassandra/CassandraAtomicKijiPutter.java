@@ -35,12 +35,12 @@ import org.kiji.schema.AtomicKijiPutter;
 import org.kiji.schema.EntityId;
 import org.kiji.schema.KijiIOException;
 import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
-import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.impl.LayoutConsumer;
 import org.kiji.schema.impl.cassandra.CassandraKijiTableWriter.WriterLayoutCapsule;
 import org.kiji.schema.layout.LayoutUpdatedException;
-import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
+import org.kiji.schema.layout.impl.LayoutCapsule;
+import org.kiji.schema.layout.impl.cassandra.CassandraLayoutCapsule;
 
 /**
  * Cassandra implementation of AtomicKijiPutter.
@@ -100,7 +100,7 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
    * <p>
    *   Set to true when the table calls
    *   {@link
-   *   InnerLayoutUpdater#update(org.kiji.schema.impl.LayoutCapsule)}
+   *   InnerLayoutUpdater#update(LayoutCapsule)})}
    *   to indicate a table layout update.  Set to false when a user calls
    *   {@link #begin(org.kiji.schema.EntityId)}.  If this becomes true while a transaction is in
    *   progress all methods which would advance the transaction will instead call
@@ -113,10 +113,11 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
   private boolean mLayoutOutOfDate = false;
 
   /** Provides for the updating of this Writer in response to a table layout update. */
-  private final class InnerLayoutUpdater implements LayoutConsumer {
+  private final class InnerLayoutUpdater implements LayoutConsumer<CassandraLayoutCapsule> {
     /** {@inheritDoc} */
     @Override
-    public void update(final LayoutCapsule capsule) throws IOException {
+    public void update(final CassandraLayoutCapsule capsule)
+        throws IOException {
       final State state = mState.get();
       Preconditions.checkState(state != State.CLOSED,
           "Cannot update an AtomicKijiPutter instance in state %s.", state);
@@ -145,7 +146,7 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
         mWriterLayoutCapsule = new WriterLayoutCapsule(
             provider,
             capsule.getLayout(),
-            (CassandraColumnNameTranslator) capsule.getKijiColumnNameTranslator());
+            capsule.getColumnNameTranslator());
       }
     }
   }

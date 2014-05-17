@@ -21,7 +21,6 @@ package org.kiji.schema.cassandra;
 
 import java.io.IOException;
 
-import org.apache.hadoop.conf.Configuration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,7 +31,6 @@ import org.kiji.delegation.Lookups;
 import org.kiji.delegation.PriorityProvider;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.impl.cassandra.CassandraAdminFactory;
-import org.kiji.schema.layout.impl.ZooKeeperClient;
 import org.kiji.schema.util.LockFactory;
 
 /** Factory for Cassandra instances based on URIs. */
@@ -67,7 +65,6 @@ public interface CassandraFactory extends PriorityProvider {
     }
   }
 
-
   /**
    * Reports a factory for CassandraAdmin for a given HBase instance.
    *
@@ -82,25 +79,10 @@ public interface CassandraFactory extends PriorityProvider {
    * Creates a lock factory for a given Kiji instance.
    *
    * @param uri URI of the Kiji instance to create a lock factory for.
-   * @param conf Hadoop configuration.
    * @return a factory for locks for the specified Kiji instance.
    * @throws java.io.IOException on I/O error.
    */
-  LockFactory getLockFactory(KijiURI uri, Configuration conf) throws IOException;
-
-  /**
-   * Creates and opens a ZooKeeperClient for a given Kiji instance.
-   *
-   * <p>
-   *   Caller must release the ZooKeeperClient object with {@link
-   *   org.kiji.schema.layout.impl.ZooKeeperClient#release()} when done with it.
-   * </p>.
-   *
-   * @param uri URI of the Kiji instance for which to create a ZooKeeperClient.
-   * @return a new open ZooKeeperClient.
-   * @throws java.io.IOException in case of an error connecting to ZooKeeper.
-   */
-  ZooKeeperClient getZooKeeperClient(KijiURI uri) throws IOException;
+  LockFactory getLockFactory(KijiURI uri) throws IOException;
 
   /**
    * Returns the ZooKeeper quorum address of the provided KijiURI in comma-separated host:port

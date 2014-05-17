@@ -23,17 +23,18 @@ import java.io.IOException;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+
+import javax.annotation.Nullable;
 
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
+import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ComparisonChain;
 import com.google.common.collect.Iterators;
 import com.google.common.collect.Lists;
 import com.google.common.collect.PeekingIterator;
-import com.google.common.collect.Sets;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,8 +46,11 @@ import org.kiji.schema.KijiIOException;
 import org.kiji.schema.KijiRowData;
 import org.kiji.schema.KijiRowKeyComponents;
 import org.kiji.schema.KijiRowScanner;
+import org.kiji.schema.impl.cassandra.CassandraDataRequestAdapter.ColumnResultSet;
+import org.kiji.schema.impl.cassandra.CassandraDataRequestAdapter.ColumnRow;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
+import org.kiji.schema.layout.impl.cassandra.CassandraColumnName;
 import org.kiji.schema.util.Debug;
 
 /**
@@ -88,7 +92,7 @@ public class CassandraKijiRowScanner implements KijiRowScanner {
    * results in this iterator in the case of a scan with paged columns.  In this case, the Row
    * objects will be contiguous in the iterator.
    */
-  private final PeekingIterator<Row> mRowsIterator;
+  private final PeekingIterator<ColumnRow> mRowsIterator;
 
   /** Holds the table layout for the table being scanned. */
   private final KijiTableLayout mLayout;
@@ -106,7 +110,7 @@ public class CassandraKijiRowScanner implements KijiRowScanner {
       CassandraKijiTable table,
       KijiDataRequest dataRequest,
       CellDecoderProvider cellDecoderProvider,
-      List<ResultSet> resultSets
+      List<ColumnResultSet> resultSets
     ) throws IOException {
 
     mConstructorStack = CLEANUP_LOG.isDebugEnabled() ? Debug.getStackTrace() : "";
@@ -124,15 +128,30 @@ public class CassandraKijiRowScanner implements KijiRowScanner {
     // Create an iterator to hold the Row objects returned by the column scans.  The iterator should
     // return Row objects in order of token and then EntityID, so to that Kiji entities have their
     // Row objects contiguously served by the iterator.
-    List<Iterator<Row>> rowIterators = Lists.newArrayList();
-    for (ResultSet resultSet : resultSets) {
-      Iterator<Row> rowIterator = resultSet.iterator();
-      rowIterators.add(Iterators.peekingIterator(rowIterator));
+    List<Iterator<ColumnRow>> rowIterators = Lists.newArrayList();
+    for (ColumnResultSet columnResultSet : resultSets) {
+      final CassandraColumnName columnName = columnResultSet.getColumn();
+      final ResultSet resultSet = columnResultSet.getResultSet();
+
+      // TODO: is this realistic?
+      assert(resultSets.size() == 1);
+
+      resultSet.iterator();
+      Iterator<ColumnRow> columnRowIterator =
+          Iterators.transform(resultSet.iterator(), new Function<Row, ColumnRow>() {
+            @Nullable
+            @Override
+            public ColumnRow apply(@Nullable Row row) {
+              return new ColumnRow(columnName, row);
+            }
+          });
+
+      rowIterators.add(Iterators.peekingIterator(columnRowIterator));
     }
 
     mRowsIterator =
         Iterators.peekingIterator(
-            Iterators.mergeSorted(rowIterators, new RowComparator(mTable.getLayout())));
+            Iterators.mergeSorted(rowIterators, new ColumnRowComparator(mTable.getLayout())));
   }
 
   /** {@inheritDoc} */
@@ -202,23 +221,29 @@ public class CassandraKijiRowScanner implements KijiRowScanner {
       // from all of our iterators over Cassandra Rows, get all of the data for the rows with that
       // lowest-token-value entity ID, and then stitch them together.
 
-      Row firstRow = mRowsIterator.next();
+      ColumnRow firstRow = mRowsIterator.next();
 
-      KijiRowKeyComponents entityIDComponents = CQLUtils.getRowKeyComponents(mLayout, firstRow);
+      KijiRowKeyComponents entityIDComponents =
+          CQLUtils.getRowKeyComponents(mLayout, firstRow.getRow());
 
       // Get a big set of Row objects for the given entity ID.
-      Set<Row> rows = Sets.newHashSet(firstRow);
+      List<ColumnRow> columnRows = Lists.newArrayList();
 
       while (mRowsIterator.hasNext() && entityIDComponents.equals(
-          CQLUtils.getRowKeyComponents(mLayout, mRowsIterator.peek()))) {
-        rows.add(mRowsIterator.next());
+          CQLUtils.getRowKeyComponents(mLayout, mRowsIterator.peek().getRow()))) {
+        columnRows.add(mRowsIterator.next());
       }
 
       EntityId entityID = mEntityIdFactory.getEntityId(entityIDComponents);
 
       // Now create a KijiRowData with all of these rows.
       try {
-        return new CassandraKijiRowData(mTable, mDataRequest, entityID, rows, mCellDecoderProvider);
+        return new CassandraKijiRowData(
+            mTable,
+            mDataRequest,
+            entityID,
+            columnRows,
+            mCellDecoderProvider);
       } catch (IOException ioe) {
         throw new KijiIOException("Cannot create KijiRowData.", ioe);
       }
@@ -238,7 +263,7 @@ public class CassandraKijiRowScanner implements KijiRowScanner {
    * must be from the same table.  The Rows are first compared by their partion key token, and then
    * by the entity ID components they contain.
    */
-  private static final class RowComparator implements Comparator<Row> {
+  private static final class ColumnRowComparator implements Comparator<ColumnRow> {
     private final String mTokenColumn;
     private final KijiTableLayout mLayout;
 
@@ -247,19 +272,19 @@ public class CassandraKijiRowScanner implements KijiRowScanner {
      *
      * @param layout of the table from which Rows will be compared.
      */
-    private RowComparator(KijiTableLayout layout) {
+    private ColumnRowComparator(KijiTableLayout layout) {
       mTokenColumn = CQLUtils.getTokenColumn(layout);
       mLayout = layout;
     }
 
     /** {@inheritDoc} */
     @Override
-    public int compare(Row o1, Row o2) {
+    public int compare(ColumnRow o1, ColumnRow o2) {
       return ComparisonChain.start()
-          .compare(o1.getLong(mTokenColumn), o2.getLong(mTokenColumn))
+          .compare(o1.getRow().getLong(mTokenColumn), o2.getRow().getLong(mTokenColumn))
           .compare(
-              CQLUtils.getRowKeyComponents(mLayout, o1),
-              CQLUtils.getRowKeyComponents(mLayout, o2))
+              CQLUtils.getRowKeyComponents(mLayout, o1.getRow()),
+              CQLUtils.getRowKeyComponents(mLayout, o2.getRow()))
           .result();
     }
   }

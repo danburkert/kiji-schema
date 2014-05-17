@@ -29,7 +29,6 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
-import org.apache.hadoop.conf.Configuration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,7 +42,7 @@ import org.kiji.schema.avro.MetaTableBackup;
 import org.kiji.schema.avro.TableBackup;
 import org.kiji.schema.avro.TableLayoutDesc;
 import org.kiji.schema.avro.TableLayoutsBackup;
-import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
+import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayoutDatabase;
 import org.kiji.schema.layout.impl.cassandra.CassandraTableLayoutDatabase;
@@ -62,12 +61,6 @@ public final class CassandraMetaTable implements KijiMetaTable {
   /** URI of the Kiji instance this meta-table belongs to. */
   private final KijiURI mKijiURI;
 
-  /** The C* table that stores layout-specific Kiji metadata. */
-  private final CassandraTableInterface mLayoutTable;
-
-  /** The C* table that stores user-defined Kiji metadata. */
-  private final CassandraTableInterface mKeyValueTable;
-
   /** States of a MetaTable instance. */
   private static enum State {
     UNINITIALIZED,
@@ -84,49 +77,11 @@ public final class CassandraMetaTable implements KijiMetaTable {
   /** The table to which we delegate storing per-table meta data, in the form of key value pairs. */
   private final KijiTableKeyValueDatabase<?> mTableKeyValueDatabase;
   // TODO: Make KijiTableLayoutDatabase thread-safe, so we can call CassandraMetaTable thread-safe.
-  /**
-   * Creates an CassandraTableInterface for the specified table.
-   *
-   * @param kijiURI the KijiURI.
-   * @param conf Hadoop configuration.
-   * @param admin Wrapper around open C* session.
-   * @return a new HTableInterface for the specified table.
-   * @throws java.io.IOException on I/O error.
-   */
-  public static CassandraTableInterface newMetaLayoutTable(
-      KijiURI kijiURI,
-      Configuration conf,
-      CassandraAdmin admin)
-      throws IOException {
-    final String tableName =
-        KijiManagedCassandraTableName.getMetaLayoutTableName(kijiURI).toString();
-    return admin.getCassandraTableInterface(tableName);
-  }
-
-  /**
-   * Creates an CassandraTableInterface for the specified table.
-   *
-   * @param kijiURI the KijiURI.
-   * @param conf Hadoop configuration.
-   * @param admin Wrapper around open C* session.
-   * @return a new HTableInterface for the specified table.
-   * @throws java.io.IOException on I/O error.
-   */
-  public static CassandraTableInterface newMetaKeyValueTable(
-      KijiURI kijiURI,
-      Configuration conf,
-      CassandraAdmin admin)
-      throws IOException {
-    final String tableName =
-        KijiManagedCassandraTableName.getMetaKeyValueTableName(kijiURI).toString();
-    return admin.getCassandraTableInterface(tableName);
-  }
 
   /**
    * Create a connection to a Kiji meta table backed by a C* table.
    *
    * @param kijiURI URI of the Kiji instance this meta table belongs to.
-   * @param conf The Hadoop configuration.
    * @param schemaTable The Kiji schema table.
    * @param admin Wrapper around open C* session.
    * @return a reference to the meta table.
@@ -134,15 +89,16 @@ public final class CassandraMetaTable implements KijiMetaTable {
    */
   public static CassandraMetaTable createAssumingTableExists(
       KijiURI kijiURI,
-      Configuration conf,
       KijiSchemaTable schemaTable,
       CassandraAdmin admin)
       throws IOException {
+
     return new CassandraMetaTable(
         kijiURI,
-        newMetaLayoutTable(kijiURI, conf, admin),
-        newMetaKeyValueTable(kijiURI, conf, admin),
-        schemaTable);
+        CassandraTableName.getMetaLayoutTableName(kijiURI),
+        CassandraTableName.getMetaKeyValueTableName(kijiURI),
+        schemaTable,
+        admin);
   }
 
   /**
@@ -159,16 +115,15 @@ public final class CassandraMetaTable implements KijiMetaTable {
    */
   private CassandraMetaTable(
       KijiURI kijiURI,
-      CassandraTableInterface cLayoutTable,
-      CassandraTableInterface cKeyValueTable,
-      KijiSchemaTable schemaTable)
+      CassandraTableName cLayoutTable,
+      CassandraTableName cKeyValueTable,
+      KijiSchemaTable schemaTable,
+      CassandraAdmin admin)
       throws IOException {
     this(
         kijiURI,
-        cLayoutTable,
-        cKeyValueTable,
-        new CassandraTableLayoutDatabase(kijiURI, cLayoutTable, schemaTable),
-        new CassandraTableKeyValueDatabase(cKeyValueTable));
+        new CassandraTableLayoutDatabase(kijiURI, admin, cLayoutTable, schemaTable),
+        new CassandraTableKeyValueDatabase(cKeyValueTable, admin));
   }
 
   /**
@@ -178,21 +133,15 @@ public final class CassandraMetaTable implements KijiMetaTable {
    * closed.</p>
    *
    * @param kijiURI URI of the Kiji instance this meta-table belongs to.
-   * @param cLayoutTable The C* table that stores table layout information.
-   * @param cKeyValueTable The C* table that stores user-specified key-value pairs.
    * @param tableLayoutDatabase A database of table layouts to which to delegate layout storage.
    * @param tableKeyValueDatabase A database of key-value pairs to which to delegate metadata
    *     storage.
    */
   private CassandraMetaTable(
       KijiURI kijiURI,
-      CassandraTableInterface cLayoutTable,
-      CassandraTableInterface cKeyValueTable,
       KijiTableLayoutDatabase tableLayoutDatabase,
       KijiTableKeyValueDatabase<?> tableKeyValueDatabase) {
     mKijiURI = kijiURI;
-    mLayoutTable = cLayoutTable;
-    mKeyValueTable = cKeyValueTable;
     mTableLayoutDatabase = tableLayoutDatabase;
     mTableKeyValueDatabase = tableKeyValueDatabase;
     final State oldState = mState.getAndSet(State.OPEN);
@@ -292,8 +241,6 @@ public final class CassandraMetaTable implements KijiMetaTable {
     final State oldState = mState.getAndSet(State.CLOSED);
     Preconditions.checkState(oldState == State.OPEN,
         "Cannot close MetaTable instance in state %s.", oldState);
-    mLayoutTable.close();
-    mKeyValueTable.close();
   }
 
   /** {@inheritDoc} */
@@ -387,12 +334,12 @@ public final class CassandraMetaTable implements KijiMetaTable {
    */
   public static void uninstall(CassandraAdmin admin, KijiURI uri)
     throws IOException {
-    String tableName = KijiManagedCassandraTableName.getMetaKeyValueTableName(uri).toString();
-    admin.disableTable(tableName);
-    admin.deleteTable(tableName);
-    tableName = KijiManagedCassandraTableName.getMetaLayoutTableName(uri).toString();
-    admin.disableTable(tableName);
-    admin.deleteTable(tableName);
+    final CassandraTableName layoutTable = CassandraTableName.getMetaLayoutTableName(uri);
+    final CassandraTableName kvTable = CassandraTableName.getMetaKeyValueTableName(uri);
+    admin.disableTable(layoutTable);
+    admin.deleteTable(kvTable);
+    admin.disableTable(layoutTable);
+    admin.deleteTable(kvTable);
   }
 
   /** {@inheritDoc} */
@@ -435,7 +382,7 @@ public final class CassandraMetaTable implements KijiMetaTable {
     }
     // TODO: Something to flush the C* table?
     //mTable.flushCommits();
-    LOG.info("Flushing commits to tables '{}' and '{}'", mLayoutTable, mKeyValueTable);
+    LOG.info("Flushing commits to meta tables of instance '{}'", mKijiURI.getInstance());
   }
 
   /** {@inheritDoc} */

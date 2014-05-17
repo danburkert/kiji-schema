@@ -24,11 +24,8 @@ import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
-import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import org.apache.commons.io.FileUtils;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -39,6 +36,7 @@ import org.slf4j.LoggerFactory;
 import org.kiji.checkin.CheckinUtils;
 import org.kiji.schema.CassandraKijiURI;
 import org.kiji.schema.Kiji;
+import org.kiji.schema.impl.cassandra.CassandraKiji;
 import org.kiji.schema.impl.cassandra.CassandraKijiFactory;
 import org.kiji.schema.util.TestingFileUtils;
 
@@ -94,10 +92,7 @@ public class CassandraKijiClientTest {
   private File mLocalTempDir = null;
 
   /** Default test Kiji instance. */
-  private Kiji mKiji = null;
-
-  /** The configuration object for this kiji instance. */
-  private Configuration mConf;
+  private CassandraKiji mKiji = null;
 
   /**
    * Initializes the in-memory kiji for testing.
@@ -120,9 +115,6 @@ public class CassandraKijiClientTest {
     mTestId =
         String.format("%s_%s", getClass().getName().replace('.', '_'), mTestName.getMethodName());
     mLocalTempDir = TestingFileUtils.createTempDir(mTestId, "temp-dir");
-    mConf = HBaseConfiguration.create();
-    mConf.set("fs.defaultFS", "file://" + mLocalTempDir);
-    mConf.set("mapred.job.tracker", "local");
     mKiji = null;  // lazily initialized
     // Disable logging of commands to the upgrade server by accident.
     System.setProperty(CheckinUtils.DISABLE_CHECKIN_PROP, "true");
@@ -163,8 +155,7 @@ public class CassandraKijiClientTest {
    * @return a fresh new Kiji instance.
    * @throws Exception on error.
    */
-  public Kiji createTestKiji() throws Exception {
-    Preconditions.checkNotNull(mConf);
+  public CassandraKiji createTestKiji() throws Exception {
     // Note: The C* keyspace for the instance has to be less than 48 characters long. Every C*
     // Kiji keyspace starts with "kiji_", so we have a total of 43 characters to work with - yikes!
     // Hopefully dropping off the class name is good enough to make this short enough.
@@ -178,8 +169,8 @@ public class CassandraKijiClientTest {
     final CassandraKijiURI instanceURI =
         CassandraKijiURI.newBuilder(kijiURI).withInstanceName(instanceName).build();
     LOG.info("Installing fake C* instance " + instanceURI);
-    CassandraKijiInstaller.get().install(instanceURI, mConf);
-    final Kiji kiji = CassandraKijiFactory.get().open(instanceURI, mConf);
+    CassandraKijiInstaller.get().install(instanceURI);
+    final CassandraKiji kiji = CassandraKijiFactory.get().open(instanceURI);
 
     mAllKijis.add(kiji);
     return kiji;
@@ -194,11 +185,10 @@ public class CassandraKijiClientTest {
     LOG.debug("Tearing down {}", mTestId);
     for (Kiji kiji : mAllKijis) {
       kiji.release();
-      CassandraKijiInstaller.get().uninstall(kiji.getURI(), mConf);
+      CassandraKijiInstaller.get().uninstall(kiji.getURI());
     }
     mAllKijis = null;
     mKiji = null;
-    mConf = null;
     FileUtils.deleteDirectory(mLocalTempDir);
     mLocalTempDir = null;
     mTestId = null;
@@ -217,7 +207,7 @@ public class CassandraKijiClientTest {
    * @throws java.io.IOException on I/O error.  Should be Exception, but breaks too many tests for
    *     now.
    */
-  public synchronized Kiji getKiji() throws IOException {
+  public synchronized CassandraKiji getKiji() throws IOException {
     if (null == mKiji) {
       try {
         mKiji = createTestKiji();
@@ -229,24 +219,5 @@ public class CassandraKijiClientTest {
       }
     }
     return mKiji;
-  }
-
-  /** @return a valid identifier for the current test. */
-  public String getTestId() {
-    return mTestId;
-  }
-
-  /** @return a local temporary directory. */
-  public File getLocalTempDir() {
-    return mLocalTempDir;
-  }
-
-  /**
-   * @return a test Hadoop configuration, with:
-   *     <li> a default FS
-   *     <li> a job tracker
-   */
-  public Configuration getConf() {
-    return mConf;
   }
 }

@@ -21,8 +21,8 @@ package org.kiji.schema.impl.cassandra;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.Collection;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.NavigableSet;
@@ -53,11 +53,13 @@ import org.kiji.schema.KijiRowData;
 import org.kiji.schema.KijiTableReaderBuilder;
 import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.impl.BoundColumnReaderSpec;
-import org.kiji.schema.impl.LayoutCapsule;
+import org.kiji.schema.impl.cassandra.CassandraDataRequestAdapter.ColumnRow;
 import org.kiji.schema.layout.ColumnReaderSpec;
 import org.kiji.schema.layout.KijiTableLayout;
-import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
+import org.kiji.schema.layout.impl.cassandra.CassandraColumnName;
+import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
+import org.kiji.schema.layout.impl.cassandra.CassandraLayoutCapsule;
 import org.kiji.schema.util.TimestampComparator;
 
 /**
@@ -80,7 +82,7 @@ public final class CassandraKijiRowData implements KijiRowData {
   private final KijiTableLayout mTableLayout;
 
   /** The Cassandra result providing the data of this object. */
-  private Collection<Row> mRows;
+  private List<ColumnRow> mRows;
 
   /** Provider for cell decoders. */
   private final CellDecoderProvider mDecoderProvider;
@@ -97,9 +99,9 @@ public final class CassandraKijiRowData implements KijiRowData {
    * @return a new CellDecoderProvider for the specified Cassandra KijiTable.
    * @throws java.io.IOException on I/O error.
    */
-  private static CellDecoderProvider createCellProvider(
-      CassandraKijiTable table) throws IOException {
-    final LayoutCapsule capsule = table.getLayoutCapsule();
+  private static CellDecoderProvider createCellProvider(CassandraKijiTable table)
+      throws IOException {
+    final CassandraLayoutCapsule capsule = table.getLayoutCapsule();
     return new CellDecoderProvider(
         capsule.getLayout(),
         Maps.<KijiColumnName, BoundColumnReaderSpec>newHashMap(),
@@ -129,7 +131,7 @@ public final class CassandraKijiRowData implements KijiRowData {
       CassandraKijiTable table,
       KijiDataRequest dataRequest,
       EntityId entityId,
-      Collection<Row> rows,
+      List<ColumnRow> rows,
       CellDecoderProvider decoderProvider)
       throws IOException {
     mTable = table;
@@ -218,7 +220,7 @@ public final class CassandraKijiRowData implements KijiRowData {
    * @return The map.
    */
   public synchronized NavigableMap<String, NavigableMap<String, NavigableMap<Long, byte[]>>>
-      getMap() {
+  getMap() {
     if (null != mFilteredMap) {
       return mFilteredMap;
     }
@@ -233,45 +235,49 @@ public final class CassandraKijiRowData implements KijiRowData {
 
     // Need to translate from short names in Cassandra table into longer names in Kiji table.
     final CassandraColumnNameTranslator columnNameTranslator =
-        new CassandraColumnNameTranslator(mTableLayout);
+        CassandraColumnNameTranslator.from(mTableLayout);
 
     // Go through every column in the result set and add the data to the filtered map.
-    for (Row row : mRows) {
-
+    for (ColumnRow columnRow : mRows) {
       LOG.info("Reading a row back...");
 
-      // Get the Cassandra key (entity Id), qualifier, timestamp, and value.
-      Long timestamp = row.getLong(CQLUtils.VERSION_COL);
+      final Row row = columnRow.getRow();
+      final CassandraColumnName attachedColumnName = columnRow.getColumn();
 
-      String cassandraRawLocalityGroup = row.getString(CQLUtils.LOCALITY_GROUP_COL);
-      String cassandraRawFamily = row.getString(CQLUtils.FAMILY_COL);
-      String cassandraRawQualifier = row.getString(CQLUtils.QUALIFIER_COL);
+      // Get the Cassandra key (entity Id), qualifier, timestamp, and value.
+      final Long timestamp = row.getLong(CQLUtils.VERSION_COL);
+
+      final String rawFamily = row.getString(CQLUtils.FAMILY_COL);
+      final String rawQualifier = row.getString(CQLUtils.QUALIFIER_COL);
+
+      // TODO: remove these checks
+      assert(rawFamily.equals(attachedColumnName.getFamily()));
+      if (attachedColumnName.getQualifier() != null) {
+        assert(attachedColumnName.getQualifier().equals(rawQualifier));
+      }
+
+      final CassandraColumnName columnName =
+          new CassandraColumnName(attachedColumnName.getLocalityGroup(), rawFamily, rawQualifier);
 
       KijiColumnName kijiColumnName;
       try {
-        kijiColumnName = columnNameTranslator.toKijiColumnName(
-            cassandraRawLocalityGroup,
-            cassandraRawFamily,
-            cassandraRawQualifier);
-
+        kijiColumnName = columnNameTranslator.toKijiColumnName(columnName);
       } catch (NoSuchColumnException e) {
         LOG.info(String.format(
             "Ignoring Cassandra column '%s:%s' because it doesn't contain Kiji data.",
-            cassandraRawFamily,
-            cassandraRawQualifier));
+            rawFamily,
+            rawQualifier));
         continue;
       }
 
       String family = kijiColumnName.getFamily();
       String qualifier = kijiColumnName.getQualifier();
 
-
       LOG.info(String.format(
           "Got back data from table for family:qualifier %s:%s, timestamp %s",
           family,
           qualifier,
-          timestamp
-      ));
+          timestamp));
 
       // Most values will not be from counters, so we use getBytes.
       ByteBuffer value;
@@ -441,17 +447,13 @@ public final class CassandraKijiRowData implements KijiRowData {
     if (null == columnMap) {
       return false;
     }
-   final  NavigableMap<Long, byte[]> versionMap = columnMap.get(qualifier);
-    if (null == versionMap) {
-      return false;
-    }
-    return !versionMap.isEmpty();
+    final  NavigableMap<Long, byte[]> versionMap = columnMap.get(qualifier);
+    return versionMap != null && !versionMap.isEmpty();
   }
 
   /** {@inheritDoc} */
   @Override
   public synchronized boolean containsColumn(String family) {
-
     final NavigableMap<String, NavigableMap<Long, byte[]>> columnMap = getMap().get(family);
     if (null == columnMap) {
       return false;
@@ -870,7 +872,7 @@ public final class CassandraKijiRowData implements KijiRowData {
      * @return The next cell in the column we are iterating over, potentially null.
      */
     private KijiCell<T> getNextCell() {
-      KijiCell<T> nextCell = null;
+      KijiCell<T> nextCell;
 
       LOG.info("Getting next cell for iterator.");
 

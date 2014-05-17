@@ -81,11 +81,6 @@ import org.kiji.schema.util.VersionInfo;
 @ApiAudience.Private
 public final class HBaseKijiTable implements KijiTable {
   private static final Logger LOG = LoggerFactory.getLogger(HBaseKijiTable.class);
-  private static final Logger CLEANUP_LOG =
-      LoggerFactory.getLogger("cleanup." + HBaseKijiTable.class.getName());
-  private static final String ENABLE_CONSTRUCTOR_STACK_LOGGING_MESSAGE = String.format(
-      "Enable DEBUG log level for logger: %s for a stack trace of the construction of this object.",
-      CLEANUP_LOG.getName());
 
   /** The kiji instance this table belongs to. */
   private final HBaseKiji mKiji;
@@ -105,8 +100,7 @@ public final class HBaseKijiTable implements KijiTable {
     UNINITIALIZED,
     /**
      * Finished initialization.  Both retain counters and DebugResourceTracker counters have been
-     * incremented.  Resources are successfully opened and this HBaseKijiTable's methods may be
-     * used.
+     * incremented.  Resources are successfully opened and this KijiTable's methods may be used.
      */
     OPEN,
     /**
@@ -195,10 +189,7 @@ public final class HBaseKijiTable implements KijiTable {
     // Table is now open and must be released properly:
     mRetainCount.set(1);
 
-    String constructorStack = (CLEANUP_LOG.isDebugEnabled())
-        ? Debug.getStackTrace()
-        : ENABLE_CONSTRUCTOR_STACK_LOGGING_MESSAGE;
-    DebugResourceTracker.get().registerResource(this, constructorStack);
+    DebugResourceTracker.get().registerResource(this, Debug.getStackTrace());
 
     final State oldState = mState.getAndSet(State.OPEN);
     Preconditions.checkState(oldState == State.UNINITIALIZED,

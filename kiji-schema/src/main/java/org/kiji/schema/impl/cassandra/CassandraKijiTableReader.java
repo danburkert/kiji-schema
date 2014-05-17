@@ -26,7 +26,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
-import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
@@ -50,14 +49,15 @@ import org.kiji.schema.KijiTableReaderBuilder.OnDecoderCacheMiss;
 import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.SpecificCellDecoderFactory;
 import org.kiji.schema.impl.BoundColumnReaderSpec;
-import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.impl.LayoutConsumer;
+import org.kiji.schema.impl.cassandra.CassandraDataRequestAdapter.ColumnResultSet;
+import org.kiji.schema.impl.cassandra.CassandraDataRequestAdapter.ColumnRow;
 import org.kiji.schema.layout.CellSpec;
 import org.kiji.schema.layout.ColumnReaderSpec;
-import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
-import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
+import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
+import org.kiji.schema.layout.impl.cassandra.CassandraLayoutCapsule;
 
 /**
  * Reads from a kiji table by sending the requests directly to the C* tables.
@@ -130,7 +130,7 @@ public final class CassandraKijiTableReader implements KijiTableReader {
      * Get the column name translator for the current layout.
      * @return the column name translator for the current layout.
      */
-    private KijiColumnNameTranslator getColumnNameTranslator() {
+    private CassandraColumnNameTranslator getColumnNameTranslator() {
       return mTranslator;
     }
 
@@ -154,10 +154,10 @@ public final class CassandraKijiTableReader implements KijiTableReader {
   }
 
   /** Provides for the updating of this Reader in response to a table layout update. */
-  private final class InnerLayoutUpdater implements LayoutConsumer {
+  private final class InnerLayoutUpdater implements LayoutConsumer<CassandraLayoutCapsule> {
     /** {@inheritDoc} */
     @Override
-    public void update(LayoutCapsule capsule) throws IOException {
+    public void update(CassandraLayoutCapsule capsule) throws IOException {
       final CellDecoderProvider provider;
       if (null != mCellSpecOverrides) {
         provider = new CellDecoderProvider(
@@ -186,10 +186,8 @@ public final class CassandraKijiTableReader implements KijiTableReader {
             mTable.getURI(),
             capsule.getLayout().getDesc().getLayoutId());
       }
-      mReaderLayoutCapsule = new ReaderLayoutCapsule(
-          provider,
-          capsule.getLayout(),
-          (CassandraColumnNameTranslator)capsule.getKijiColumnNameTranslator());
+      mReaderLayoutCapsule =
+          new ReaderLayoutCapsule(provider, capsule.getLayout(), capsule.getColumnNameTranslator());
     }
   }
 
@@ -351,23 +349,26 @@ public final class CassandraKijiTableReader implements KijiTableReader {
 
     CassandraDataRequestAdapter adapter = new CassandraDataRequestAdapter(
         dataRequest,
-        (CassandraColumnNameTranslator)capsule.getColumnNameTranslator()
-    );
+        capsule.getColumnNameTranslator());
 
-    List<ResultSet> results = adapter.doGet(mTable, entityId);
+    List<ColumnResultSet> results = adapter.doGet(mTable, entityId);
 
-    Set<Row> allRows = Sets.newHashSet();
+    List<ColumnRow> allRows = Lists.newArrayList();
 
-    for (ResultSet res : results) {
-      for (Row row : res.all()) {
-        allRows.add(row);
+    for (ColumnResultSet res : results) {
+      for (Row row : res.getResultSet()) {
+        allRows.add(new ColumnRow(res.getColumn(), row));
       }
     }
 
     // Now we create a KijiRowData from all of these results.
     // Parse the result.
     return new CassandraKijiRowData(
-        mTable, dataRequest, entityId, allRows, capsule.getCellDecoderProvider());
+        mTable,
+        dataRequest,
+        entityId,
+        allRows,
+        capsule.getCellDecoderProvider());
   }
 
   /**
@@ -386,7 +387,7 @@ public final class CassandraKijiTableReader implements KijiTableReader {
   public KijiRowData getRowDataFromCassandraRows(
       KijiDataRequest dataRequest,
       EntityId entityId,
-      Collection<Row> allRows
+      List<ColumnRow> allRows
     ) throws IOException {
 
     // NOTE: THIS METHOD IS USED IN KIJI MR.  DON'T DELETE IT JUST BECAUSE IT IS NOT USED IN SCHEMA!
@@ -444,10 +445,9 @@ public final class CassandraKijiTableReader implements KijiTableReader {
 
     CassandraDataRequestAdapter adapter = new CassandraDataRequestAdapter(
         dataRequest,
-        (CassandraColumnNameTranslator)capsule.getColumnNameTranslator()
-    );
+        capsule.getColumnNameTranslator());
 
-    List<ResultSet> results = adapter.doScan(mTable, kijiScannerOptions);
+    List<ColumnResultSet> results = adapter.doScan(mTable, kijiScannerOptions);
 
     // Now we create a KijiRowData from all of these results.
     // Parse the result.

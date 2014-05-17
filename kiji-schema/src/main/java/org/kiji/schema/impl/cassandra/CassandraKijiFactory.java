@@ -27,7 +27,6 @@ import org.apache.hadoop.hbase.HBaseConfiguration;
 
 import org.kiji.annotations.ApiAudience;
 import org.kiji.delegation.Priority;
-import org.kiji.schema.Kiji;
 import org.kiji.schema.KijiFactory;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.cassandra.CassandraFactory;
@@ -52,22 +51,17 @@ public final class CassandraKijiFactory implements KijiFactory {
 
   /** {@inheritDoc} */
   @Override
-  public Kiji open(KijiURI uri) throws IOException {
+  public CassandraKiji open(KijiURI uri) throws IOException {
     return open(uri, HBaseConfiguration.create());
   }
 
   /** {@inheritDoc} */
   @Override
-  public Kiji open(KijiURI uri, Configuration conf) throws IOException {
-    final Configuration confCopy = new Configuration(conf);
+  public CassandraKiji open(KijiURI uri, Configuration conf) throws IOException {
     CassandraFactory cassandraFactory = CassandraFactory.Provider.get();
     CassandraAdminFactory adminFactory = cassandraFactory.getCassandraAdminFactory(uri);
     CassandraAdmin admin = adminFactory.create(uri);
-    return new CassandraKiji(
-        uri,
-        confCopy,
-        admin,
-        cassandraFactory.getLockFactory(uri, confCopy));
+    return new CassandraKiji(uri, admin, cassandraFactory.getLockFactory(uri));
   }
 
   /** {@inheritDoc} */

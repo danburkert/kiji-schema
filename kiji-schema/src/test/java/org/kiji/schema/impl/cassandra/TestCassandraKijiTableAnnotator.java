@@ -37,7 +37,6 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import org.kiji.schema.Kiji;
 import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiTableAnnotator;
 import org.kiji.schema.cassandra.CassandraKijiClientTest;
@@ -59,16 +58,16 @@ public class TestCassandraKijiTableAnnotator extends CassandraKijiClientTest {
   private static final KijiColumnName INFOEMAIL = new KijiColumnName("info:email");
   private static final String INFO = "info";
 
-  private Kiji mKiji = null;
+  private CassandraKiji mKiji = null;
   private CassandraKijiTable mTable = null;
   private KijiTableAnnotator mAnnotator = null;
 
   @Before
   public void setup() throws IOException {
-    mKiji = new InstanceBuilder(getKiji())
+    mKiji = (CassandraKiji) new InstanceBuilder(getKiji())
         .withTable(KijiTableLayouts.getLayout(KijiTableLayouts.USER_TABLE_FORMATTED_EID))
         .build();
-    mTable = CassandraKijiTable.downcast(mKiji.openTable("user"));
+    mTable = mKiji.openTable("user");
     mAnnotator = mTable.openTableAnnotator();
   }
 

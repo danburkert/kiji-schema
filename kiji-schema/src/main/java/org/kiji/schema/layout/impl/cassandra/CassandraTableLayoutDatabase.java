@@ -55,11 +55,10 @@ import org.kiji.schema.avro.SchemaType;
 import org.kiji.schema.avro.TableLayoutBackupEntry;
 import org.kiji.schema.avro.TableLayoutDesc;
 import org.kiji.schema.avro.TableLayoutsBackup;
-import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
+import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.impl.AvroCellEncoder;
 import org.kiji.schema.impl.cassandra.CassandraAdmin;
 import org.kiji.schema.impl.cassandra.CassandraByteUtil;
-import org.kiji.schema.impl.cassandra.CassandraTableInterface;
 import org.kiji.schema.layout.CellSpec;
 import org.kiji.schema.layout.InvalidLayoutException;
 import org.kiji.schema.layout.KijiTableLayout;
@@ -117,7 +116,7 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
   private final KijiURI mKijiURI;
 
   /** The C* table to use to store the layouts. */
-  private final CassandraTableInterface mTable;
+  private final CassandraTableName mTable;
 
   /** Cassandra administration object used for sending CQL requests to C* cluster. */
   private final CassandraAdmin mAdmin;
@@ -146,24 +145,17 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
   // TODO: Don't need to separate statement preparation after adding separate statement cache.
   /** Prepare statement. */
   private void setPreparedStatementGetRows() {
-    String metaTableName = mTable.getTableName();
-
-    String queryText = String.format(
-        "SELECT * FROM %s WHERE %s=? LIMIT 1",
-        metaTableName,
-        QUALIFIER_TABLE
-    );
+    String queryText =
+        String.format("SELECT * FROM %s WHERE %s=? LIMIT 1", mTable, QUALIFIER_TABLE);
     mPreparedStatementGetRows = mAdmin.getPreparedStatement(queryText);
   }
 
   // TODO: Don't need to separate statement preparation after adding separate statement cache.
   /** Prepare statement. */
   private void setPreparedStatementUpdateTableLayout() {
-    String metaTableName = mTable.getTableName();
-
     String queryText = String.format(
         "INSERT INTO %s (%s, %s, %s, %s, %s) VALUES (?, ?, ?, ?, ?)",
-        metaTableName,
+        mTable,
         QUALIFIER_TABLE,
         QUALIFIER_TIME,
         QUALIFIER_LAYOUT_ID,
@@ -175,22 +167,16 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
   // TODO: Don't need to separate statement preparation after adding separate statement cache.
   /** Prepare statement. */
   private void setPreparedStatementRemoveAllTableLayoutVersions() {
-    String metaTableName = mTable.getTableName();
-    String queryText = String.format(
-        "DELETE FROM %s WHERE %s=?",
-        metaTableName,
-        QUALIFIER_TABLE
-      );
+    String queryText = String.format("DELETE FROM %s WHERE %s=?", mTable, QUALIFIER_TABLE);
     mPreparedStatementRemoveAllTableLayoutVersions = mAdmin.getPreparedStatement(queryText);
   }
 
   // TODO: Don't need to separate statement preparation after adding separate statement cache.
   /** Prepare statement. */
   private void setPreparedStatementRemoveRecentTableLayoutVersions() {
-    String metaTableName = mTable.getTableName();
     String queryText = String.format(
         "DELETE FROM %s WHERE %s=? AND %s=?",
-        metaTableName,
+        mTable,
         QUALIFIER_TABLE,
         QUALIFIER_TIME
     );
@@ -200,11 +186,7 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
   // TODO: Don't need to separate statement preparation after adding separate statement cache.
   /** Prepare statement. */
   private void setPreparedStatementListTables() {
-    String queryText = String.format(
-        "SELECT %s FROM %s",
-        QUALIFIER_TABLE,
-        mTable.getTableName()
-    );
+    String queryText = String.format("SELECT %s FROM %s", QUALIFIER_TABLE, mTable);
     mPreparedStatementListTables = mAdmin.getPreparedStatement(queryText);
   }
   /**
@@ -213,7 +195,7 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
    * @param uri The KijiURI of the instance for this table.
    */
   public static void install(CassandraAdmin admin, KijiURI uri) {
-    String tableName = KijiManagedCassandraTableName.getMetaLayoutTableName(uri).toString();
+    CassandraTableName tableName = CassandraTableName.getMetaLayoutTableName(uri);
 
     // Standard C* table layout.  Use text key + timestamp as composite primary key to allow
     // selection by timestamp.
@@ -244,18 +226,20 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
    * it is no longer needed.</p>
    *
    * @param kijiURI URI of the Kiji instance this layout database belongs to.
+   * @param admin of Kiji Cassandra table.
    * @param ctable The C* table used to store the layout data.
    * @param schemaTable The Kiji schema table.
    * @throws java.io.IOException on I/O error.
    */
   public CassandraTableLayoutDatabase(
       KijiURI kijiURI,
-      CassandraTableInterface ctable,
+      CassandraAdmin admin,
+      CassandraTableName ctable,
       KijiSchemaTable schemaTable)
       throws IOException {
     mKijiURI = kijiURI;
     mTable = Preconditions.checkNotNull(ctable);
-    mAdmin = mTable.getAdmin();
+    mAdmin = Preconditions.checkNotNull(admin);
     mSchemaTable = Preconditions.checkNotNull(schemaTable);
     final CellSpec cellSpec = CellSpec.fromCellSchema(CELL_SCHEMA, mSchemaTable);
     mCellEncoder = new AvroCellEncoder(cellSpec);
@@ -511,14 +495,13 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
   public void restoreLayoutsFromBackup(String tableName, TableLayoutsBackup layoutBackup) throws
       IOException {
     LOG.info(String.format("Restoring layout history for table '%s'.", tableName));
-    String metaTableName = mTable.getTableName();
 
     // Looks like we need insertions with and without updates and timestamps.
 
     // TODO: Make this query a member of the class and prepare in the constructor
     String queryTextInsertAll = String.format(
         "INSERT INTO %s (%s, %s, %s, %s) VALUES (?, ?, ?, ?)",
-        metaTableName,
+        mTable,
         QUALIFIER_TABLE,
         QUALIFIER_TIME,
         QUALIFIER_LAYOUT,
@@ -527,7 +510,7 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
 
     String queryTextInsertLayout = String.format(
         "INSERT INTO %s (%s, %s, %s) VALUES (?, ?, ?)",
-        metaTableName,
+        mTable,
         QUALIFIER_TABLE,
         QUALIFIER_TIME,
         QUALIFIER_LAYOUT);

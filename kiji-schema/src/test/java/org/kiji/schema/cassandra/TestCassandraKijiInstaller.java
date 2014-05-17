@@ -25,8 +25,6 @@ import static org.junit.Assert.fail;
 
 import java.util.regex.Pattern;
 
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.junit.Test;
 
 import org.kiji.schema.KijiInvalidNameException;
@@ -37,20 +35,18 @@ import org.kiji.schema.KijiURI;
 public class TestCassandraKijiInstaller {
   @Test
   public void testInstallThenUninstall() throws Exception {
-    final Configuration conf = HBaseConfiguration.create();
     final KijiURI uri =
         KijiURI.newBuilder("kiji-cassandra://.fake.kiji-installer/chost/1234/test").build();
-    CassandraKijiInstaller.get().install(uri, conf);
-    CassandraKijiInstaller.get().uninstall(uri, conf);
+    CassandraKijiInstaller.get().install(uri);
+    CassandraKijiInstaller.get().uninstall(uri);
   }
 
   @Test
   public void testInstallNullInstance() throws Exception {
-    final Configuration conf = HBaseConfiguration.create();
     final KijiURI uri =
         KijiURI.newBuilder("kiji-cassandra://.fake.kiji-installer/chost/1234/").build();
     try {
-      CassandraKijiInstaller.get().install(uri, conf);
+      CassandraKijiInstaller.get().install(uri);
       fail("An exception should have been thrown.");
     } catch (KijiInvalidNameException kine) {
       assertEquals(
@@ -62,11 +58,10 @@ public class TestCassandraKijiInstaller {
 
   @Test
   public void testUninstallNullInstance() throws Exception {
-    final Configuration conf = HBaseConfiguration.create();
     final KijiURI uri =
         KijiURI.newBuilder("kiji-cassandra://.fake.kiji-installer/chost/1234/").build();
     try {
-      CassandraKijiInstaller.get().uninstall(uri, conf);
+      CassandraKijiInstaller.get().uninstall(uri);
       fail("An exception should have been thrown.");
     } catch (KijiInvalidNameException kine) {
       assertEquals(
@@ -78,12 +73,11 @@ public class TestCassandraKijiInstaller {
 
   @Test
   public void testUninstallMissingInstance() throws Exception {
-    final Configuration conf = HBaseConfiguration.create();
     final KijiURI uri = KijiURI
         .newBuilder("kiji-cassandra://.fake.kiji-installer/chost/1234/anInstanceThatNeverExisted")
         .build();
     try {
-      CassandraKijiInstaller.get().uninstall(uri, conf);
+      CassandraKijiInstaller.get().uninstall(uri);
       fail("An exception should have been thrown.");
     } catch (KijiNotInstalledException knie) {
       assertTrue(Pattern.matches(

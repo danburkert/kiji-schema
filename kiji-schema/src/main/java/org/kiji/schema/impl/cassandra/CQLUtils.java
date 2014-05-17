@@ -41,7 +41,9 @@ import org.kiji.schema.KijiRowKeyComponents;
 import org.kiji.schema.avro.ComponentType;
 import org.kiji.schema.avro.RowKeyComponent;
 import org.kiji.schema.avro.RowKeyFormat2;
+import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.layout.KijiTableLayout;
+import org.kiji.schema.layout.impl.cassandra.CassandraColumnName;
 
 /**
  * Provides utitity methods and constants for constructing CQL statements.
@@ -98,7 +100,6 @@ public final class CQLUtils {
 
   // Useful static members for referring to different fields in the C* tables.
   public static final String RAW_KEY_COL = "key";
-  public static final String LOCALITY_GROUP_COL = "lg";
   public static final String FAMILY_COL = "family";
   public static final String QUALIFIER_COL = "qualifier";
   public static final String VERSION_COL = "version";
@@ -142,7 +143,6 @@ public final class CQLUtils {
       default: throw new IllegalArgumentException(
           String.format("Unknown row key encoding %s.", keyFormat.getEncoding()));
     }
-    map.put(LOCALITY_GROUP_COL, STRING_TYPE);
     map.put(FAMILY_COL, STRING_TYPE);
     map.put(QUALIFIER_COL, STRING_TYPE);
     map.put(VERSION_COL, LONG_TYPE);
@@ -196,7 +196,6 @@ public final class CQLUtils {
    */
   private static List<String> getPrimaryKeyColumns(KijiTableLayout layout) {
     List<String> columns = getEntityIDColumns(layout);
-    columns.add(LOCALITY_GROUP_COL);
     columns.add(FAMILY_COL);
     columns.add(QUALIFIER_COL);
     columns.add(VERSION_COL);
@@ -235,7 +234,7 @@ public final class CQLUtils {
             keyFormat.getComponents().subList(0, keyFormat.getRangeScanStartIndex()));
       default:
         throw new IllegalArgumentException(
-          String.format("Unknown row key encoding %s.", keyFormat.getEncoding()));
+            String.format("Unknown row key encoding %s.", keyFormat.getEncoding()));
     }
   }
 
@@ -270,7 +269,6 @@ public final class CQLUtils {
         throw new IllegalArgumentException(
             String.format("Unknown row key encoding %s.", keyFormat.getEncoding()));
     }
-    columns.add(LOCALITY_GROUP_COL);
     columns.add(FAMILY_COL);
     columns.add(QUALIFIER_COL);
     columns.add(VERSION_COL);
@@ -349,13 +347,15 @@ public final class CQLUtils {
   }
 
   /**
-   * Returns a 'CREATE TABLE' statement for the provided table name and table layout.
+   * Returns a 'CREATE TABLE' statement for the provided locality group and table layout.
    *
    * @param tableName of table to be created.
    * @param layout of kiji table.
-   * @return a CQL 'CREATE TABLE' statement which will create the provided table.
+   * @return a CQL 'CREATE TABLE' statement which will create the specified locality group.
    */
-  public static String getCreateTableStatement(String tableName, KijiTableLayout layout) {
+  public static String getCreateLocalityGroupStatement(
+      CassandraTableName tableName,
+      KijiTableLayout layout) {
     return getCreateTableStatement(tableName, layout, BYTES_TYPE);
   }
 
@@ -367,7 +367,9 @@ public final class CQLUtils {
    * @param layout of kiji table.
    * @return a CQL 'CREATE TABLE' statement which will create the provided table's counter table.
    */
-  public static String getCreateCounterTableStatement(String tableName, KijiTableLayout layout) {
+  public static String getCreateCounterTableStatement(
+      CassandraTableName tableName,
+      KijiTableLayout layout) {
     return getCreateTableStatement(tableName, layout, COUNTER_TYPE);
   }
 
@@ -381,7 +383,7 @@ public final class CQLUtils {
    * @return a CQL 'CREATE TABLE' statement for the table.
    */
   private static String getCreateTableStatement(
-      String tableName,
+      CassandraTableName tableName,
       KijiTableLayout layout,
       String valueType) {
     LinkedHashMap<String, String> columns = getPrimaryKeyColumnTypes(layout);
@@ -397,8 +399,8 @@ public final class CQLUtils {
 
     StringBuilder sb = new StringBuilder();
     sb.append("CREATE TABLE ")
-      .append(tableName)
-      .append(" (");
+        .append(tableName)
+        .append(" (");
 
     COMMA_JOINER.withKeyValueSeparator(" ").appendTo(sb, columns);
 
@@ -427,11 +429,13 @@ public final class CQLUtils {
   /**
    * Returns a CQL statement which will create a secondary index on the provided table and column.
    *
-   * @param tableName of table to create index on.
+   * @param tableName translated table name of Kiji locality group to create index on.
    * @param columnName of column to create index on.
    * @return a CQL statement to create a secondary index on the provided table and column.
    */
-  public static String getCreateIndexStatement(String tableName, String columnName) {
+  public static String getCreateIndexStatement(
+      CassandraTableName tableName,
+      String columnName) {
     return String.format("CREATE INDEX ON %s (%s)", tableName, columnName);
   }
 
@@ -440,11 +444,9 @@ public final class CQLUtils {
    *
    * @param admin Cassandra context object.
    * @param layout table layout of table.
-   * @param tableName translated table name as known by Cassandra.
+   * @param tableName translated table name of Kiji locality group.
    * @param entityId of row to select.
-   * @param localityGroup translated locality group as known by Cassandra.
-   * @param family translated family as known by Cassandra.
-   * @param qualifier translated qualifier as known by Cassandra, or null if non-qualified get.
+   * @param columnName translated Cassandra column name.
    * @param version being requested, or null if no version. May not be used with minVersion or
    *                maxVersion.
    * @param minVersion being requested (inclusive), or null if no minimum version. May not be used
@@ -457,11 +459,9 @@ public final class CQLUtils {
   public static Statement getColumnGetStatement(
       CassandraAdmin admin,
       KijiTableLayout layout,
-      String tableName,
+      CassandraTableName tableName,
       EntityId entityId,
-      String localityGroup,
-      String family,
-      String qualifier,
+      CassandraColumnName columnName,
       Long version,
       Long minVersion,
       Long maxVersion,
@@ -472,21 +472,20 @@ public final class CQLUtils {
     minVersion = minVersion == null || minVersion <= 0L ? null : minVersion;
 
     Preconditions.checkArgument(
-        (version == null && minVersion == null && maxVersion == null) || qualifier != null,
+        (version == null && minVersion == null && maxVersion == null)
+            || columnName.getQualifier() != null,
         "Deletes with version must be qualified.");
     Preconditions.checkArgument(!(version != null && (minVersion != null || maxVersion != null)),
         "Cannot specify version and minVersion or maxVersion.");
 
     // statement being built:
     //  "SELECT * FROM ${tableName} WHERE ${EIDColumn1}=? AND ${EIDColumn2}=? ...
-    //   AND ${LOCALITY_GROUP_COL}=? AND ${FAMILY_COL}=? [AND ${QUALIFIER_COL}=?]
-    //  [AND ${VERSION_COL} = ?] [AND ${VERSION_COL}>=?] [AND ${VERSION_COL}<?]
-    //  [LIMIT ${column.getMaxVersions()]}
+    //   AND ${FAMILY_COL}=? [AND ${QUALIFIER_COL}=?] [AND ${VERSION_COL} = ?]
+    //   [AND ${VERSION_COL}>=?] [AND ${VERSION_COL}<?] [LIMIT ${column.getMaxVersions()]}
 
     List<String> columns = getEntityIDColumns(layout);
-    columns.add(LOCALITY_GROUP_COL);
     columns.add(FAMILY_COL);
-    if (qualifier != null) {
+    if (columnName.getQualifier() != null) {
       columns.add(QUALIFIER_COL);
     }
     if (version != null) {
@@ -517,10 +516,9 @@ public final class CQLUtils {
 
     List<Object> bindValues = Lists.newArrayList();
     bindValues.addAll(getEntityIDComponentValues(layout, entityId));
-    bindValues.add(localityGroup);
-    bindValues.add(family);
-    if (qualifier != null) {
-      bindValues.add(qualifier);
+    bindValues.add(columnName.getFamily());
+    if (columnName.getQualifier() != null) {
+      bindValues.add(columnName.getQualifier());
     }
     if (version != null) {
       bindValues.add(version);
@@ -543,29 +541,25 @@ public final class CQLUtils {
    *
    * @param admin Cassandra context object.
    * @param layout table layout of table.
-   * @param tableName translated table name as known by Cassandra.
-   * @param localityGroup translated locality group as known by Cassandra.
-   * @param family translated family as known by Cassandra.
-   * @param qualifier translated qualifier as known by Cassandra, or null if non-qualified scan.
+   * @param tableName translated table name of Kiji locality group.
+   * @param columnName translated Cassandra column name.
    * @return a statement which will get the single column.
    */
   public static Statement getColumnScanStatement(
       CassandraAdmin admin,
       KijiTableLayout layout,
-      String tableName,
-      String localityGroup,
-      String family,
-      String qualifier) {
+      CassandraTableName tableName,
+      CassandraColumnName columnName) {
 
     // statement being built:
     //  "SELECT token(${PartitionKeyComponent1}, ${PartitionKeyComponent2} ...),
     //          ${PKColumn1}, ${PKColumn2}..., ${VALUE_COL}
     //   FROM ${tableName}
-    //   WHERE ${LOCALITY_GROUP_COL}=? AND ${FAMILY_COL}=? [AND ${QUALIFIER_COL}=?]
+    //   WHERE ${FAMILY_COL}=? [AND ${QUALIFIER_COL}=?]
     //   ALLOW FILTERING"
 
-    List<String> whereColumns = Lists.newArrayList(LOCALITY_GROUP_COL, FAMILY_COL);
-    if (qualifier != null) {
+    List<String> whereColumns = Lists.newArrayList(FAMILY_COL);
+    if (columnName.getQualifier() != null) {
       whereColumns.add(QUALIFIER_COL);
     }
 
@@ -580,17 +574,15 @@ public final class CQLUtils {
     sb.append("), ");
     COMMA_JOINER.appendTo(sb, fromColumns);
     sb.append(" FROM ")
-      .append(tableName)
-      .append(" WHERE ")
-      .append(LOCALITY_GROUP_COL)
-      .append("=? AND ")
-      .append(FAMILY_COL)
-      .append("=?");
+        .append(tableName)
+        .append(" WHERE ")
+        .append(FAMILY_COL)
+        .append("=?");
 
-    if (qualifier != null) {
+    if (columnName.getQualifier() != null) {
       sb.append(" AND ")
-        .append(QUALIFIER_COL)
-        .append("=? ");
+          .append(QUALIFIER_COL)
+          .append("=? ");
     }
 
     sb.append("ALLOW FILTERING;");
@@ -600,10 +592,9 @@ public final class CQLUtils {
     LOG.debug("Prepared query string for single column scan: {}", query);
 
     List<Object> bindValues = Lists.newArrayList();
-    bindValues.add(localityGroup);
-    bindValues.add(family);
-    if (qualifier != null) {
-      bindValues.add(qualifier);
+    bindValues.add(columnName.getFamily());
+    if (columnName.getQualifier() != null) {
+      bindValues.add(columnName.getQualifier());
     }
 
     return admin.getPreparedStatement(query).bind(bindValues.toArray());
@@ -611,35 +602,34 @@ public final class CQLUtils {
 
   /**
    * Create a CQL statement for selecting the columns which makeup the Entity ID from a Cassandra
-   * Kiji Table.
+   * Kiji locality group.
    *
    * @param admin Cassandra context object.
    * @param layout table layout of table.
-   * @param tableName translated table name as known by Cassandra.
+   * @param tableName translated table name of Kiji locality group.
    * @return a statement which will get the single column.
    */
   public static Statement getEntityIDScanStatement(
       CassandraAdmin admin,
       KijiTableLayout layout,
-      String tableName) {
+      CassandraTableName tableName) {
 
     // statement being built:
     //  "SELECT token(${PartitionKeyComponent1}, ${PartitionKeyComponent2} ...), ${EIDColumn1},
     //   ${EIDColumn2}... FROM ${tableName}
 
     StringBuilder sb = new StringBuilder()
-      .append("SELECT token(");
+        .append("SELECT token(");
 
     COMMA_JOINER.appendTo(sb, getPartitionKeyColumns(layout));
     sb.append("), ");
     COMMA_JOINER.appendTo(sb, getEntityIDColumns(layout));
     sb.append(" FROM ")
-      .append(tableName);
+        .append(tableName);
     String query = sb.toString();
 
     LOG.debug("Prepared query string for Entity ID scan: {}", query);
 
-    // TODO: ask Clint if going through the admin is necessary in this case.
     return admin.getPreparedStatement(query).bind();
   }
 
@@ -648,22 +638,18 @@ public final class CQLUtils {
    *
    * @param admin Cassandra context object.
    * @param layout of table.
-   * @param tableName of table.
+   * @param tableName of the Cassandra counter table for the Kiji table.
    * @param entityID of row.
-   * @param localityGroup of column.
-   * @param family of column.
-   * @param qualifier of column.
+   * @param columnName translated Cassandra column name.
    * @param amount to increment value.
    * @return a CQL statement to increment a counter column.
    */
   public static Statement getIncrementCounterStatement(
       CassandraAdmin admin,
       KijiTableLayout layout,
-      String tableName,
+      CassandraTableName tableName,
       EntityId entityID,
-      String localityGroup,
-      String family,
-      String qualifier,
+      CassandraColumnName columnName,
       long amount
   ) {
 
@@ -672,13 +658,13 @@ public final class CQLUtils {
     //   WHERE ${PKColumn1}=? AND ${PKColumn2}=?...
 
     StringBuilder sb = new StringBuilder()
-      .append("UPDATE ")
-      .append(tableName)
-      .append(" SET ")
-      .append(VALUE_COL)
-      .append(" = ")
-      .append(VALUE_COL)
-      .append(" + ? WHERE ");
+        .append("UPDATE ")
+        .append(tableName)
+        .append(" SET ")
+        .append(VALUE_COL)
+        .append(" = ")
+        .append(VALUE_COL)
+        .append(" + ? WHERE ");
 
     Joiner.on("=? AND ").appendTo(sb, getPrimaryKeyColumns(layout));
     sb.append("=?");
@@ -690,9 +676,8 @@ public final class CQLUtils {
     List<Object> bindValues = Lists.newArrayList();
     bindValues.add(amount);
     bindValues.addAll(getEntityIDComponentValues(layout, entityID));
-    bindValues.add(localityGroup);
-    bindValues.add(family);
-    bindValues.add(qualifier);
+    bindValues.add(columnName.getFamily());
+    bindValues.add(columnName.getQualifier());
     bindValues.add(KConstants.CASSANDRA_COUNTER_TIMESTAMP);
 
     // TODO: ask Clint if going through the admin is necessary in this case.
@@ -704,11 +689,9 @@ public final class CQLUtils {
    *
    * @param admin Cassandra context object.
    * @param layout table layout of table.
-   * @param tableName translated table name as known by Cassandra.
+   * @param tableName translated table name of Kiji locality group.
    * @param entityId of row to select.
-   * @param localityGroup translated locality group as known by Cassandra.
-   * @param family translated family as known by Cassandra.
-   * @param qualifier translated qualifier as known by Cassandra, or null if non-qualified scan.
+   * @param columnName translated Cassandra column name.
    * @param version to write the value at.
    * @param value to be written into column.
    * @param ttl of value, or null if forever.
@@ -717,11 +700,9 @@ public final class CQLUtils {
   public static Statement getInsertStatement(
       CassandraAdmin admin,
       KijiTableLayout layout,
-      String tableName,
+      CassandraTableName tableName,
       EntityId entityId,
-      String localityGroup,
-      String family,
-      String qualifier,
+      CassandraColumnName columnName,
       Long version,
       ByteBuffer value,
       Integer ttl
@@ -736,8 +717,8 @@ public final class CQLUtils {
 
     StringBuilder sb = new StringBuilder();
     sb.append("INSERT INTO ")
-      .append(tableName)
-      .append(" (");
+        .append(tableName)
+        .append(" (");
 
     COMMA_JOINER.appendTo(sb, columns);
     sb.append(") VALUES (");
@@ -754,9 +735,8 @@ public final class CQLUtils {
 
     List<Object> bindValues = Lists.newArrayList();
     bindValues.addAll(getEntityIDComponentValues(layout, entityId));
-    bindValues.add(localityGroup);
-    bindValues.add(family);
-    bindValues.add(qualifier);
+    bindValues.add(columnName.getFamily());
+    bindValues.add(columnName.getQualifier());
     bindValues.add(version);
     bindValues.add(value);
 
@@ -772,29 +752,29 @@ public final class CQLUtils {
    *
    * @param admin Cassandra context object.
    * @param layout of table.
-   * @param tableName of table.
+   * @param tableName Cassandra table name of Kiji locality group.
    * @param entityID of row.
-   * @param localityGroup of column.
-   * @param family of column.
-   * @param qualifier of column.
+   * @param columnName of column.
    * @param version of cell.
    * @return a CQL statement to delete a cell.
    */
   public static Statement getDeleteCellStatement(
       CassandraAdmin admin,
       KijiTableLayout layout,
-      String tableName,
+      CassandraTableName tableName,
       EntityId entityID,
-      String localityGroup,
-      String family,
-      String qualifier,
+      CassandraColumnName columnName,
       long version
   ) {
-    Preconditions.checkNotNull(qualifier);
-    Preconditions.checkNotNull(family);
-    Preconditions.checkNotNull(localityGroup);
+    Preconditions.checkNotNull(columnName.getQualifier());
     return getDeleteStatement(
-        admin, layout, tableName, entityID, localityGroup, family, qualifier, version);
+        admin,
+        layout,
+        tableName,
+        entityID,
+        columnName.getFamily(),
+        columnName.getQualifier(),
+        version);
   }
 
   /**
@@ -802,81 +782,54 @@ public final class CQLUtils {
    *
    * @param admin Cassandra context object.
    * @param layout of table.
-   * @param tableName of table.
+   * @param tableName Cassandra table name of Kiji locality group.
    * @param entityID of row.
-   * @param localityGroup of column.
-   * @param family of column.
-   * @param qualifier of column.
+   * @param columnName translated Cassandra column name.  If the qualifier is null, the entire
+   *                   family will be deleted.
    * @return a CQL statement to delete a column.
    */
   public static Statement getDeleteColumnStatement(
       CassandraAdmin admin,
       KijiTableLayout layout,
-      String tableName,
+      CassandraTableName tableName,
       EntityId entityID,
-      String localityGroup,
-      String family,
-      String qualifier
+      CassandraColumnName columnName
   ) {
-    Preconditions.checkNotNull(qualifier);
-    Preconditions.checkNotNull(family);
-    Preconditions.checkNotNull(localityGroup);
     return getDeleteStatement(
-        admin, layout, tableName, entityID, localityGroup, family, qualifier, null);
+        admin,
+        layout,
+        tableName,
+        entityID,
+        columnName.getFamily(),
+        columnName.getQualifier(),
+        null);
   }
 
   /**
-   * Create a CQL statement to delete a family.
+   * Create a CQL statement to delete a row of a Cassandra Kiji locality group.
    *
    * @param admin Cassandra context object.
    * @param layout of table.
-   * @param tableName of table.
-   * @param entityID of row.
-   * @param localityGroup of family.
-   * @param family to delete.
-   * @return a CQL statement to delete a family.
-   */
-  public static Statement getDeleteFamilyStatement(
-      CassandraAdmin admin,
-      KijiTableLayout layout,
-      String tableName,
-      EntityId entityID,
-      String localityGroup,
-      String family
-  ) {
-    Preconditions.checkNotNull(family);
-    Preconditions.checkNotNull(localityGroup);
-    return getDeleteStatement(
-        admin, layout, tableName, entityID, localityGroup, family, null, null);
-  }
-
-  /**
-   * Create a CQL statement to delete a row.
-   *
-   * @param admin Cassandra context object.
-   * @param layout of table.
-   * @param tableName of table.
+   * @param tableName Cassandra table name of Kiji locality group.
    * @param entityID of row.
    * @return a CQL statement to delete a row.
    */
-  public static Statement getDeleteRowStatement(
+  public static Statement getDeleteLocalityGroupStatement(
       CassandraAdmin admin,
       KijiTableLayout layout,
-      String tableName,
+      CassandraTableName tableName,
       EntityId entityID
   ) {
-    return getDeleteStatement(
-        admin, layout, tableName, entityID, null, null, null, null);
+    return getDeleteStatement(admin, layout, tableName, entityID, null, null, null);
   }
 
   /**
-   * Create a CQL statement for deleting a column from a row of a Cassandra Kiji table.
+   * Create a CQL statement for deleting a column from a row of a Cassandra Kiji locality group.
    *
    * @param admin Cassandra context object.
    * @param layout table layout of table.
-   * @param tableName translated table name as known by Cassandra.
+   * @param tableName Cassandra table name of Kiji locality group.
    * @param entityId of row to delete from.
-   * @param localityGroup translated locality group as known by Cassandra, or null if entire row.
    * @param family translated family as known by Cassandra, or null if entire row.
    * @param qualifier translated qualifier as known by Cassandra, or null if entire family.
    * @param version to delete, or null if all versions.
@@ -885,9 +838,8 @@ public final class CQLUtils {
   private static Statement getDeleteStatement(
       CassandraAdmin admin,
       KijiTableLayout layout,
-      String tableName,
+      CassandraTableName tableName,
       EntityId entityId,
-      String localityGroup,
       String family,
       String qualifier,
       Long version
@@ -896,14 +848,10 @@ public final class CQLUtils {
     // statement being built:
     //  "DELETE FROM ${tableName}
     //   WHERE ${PKColumn1}=? AND ${PKColumn2}=?...
-    //   [AND ${LOCALITY_GROUP_COL}=?] [AND ${FAMILY_COL}=?] [AND ${QUALIFIER_COL}=?]
-    //   [AND ${VERSION_COL}<=maxVersion]
+    //   [AND ${FAMILY_COL}=?] [AND ${QUALIFIER_COL}=?] [AND ${VERSION_COL}<=maxVersion]
 
     List<String> columns = getEntityIDColumns(layout);
 
-    if (localityGroup != null) {
-      columns.add(LOCALITY_GROUP_COL);
-    }
     if (family != null) {
       columns.add(FAMILY_COL);
     }
@@ -915,9 +863,9 @@ public final class CQLUtils {
     }
 
     StringBuilder sb = new StringBuilder()
-      .append("DELETE FROM ")
-      .append(tableName)
-      .append(" WHERE ");
+        .append("DELETE FROM ")
+        .append(tableName)
+        .append(" WHERE ");
 
     Joiner.on("=? AND ").appendTo(sb, columns);
     sb.append("=?");
@@ -928,9 +876,6 @@ public final class CQLUtils {
 
     List<Object> bindValues = Lists.newArrayList();
     bindValues.addAll(getEntityIDComponentValues(layout, entityId));
-    if (localityGroup != null) {
-      bindValues.add(localityGroup);
-    }
     if (family != null) {
       bindValues.add(family);
     }

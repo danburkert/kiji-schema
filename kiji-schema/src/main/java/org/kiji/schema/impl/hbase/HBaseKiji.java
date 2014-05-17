@@ -229,8 +229,6 @@ public final class HBaseKiji implements Kiji {
     mSchemaTable = new HBaseSchemaTable(mURI, mConf, mHTableFactory, lockFactory);
     mMetaTable = new HBaseMetaTable(mURI, mConf, mSchemaTable, mHTableFactory);
 
-    LOG.debug("Kiji instance '{}' is now opened.", mURI);
-
     mSystemVersion = mSystemTable.getDataVersion();
     LOG.debug("Kiji instance '{}' has data version '{}'.", mURI, mSystemVersion);
 
@@ -270,6 +268,7 @@ public final class HBaseKiji implements Kiji {
     final State oldState = mState.getAndSet(State.OPEN);
     Preconditions.checkState(oldState == State.UNINITIALIZED,
         "Cannot open Kiji instance in state %s.", oldState);
+    LOG.debug("Kiji instance '{}' is now opened.", mURI);
 
     mConstructorStack = (CLEANUP_LOG.isDebugEnabled())
         ? Debug.getStackTrace()
@@ -886,9 +885,8 @@ public final class HBaseKiji implements Kiji {
    * @throws IOException on I/O error.
    * @throws KijiAlreadyExistsException if the table already exists.
    */
-  private void createTableUnchecked(
-      TableLayoutDesc tableLayout,
-      byte[][] splitKeys) throws IOException {
+  private void createTableUnchecked(TableLayoutDesc tableLayout, byte[][] splitKeys)
+      throws IOException {
     final KijiURI tableURI = KijiURI.newBuilder(mURI).withTableName(tableLayout.getName()).build();
 
     // This will validate the layout and may throw an InvalidLayoutException.
@@ -909,14 +907,7 @@ public final class HBaseKiji implements Kiji {
       // system-2.0 clients retrieve the table layout from ZooKeeper as a stream of notifications.
       // Invariant: ZooKeeper hold the most recent layout of the table.
       LOG.debug("Writing initial table layout in ZooKeeper for table {}.", tableURI);
-      try {
-        ZooKeeperUtils.setTableLayout(
-            mZKClient,
-            tableURI,
-            kijiTableLayout.getDesc().getLayoutId());
-      } catch (Exception e) {
-        ZooKeeperUtils.wrapAndRethrow(e);
-      }
+      ZooKeeperUtils.setTableLayout(mZKClient, tableURI, kijiTableLayout.getDesc().getLayoutId());
     }
 
     try {

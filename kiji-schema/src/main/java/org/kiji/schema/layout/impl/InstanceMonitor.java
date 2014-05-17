@@ -140,7 +140,7 @@ public final class InstanceMonitor implements Closeable {
    * @return a table layout monitor for the table.
    * @throws IOException on unrecoverable ZooKeeper exception.
    */
-  public TableLayoutMonitor getTableLayoutMonitor(String tableName) throws IOException {
+  public TableLayoutMonitor<T> getTableLayoutMonitor(String tableName) throws IOException {
     Preconditions.checkState(mState.get() == State.OPEN, "InstanceMonitor is closed.");
     LOG.debug("Retrieving TableLayoutMonitor for table {} with userID {}.",
         KijiURI.newBuilder(mInstanceURI).withTableName(tableName).build(), mUserID);

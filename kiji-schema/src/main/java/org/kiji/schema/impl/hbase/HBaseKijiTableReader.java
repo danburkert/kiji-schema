@@ -58,7 +58,6 @@ import org.kiji.schema.filter.KijiRowFilter;
 import org.kiji.schema.filter.KijiRowFilterApplicator;
 import org.kiji.schema.hbase.HBaseScanOptions;
 import org.kiji.schema.impl.BoundColumnReaderSpec;
-import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.impl.LayoutConsumer;
 import org.kiji.schema.layout.CellSpec;
 import org.kiji.schema.layout.ColumnReaderSpec;
@@ -198,10 +197,8 @@ public final class HBaseKijiTableReader implements KijiTableReader {
             mTable.getURI(),
             capsule.getLayout().getDesc().getLayoutId());
       }
-      mReaderLayoutCapsule = new ReaderLayoutCapsule(
-          provider,
-          capsule.getLayout(),
-          capsule.getColumnNameTranslator());
+      mReaderLayoutCapsule =
+          new ReaderLayoutCapsule(provider, capsule.getLayout(), capsule.getColumnNameTranslator());
     }
   }
 

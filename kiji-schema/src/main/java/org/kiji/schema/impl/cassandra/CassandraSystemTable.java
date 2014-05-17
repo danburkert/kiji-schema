@@ -28,7 +28,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import java.util.concurrent.atomic.AtomicReference;
 
 import com.datastax.driver.core.PreparedStatement;
 import com.datastax.driver.core.ResultSet;
@@ -36,7 +35,6 @@ import com.datastax.driver.core.Row;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Maps;
-import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,12 +46,10 @@ import org.kiji.schema.KijiSystemTable;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.avro.SystemTableBackup;
 import org.kiji.schema.avro.SystemTableEntry;
-import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
+import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.impl.Versions;
 import org.kiji.schema.util.CloseableIterable;
-import org.kiji.schema.util.Debug;
 import org.kiji.schema.util.ProtocolVersion;
-import org.kiji.schema.util.ResourceUtils;
 
 /**
  * <p>The Kiji system table that is stored in Cassandra.</p>
@@ -66,8 +62,6 @@ import org.kiji.schema.util.ResourceUtils;
 @ApiAudience.Private
 public final class CassandraSystemTable implements KijiSystemTable {
   private static final Logger LOG = LoggerFactory.getLogger(CassandraSystemTable.class);
-  private static final Logger CLEANUP_LOG =
-      LoggerFactory.getLogger("cleanup." + CassandraSystemTable.class.getName());
 
   /** The Cassandra column family that stores the value of the properties. */
   public static final String KEY_COLUMN = "key";
@@ -87,112 +81,49 @@ public final class CassandraSystemTable implements KijiSystemTable {
       "org/kiji/schema/system-default.properties";
 
   /** URI of the Kiji instance this system table belongs to. */
-  private final KijiURI mURI;
+  private final KijiURI mInstanceURI;
 
   /** The Cassandra table that stores the Kiji instance properties. */
-  private final CassandraTableInterface mTable;
-
-  /** States of a SystemTable instance. */
-  private static enum State {
-    UNINITIALIZED,
-    OPEN,
-    CLOSED
-  }
-
-  /** Tracks the state of this SystemTable instance. */
-  private AtomicReference<State> mState = new AtomicReference<State>(State.UNINITIALIZED);
-
-  /** Used for testing finalize() behavior. */
-  private String mConstructorStack = "";
-
-  /**
-   * Creates a new CassandraTableInterface for the Kiji system table.
-   *
-   * This method assumes that the system table already exists.
-   *
-   * @param kijiURI The KijiURI.
-   * @param conf The Hadoop configuration.
-   * @param admin Wrapper around open C* session.
-   * @return a new CassandraTableInterface for the Kiji system table.
-   * @throws IOException on I/O error.
-   */
-  public static CassandraTableInterface newSystemTable(
-      KijiURI kijiURI,
-      Configuration conf,
-      CassandraAdmin admin)
-      throws IOException {
-    final String tableName =
-        KijiManagedCassandraTableName.getSystemTableName(kijiURI).toString();
-    // Check that the table already exists!
-    if (!admin.tableExists(tableName)) {
-      LOG.info("Cannot find table " + tableName + ", assuming Kiji not installed...");
-      throw new KijiNotInstalledException(
-          String.format("Kiji instance %s is not installed.", kijiURI),
-          kijiURI);
-    }
-    return admin.getCassandraTableInterface(tableName);
-  }
-
-  /**
-   * Wrap an existing Cassandra table that is assumed to be the table that stores the
-   * Kiji instance properties.
-   *
-   * This method assumes that the system table already exists.
-   *
-   * @param kijiURI URI of the Kiji instance this table belongs to.
-   * @param conf Hadoop configuration (not used now)
-   * @param admin Wrapper around open C* session.
-   * @return a reference to the system table.
-   * @throws java.io.IOException if there is a problem communicating with Cassandra.
-   */
-  public static CassandraSystemTable createAssumingTableExists(
-      KijiURI kijiURI,
-      Configuration conf,
-      CassandraAdmin admin)
-    throws IOException {
-    return new CassandraSystemTable(kijiURI, newSystemTable(kijiURI, conf, admin));
-  }
+  private final CassandraTableName mTable;
 
   private final PreparedStatement mPreparedStatementGetValue;
+
   private final PreparedStatement mPreparedStatementPutValue;
+
+  private final CassandraAdmin mAdmin;
 
   /**
    * Wrap an existing Cassandra table that is assumed to be the table that stores the
    * Kiji instance properties.
    *
-   * @param uri URI of the Kiji instance this table belongs to.
-   * @param ctable A C* table to wrap.
+   * @param instanceURI URI of the Kiji instance this table belongs to.
+   * @param admin Cassandra connection.
    */
-  private CassandraSystemTable(KijiURI uri, CassandraTableInterface ctable) {
-    mURI = uri;
-    mTable = ctable;
+  public CassandraSystemTable(KijiURI instanceURI, CassandraAdmin admin) {
+    mInstanceURI = Preconditions.checkNotNull(instanceURI);
+    mTable = CassandraTableName.getSystemTableName(mInstanceURI);
+    mAdmin = Preconditions.checkNotNull(admin);
 
-    if (CLEANUP_LOG.isDebugEnabled()) {
-      mConstructorStack = Debug.getStackTrace();
+    if (!mAdmin.tableExists(mTable)) {
+      throw new KijiNotInstalledException(
+          String.format(
+              "System table for Kiji instance %s is not installed.",
+              mInstanceURI.getInstance()),
+          mInstanceURI);
     }
-    final State oldState = mState.getAndSet(State.OPEN);
-    Preconditions.checkState(oldState == State.UNINITIALIZED,
-        "Cannot open SystemTable instance in state %s.", oldState);
 
-    String queryText;
+    final String selectText =
+        String.format("SELECT %s FROM %s WHERE %s=?;", VALUE_COLUMN, mTable, KEY_COLUMN);
+    mPreparedStatementGetValue = mAdmin.getPreparedStatement(selectText);
 
-    // Prepare some statements for CQL queries
-    queryText = "SELECT " + VALUE_COLUMN + " FROM " +  mTable.getTableName()
-        + " WHERE " + KEY_COLUMN + "=?";
-    mPreparedStatementGetValue = mTable.getAdmin().getPreparedStatement(queryText);
-
-    queryText = "INSERT INTO " +  mTable.getTableName() + "(" + KEY_COLUMN + "," + VALUE_COLUMN
-        + ") VALUES(?,?);";
-    mPreparedStatementPutValue = mTable.getAdmin().getPreparedStatement(queryText);
-
+    final String insertText =
+        String.format("INSERT INTO %s (%s, %s) values (?, ?);", mTable, KEY_COLUMN, VALUE_COLUMN);
+    mPreparedStatementPutValue = mAdmin.getPreparedStatement(insertText);
   }
 
   /** {@inheritDoc} */
   @Override
   public synchronized ProtocolVersion getDataVersion() throws IOException {
-    final State state = mState.get();
-    Preconditions.checkState(state == State.OPEN,
-        "Cannot get data version from SystemTable instance in state %s.", state);
     byte[] result = getValue(KEY_DATA_VERSION);
     return result == null ? null : ProtocolVersion.parse(Bytes.toString(result));
   }
@@ -200,18 +131,12 @@ public final class CassandraSystemTable implements KijiSystemTable {
   /** {@inheritDoc} */
   @Override
   public synchronized void setDataVersion(ProtocolVersion version) throws IOException {
-    final State state = mState.get();
-    Preconditions.checkState(state == State.OPEN,
-        "Cannot set data version in SystemTable instance in state %s.", state);
     putValue(KEY_DATA_VERSION, Bytes.toBytes(version.toString()));
   }
 
   /** {@inheritDoc} */
   @Override
   public synchronized ProtocolVersion getSecurityVersion() throws IOException {
-    final State state = mState.get();
-    Preconditions.checkState(state == State.OPEN,
-        "Cannot get security version from SystemTable instance in state %s.", state);
     byte[] result = getValue(SECURITY_PROTOCOL_VERSION);
     return result == null
         ? Versions.UNINSTALLED_SECURITY_VERSION
@@ -222,43 +147,21 @@ public final class CassandraSystemTable implements KijiSystemTable {
   @Override
   public synchronized void setSecurityVersion(ProtocolVersion version) throws IOException {
     Preconditions.checkNotNull(version);
-    final State state = mState.get();
-    Preconditions.checkState(state == State.OPEN,
-        "Cannot set security version in SystemTable instance in state %s.", state);
-    Kiji.Factory.open(mURI).getSecurityManager().checkCurrentGrantAccess();
+    Kiji.Factory.open(mInstanceURI).getSecurityManager().checkCurrentGrantAccess();
     putValue(SECURITY_PROTOCOL_VERSION, Bytes.toBytes(version.toString()));
   }
 
   /** {@inheritDoc} */
   @Override
   public synchronized void close() throws IOException {
-    final State oldState = mState.getAndSet(State.CLOSED);
-    Preconditions.checkState(oldState == State.OPEN,
-        "Cannot close KijiSystemTable instance in state %s.", oldState);
-    // TODO: Do something here?
-    //mTable.close();
-  }
-
-  /** {@inheritDoc} */
-  @Override
-  protected void finalize() throws Throwable {
-    final State state = mState.get();
-    if (state != State.CLOSED) {
-      CLEANUP_LOG.warn("Finalizing unclosed KijiSystemTable instance %s in state %s.", this, state);
-      CLEANUP_LOG.debug("Stack when HBaseSystemTable was constructed:\n" + mConstructorStack);
-      close();
-    }
-    super.finalize();
+    // No owned resources
   }
 
   /** {@inheritDoc} */
   @Override
   public byte[] getValue(String key) throws IOException {
     LOG.info(String.format("Reading value for key = %s", key));
-    final State state = mState.get();
-    Preconditions.checkState(state == State.OPEN,
-        "Cannot get value from SystemTable instance in state %s.", state);
-    ResultSet resultSet = mTable.getAdmin().execute(mPreparedStatementGetValue.bind(key));
+    ResultSet resultSet = mAdmin.execute(mPreparedStatementGetValue.bind(key));
 
     // Extra the value from the byte buffer, otherwise return this empty buffer
     // TODO: Some additional sanity checks here?
@@ -278,25 +181,20 @@ public final class CassandraSystemTable implements KijiSystemTable {
   /** {@inheritDoc} */
   @Override
   public void putValue(String key, byte[] value) throws IOException {
-    //LOG.info(String.format("Putting key, value = %s,%s", key, value));
-    final State state = mState.get();
-    Preconditions.checkState(state == State.OPEN,
-        "Cannot put value into SystemTable instance in state %s.", state);
-    ByteBuffer valAsByteBuffer = CassandraByteUtil.bytesToByteBuffer(value);
+    Preconditions.checkNotNull(key);
+    Preconditions.checkNotNull(value);
+
     // TODO: Check for success?
-    mTable.getAdmin().execute(mPreparedStatementPutValue.bind(key, valAsByteBuffer));
+    ByteBuffer valBytes = CassandraByteUtil.bytesToByteBuffer(value);
+    mAdmin.execute(mPreparedStatementPutValue.bind(key, valBytes));
   }
 
   /** {@inheritDoc} */
   @Override
   public CloseableIterable<SimpleEntry<String, byte[]>> getAll() throws IOException {
-    final State state = mState.get();
-    Preconditions.checkState(state == State.OPEN,
-        "Cannot get all from SystemTable instance in state %s.", state);
-
     // TODO: Make this a prepared query.
-    String queryText = "SELECT * FROM " +  mTable.getTableName() + ";";
-    ResultSet resultSet = mTable.getAdmin().execute(queryText);
+    String query = String.format("Select * FROM %s;", mTable);
+    ResultSet resultSet = mAdmin.execute(query);
 
     // Extra the value from the byte buffer, otherwise return this empty buffer
     // TODO: Some checks here?
@@ -340,15 +238,13 @@ public final class CassandraSystemTable implements KijiSystemTable {
    *
    * @param admin The HBase cluster to install into.
    * @param kijiURI The KijiURI.
-   * @param conf The Hadoop configuration.
    * @throws java.io.IOException If there is an error.
    */
   public static void install(
       CassandraAdmin admin,
-      KijiURI kijiURI,
-      Configuration conf)
+      KijiURI kijiURI)
       throws IOException {
-    install(admin, kijiURI, conf, Collections.<String, String>emptyMap());
+    install(admin, kijiURI, Collections.<String, String>emptyMap());
   }
 
   /**
@@ -356,20 +252,14 @@ public final class CassandraSystemTable implements KijiSystemTable {
    *
    * @param admin The Cassandra cluster and keyspace install into.
    * @param kijiURI The KijiURI.
-   * @param conf The Hadoop configuration (not clear if we need this or not).
    * @param properties The initial system properties to be used in addition to the defaults.
    * @throws java.io.IOException If there is an error.
    */
-  public static void install(
-      CassandraAdmin admin,
-      KijiURI kijiURI,
-      Configuration conf,
-      Map<String, String> properties)
+  public static void install(CassandraAdmin admin, KijiURI kijiURI, Map<String, String> properties)
       throws IOException {
     // Install the table.  Sadly, we have to just use blobs and byte arrays here, so that we are
     // compliant with everything else in Kiji.  :(
-    String systemTableName =
-        KijiManagedCassandraTableName.getSystemTableName(kijiURI).toString();
+    final CassandraTableName systemTableName = CassandraTableName.getSystemTableName(kijiURI);
 
     // The layout of this table is straightforward - just blob to blob!
     // TODO: Any check here first for whether the table exists?
@@ -378,13 +268,11 @@ public final class CassandraSystemTable implements KijiSystemTable {
             systemTableName, KEY_COLUMN, VALUE_COLUMN);
 
     admin.createTable(systemTableName, tableLayout);
-    CassandraTableInterface ctable = admin.getCassandraTableInterface(systemTableName);
-
-    CassandraSystemTable systemTable = new CassandraSystemTable(kijiURI, ctable);
+    CassandraSystemTable systemTable = new CassandraSystemTable(kijiURI, admin);
     try {
       systemTable.loadSystemTableProperties(properties);
     } finally {
-      ResourceUtils.closeOrLog(systemTable);
+      systemTable.close();
     }
   }
 
@@ -398,8 +286,7 @@ public final class CassandraSystemTable implements KijiSystemTable {
   public static void uninstall(CassandraAdmin admin, KijiURI kijiURI)
       throws IOException {
     // TODO: Does this actually need to do anything beyond dropping the table?
-    final String tableName =
-        KijiManagedCassandraTableName.getSystemTableName(kijiURI).toString();
+    final CassandraTableName tableName = CassandraTableName.getSystemTableName(kijiURI);
     admin.disableTable(tableName);
     admin.deleteTable(tableName);
   }
@@ -407,9 +294,6 @@ public final class CassandraSystemTable implements KijiSystemTable {
   /** {@inheritDoc} */
   @Override
   public SystemTableBackup toBackup() throws IOException {
-    final State state = mState.get();
-    Preconditions.checkState(state == State.OPEN,
-        "Cannot backup SystemTable instance in state %s.", state);
     ArrayList<SystemTableEntry> backupEntries = new ArrayList<SystemTableEntry>();
     CloseableIterable<SimpleEntry<String, byte[]>> entries = getAll();
     for (SimpleEntry<String, byte[]> entry : entries) {
@@ -425,24 +309,16 @@ public final class CassandraSystemTable implements KijiSystemTable {
   /** {@inheritDoc} */
   @Override
   public void fromBackup(SystemTableBackup backup) throws IOException {
-    final State state = mState.get();
-    Preconditions.checkState(state == State.OPEN,
-        "Cannot restore backup to SystemTable instance in state %s.", state);
     LOG.info(String.format("Restoring system table from backup with %d entries.",
         backup.getEntries().size()));
     for (SystemTableEntry entry : backup.getEntries()) {
       putValue(entry.getKey(), entry.getValue().array());
     }
-    // TODO: Flush?
-    //mTable.flushCommits();
   }
 
   /** Private class for providing a CloseableIterable over system table key, value pairs. */
   private static class CassandraSystemTableIterable
       implements CloseableIterable<SimpleEntry<String, byte[]>> {
-
-    /** Uderlying source of system table parameters. */
-    //private ResultScanner mResultScanner;
 
     /** Iterator returned by iterator(). */
     private Iterator<SimpleEntry<String, byte[]>> mIterator;
@@ -466,7 +342,7 @@ public final class CassandraSystemTable implements KijiSystemTable {
     /** {@inheritDoc} */
     @Override
     public void close() throws IOException {
-      //mResultScanner.close();
+      // No owned resources
     }
   }
 
@@ -515,14 +391,13 @@ public final class CassandraSystemTable implements KijiSystemTable {
   @Override
   public String toString() {
     return Objects.toStringHelper(CassandraSystemTable.class)
-        .add("uri", mURI)
-        .add("state", mState.get())
+        .add("uri", mInstanceURI)
         .toString();
   }
 
   /** {@inheritDoc} */
   @Override
   public KijiURI getKijiURI() {
-    return mURI;
+    return mInstanceURI;
   }
 }

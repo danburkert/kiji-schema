@@ -20,14 +20,17 @@
 package org.kiji.schema.impl.cassandra;
 
 import java.io.IOException;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
 
-import com.datastax.driver.core.ResultSet;
+import javax.annotation.Nullable;
+
 import com.datastax.driver.core.Row;
+import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.Iterators;
+import com.google.common.collect.Lists;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,8 +44,8 @@ import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
 import org.kiji.schema.KijiIOException;
 import org.kiji.schema.KijiPager;
 import org.kiji.schema.KijiRowData;
-import org.kiji.schema.impl.LayoutCapsule;
-import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
+import org.kiji.schema.impl.cassandra.CassandraDataRequestAdapter.ColumnResultSet;
+import org.kiji.schema.impl.cassandra.CassandraDataRequestAdapter.ColumnRow;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
 
 /**
@@ -72,7 +75,7 @@ public final class CassandraVersionPager implements KijiPager {
   private boolean mHasNext;
 
   /** Iterator over all of the rows (across multiple pages) for this column. */
-  private Iterator<Row> mRowIterator;
+  private Iterator<ColumnRow> mRowIterator;
 
   /**
    * Initializes a CassandraVersionPager.
@@ -148,17 +151,25 @@ public final class CassandraVersionPager implements KijiPager {
     mTable.retain();
 
     // Populate the row iterator with a Cassandra SELECT query.
-    final LayoutCapsule capsule = mTable.getLayoutCapsule();
     CassandraDataRequestAdapter adapter = new CassandraDataRequestAdapter(
         mDataRequest,
-        (CassandraColumnNameTranslator)capsule.getKijiColumnNameTranslator()
-    );
+        mTable.getColumnNameTranslator());
 
     // Should be only a single ResultSet here, because this was a data request for a single column.
     try {
-      List<ResultSet> results = adapter.doPagedGet(mTable, entityId);
+      final List<ColumnResultSet> results = adapter.doPagedGet(mTable, entityId);
       assert(results.size() == 1);
-      mRowIterator = results.get(0).iterator();
+      final ColumnResultSet result = results.get(0);
+
+      mRowIterator =
+          Iterators.transform(
+              result.getResultSet().iterator(), new Function<Row, ColumnRow>() {
+                @Nullable
+                @Override
+                public ColumnRow apply(@Nullable Row input) {
+                  return new ColumnRow(result.getColumn(), input);
+                }
+              });
 
       // TODO: If timestamp for first item in iterator is earlier than min timestamp, mHasNext=false
 
@@ -188,7 +199,7 @@ public final class CassandraVersionPager implements KijiPager {
     }
 
     // Iterate through a number of cells equal to the page size to create a new KijiRowData.
-    HashSet<Row> rowsThisPage = new HashSet<Row>();
+    List<ColumnRow> rowsThisPage = Lists.newArrayList();
 
     // TODO: Also check that we haven't returned more data than the user-requested max versions.
     for (int rowNum = 0; rowNum < pageSize; rowNum++) {

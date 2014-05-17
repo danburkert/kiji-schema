@@ -36,14 +36,16 @@ import org.slf4j.LoggerFactory;
 
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.EntityId;
+import org.kiji.schema.InternalKijiError;
 import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiColumnPagingNotEnabledException;
 import org.kiji.schema.KijiDataRequest;
 import org.kiji.schema.NoSuchColumnException;
-import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
+import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.filter.KijiColumnFilter;
 import org.kiji.schema.filter.KijiColumnRangeFilter;
-import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
+import org.kiji.schema.layout.impl.cassandra.CassandraColumnName;
+import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
 
 /**
  * Pages through the many qualifiers of a map-type family.
@@ -114,13 +116,17 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
         String.format("Paging is not enabled for column [%s].", family));
     }
 
-    mColumnNameTranslator = (CassandraColumnNameTranslator) table.getColumnNameTranslator();
+    mColumnNameTranslator = table.getColumnNameTranslator();
 
     mEntityId = entityId;
     mTable = table;
     mHasNext = true;  // there might be no page to read, but we don't know until we issue an RPC
 
-    initializeRowIterator();
+    try {
+      initializeRowIterator();
+    } catch (NoSuchColumnException e) {
+      throw new InternalKijiError(e);
+    }
 
     // Only retain the table if everything else ran fine:
     mTable.retain();
@@ -129,24 +135,15 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
   /**
    * Initialize the row iterator.
    */
-  private void initializeRowIterator() {
+  private void initializeRowIterator() throws NoSuchColumnException {
     // Issue a paged SELECT statement to get all of the qualifiers for this map family from C*.
     // Get the Cassandra table name for this column family
-    String cassandraTableName = KijiManagedCassandraTableName.getKijiTableName(
-        mTable.getURI(),
-        mTable.getName()).toString();
+    final CassandraTableName cassandraTableName =
+        CassandraTableName.getKijiLocalityGroupTableName(mTable.getURI(), mTable.getName());
 
-    // Get the translated name for the column family.
-    String translatedLocalityGroup = null;
-    String translatedFamily = null;
-    try {
-      translatedLocalityGroup = mColumnNameTranslator.toCassandraLocalityGroup(mFamily);
-      translatedFamily = mColumnNameTranslator.toCassandraColumnFamily(mFamily);
-    } catch (NoSuchColumnException nsce) {
-      // TODO: Do something here!
-      assert(false);
-      return;
-    }
+    final CassandraColumnName columnName =
+        mColumnNameTranslator.toCassandraColumnName(mFamily);
+
     BoundStatement boundStatement;
     // Need to get versions here so that we can filter out versions that don't match the data
     // request.  Sadly, there is no way to put the version range restriction into this query, since
@@ -157,10 +154,8 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
         CQLUtils.VERSION_COL,
         cassandraTableName,
         CQLUtils.RAW_KEY_COL,
-        CQLUtils.LOCALITY_GROUP_COL,
         CQLUtils.FAMILY_COL
     );
-
 
     // TODO: Make this code more robust for different kinds of filters.
     KijiColumnFilter columnFilter = mColumnRequest.getFilter();
@@ -172,18 +167,15 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
       PreparedStatement preparedStatement = admin.getPreparedStatement(queryString);
       boundStatement = preparedStatement.bind(
           CassandraByteUtil.bytesToByteBuffer(mEntityId.getHBaseRowKey()),
-          translatedLocalityGroup,
-          translatedFamily
-      );
+          columnName.getFamily());
     } else if (columnFilter instanceof KijiColumnRangeFilter) {
       KijiColumnRangeFilter rangeFilter = (KijiColumnRangeFilter) columnFilter;
       boundStatement = createBoundStatementForFilter(
           admin,
           rangeFilter,
           queryString,
-          translatedLocalityGroup,
-          translatedFamily
-      );
+          columnName.getLocalityGroup(),
+          columnName.getFamily());
 
     } else {
       throw new UnsupportedOperationException(
