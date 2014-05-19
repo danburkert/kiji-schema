@@ -20,6 +20,7 @@
 package org.kiji.schema.layout;
 
 import com.google.common.base.Objects;
+import com.google.common.base.Preconditions;
 import org.apache.commons.lang.builder.EqualsBuilder;
 import org.apache.commons.lang.builder.HashCodeBuilder;
 import org.apache.hadoop.hbase.util.Bytes;
@@ -33,6 +34,9 @@ import org.kiji.annotations.ApiStability;
 @ApiAudience.Public
 @ApiStability.Evolving
 public final class TranslatedColumnName {
+  /** The untranslated locality group. This should only be used in Cassandra-specific code. */
+  private final String mLocalityGroup;
+
   /** The translated column family. */
   private final byte[] mFamily;
 
@@ -42,36 +46,63 @@ public final class TranslatedColumnName {
   /**
    * Creates a new {@code TranslatedColumnName} instance.
    *
-   * @param family HBase column family.
-   * @param qualifier HBase column qualifier.
+   * @param family translated column family.
+   * @param qualifier translated column qualifier.
    */
   public TranslatedColumnName(byte[] family, byte[] qualifier) {
-    mFamily = family;
-    mQualifier = qualifier;
+    mLocalityGroup = null;
+    mFamily = Preconditions.checkNotNull(family);
+    mQualifier = Preconditions.checkNotNull(qualifier);
   }
 
   /**
-   * Gets the HBase column family.
+   * Creates a new {@link TranslatedColumnName} instance with the provided Kiji locality group. The
+   * locality group is used by Cassandra to know which Cassandra table the
+   * {@link TranslatedColumnName} belongs to. The locality group should match the name of the
+   * locality group in the Kiji table layout exactly (no translation or shortening).
+   *
+   * @param localityGroup Kiji locality group.
+   * @param family translated column family.
+   * @param qualifier translated column qualifier.
+   */
+  public TranslatedColumnName(String localityGroup, byte[] family, byte[] qualifier) {
+    mLocalityGroup = Preconditions.checkNotNull(localityGroup);
+    mFamily = Preconditions.checkNotNull(family);
+    mQualifier = Preconditions.checkNotNull(qualifier);
+  }
+
+  /**
+   * Gets the translated column family. Do *not* modify the returned array.
    *
    * @return The family.
    */
   public byte[] getFamily() {
-    return mFamily.clone();
+    return mFamily;
   }
 
   /**
-   * Gets the HBase column qualifier.
+   * Gets the translated column qualifier. Do *not* modify the returned array.
    *
    * @return The qualifier.
    */
   public byte[] getQualifier() {
-    return mQualifier.clone();
+    return mQualifier;
+  }
+
+  /**
+   * Gets the Kiji locality group.
+   *
+   * @return the Kiji locality group.
+   */
+  public String getLocalityGroup() {
+    return mLocalityGroup;
   }
 
   /** {@inheritDoc} */
   @Override
   public String toString() {
     return Objects.toStringHelper(this)
+        .add("locality_group", mLocalityGroup)
         .add("family", Bytes.toStringBinary(mFamily))
         .add("qualifier", Bytes.toStringBinary(mQualifier))
         .toString();
@@ -81,6 +112,7 @@ public final class TranslatedColumnName {
   @Override
   public int hashCode() {
     return new HashCodeBuilder()
+        .append(mLocalityGroup)
         .append(mFamily)
         .append(mQualifier)
         .toHashCode();
@@ -95,6 +127,7 @@ public final class TranslatedColumnName {
 
     TranslatedColumnName other = (TranslatedColumnName) obj;
     return new EqualsBuilder()
+        .append(mLocalityGroup, other.mLocalityGroup)
         .append(mFamily, other.mFamily)
         .append(mQualifier, other.mQualifier)
         .isEquals();

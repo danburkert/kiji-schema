@@ -28,19 +28,20 @@ import org.slf4j.LoggerFactory;
 
 import org.kiji.annotations.ApiAudience;
 import org.kiji.annotations.ApiStability;
+import org.kiji.schema.InternalKijiError;
 import org.kiji.schema.Kiji;
 import org.kiji.schema.KijiAlreadyExistsException;
 import org.kiji.schema.KijiInvalidNameException;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.impl.cassandra.CassandraAdmin;
 import org.kiji.schema.impl.cassandra.CassandraAdminFactory;
+import org.kiji.schema.impl.cassandra.CassandraKiji;
 import org.kiji.schema.impl.cassandra.CassandraKijiFactory;
 import org.kiji.schema.impl.cassandra.CassandraMetaTable;
 import org.kiji.schema.impl.cassandra.CassandraSchemaTable;
 import org.kiji.schema.impl.cassandra.CassandraSystemTable;
 import org.kiji.schema.security.CassandraKijiSecurityManager;
 import org.kiji.schema.util.LockFactory;
-import org.kiji.schema.util.ResourceUtils;
 
 /** Installs or uninstalls Kiji instances from an Cassandra cluster. */
 @ApiAudience.Public
@@ -132,31 +133,23 @@ public final class CassandraKijiInstaller {
       throw new KijiInvalidNameException(String.format(
           "Kiji URI '%s' does not specify a Kiji instance name", uri));
     }
-    final CassandraAdminFactory adminFactory =
-        CassandraFactory.Provider.get().getCassandraAdminFactory(uri);
 
-    LOG.info(String.format("Removing the Cassandra Kiji instance '%s'.", uri.getInstance()));
+    LOG.info(String.format("Uninstalling Cassandra Kiji instance '%s'.", uri.getInstance()));
 
-    final Kiji kiji = CassandraKijiFactory.get().open(uri);
+    final CassandraKiji kiji = CassandraKijiFactory.get().open(uri);
     try {
       // TODO (SCHEMA-706): Add security checks when we have a plan for security in Cassandra Kiji.
 
       for (String tableName : kiji.getTableNames()) {
-        LOG.debug("Deleting kiji table " + tableName + "...");
+        LOG.info("Deleting kiji table " + tableName + "...");
         kiji.deleteTable(tableName);
       }
       // Delete the user tables:
-      final CassandraAdmin admin = adminFactory.create(uri);
-      try {
-
-        // Delete the system tables:
-        CassandraSystemTable.uninstall(admin, uri);
-        CassandraMetaTable.uninstall(admin, uri);
-        CassandraSchemaTable.uninstall(admin, uri);
-
-      } finally {
-        ResourceUtils.closeOrLog(admin);
-      }
+      final CassandraAdmin admin = kiji.getCassandraAdmin();
+      // Delete the system tables:
+      CassandraSystemTable.uninstall(admin, uri);
+      CassandraMetaTable.uninstall(admin, uri);
+      CassandraSchemaTable.uninstall(admin, uri);
 
       // Assert that there are no tables left and delete the keyspace.
       assert(admin.keyspaceIsEmpty());

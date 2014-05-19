@@ -45,7 +45,7 @@ import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.filter.KijiColumnFilter;
 import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.hbase.HBaseScanOptions;
-import org.kiji.schema.layout.HBaseColumnNameTranslator;
+import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout;
 import org.kiji.schema.layout.TranslatedColumnName;
@@ -63,7 +63,7 @@ public final class HBaseDataRequestAdapter {
   /** The wrapped KijiDataRequest. */
   private final KijiDataRequest mKijiDataRequest;
   /** The translator for generating HBase column names. */
-  private final HBaseColumnNameTranslator mColumnNameTranslator;
+  private final KijiColumnNameTranslator mColumnNameTranslator;
 
   /**
    * Creates a new HBaseDataRequestAdapter for a given data request using a given
@@ -73,7 +73,7 @@ public final class HBaseDataRequestAdapter {
    * @param translator the name translator for getting HBase column names.
    */
   public HBaseDataRequestAdapter(KijiDataRequest kijiDataRequest,
-                                 HBaseColumnNameTranslator translator) {
+      KijiColumnNameTranslator translator) {
     mKijiDataRequest = kijiDataRequest;
     mColumnNameTranslator = translator;
   }
@@ -128,7 +128,7 @@ public final class HBaseDataRequestAdapter {
 
     // It's okay to put columns into the Scan that are already there.
     for (Map.Entry<byte[], NavigableSet<byte[]>> columnRequest
-             : newScan.getFamilyMap().entrySet()) {
+        : newScan.getFamilyMap().entrySet()) {
       byte[] family = columnRequest.getKey();
       if (null == columnRequest.getValue()) {
         // Request all columns in the family.
@@ -249,7 +249,7 @@ public final class HBaseDataRequestAdapter {
       // We just need to know whether a row has data in at least one of the requested columns.
       // Stop at the first valid key using AND(columnFilters, FirstKeyOnlyFilter):
       get.setFilter(new FilterList(
-          FilterList.Operator.MUST_PASS_ALL, columnFilters, new FirstKeyOnlyFilter()));
+              FilterList.Operator.MUST_PASS_ALL, columnFilters, new FirstKeyOnlyFilter()));
     } else {
       get.setFilter(columnFilters);
     }
@@ -337,15 +337,15 @@ public final class HBaseDataRequestAdapter {
     // Only let cells from the locality-group (ie. HBase family) the column belongs to, ie:
     //     HBase-family = Kiji-locality-group
     filter.addFilter(SchemaPlatformBridge.get().createFamilyFilter(
-        CompareFilter.CompareOp.EQUAL,
-        hbaseColumnName.getFamily()));
+            CompareFilter.CompareOp.EQUAL,
+            hbaseColumnName.getFamily()));
 
     if (kijiColumnName.isFullyQualified()) {
       // Only let cells from the fully-qualified column ie.:
       //     HBase-qualifier = Kiji-family:qualifier
       filter.addFilter(SchemaPlatformBridge.get().createQualifierFilter(
-          CompareFilter.CompareOp.EQUAL,
-          hbaseColumnName.getQualifier()));
+              CompareFilter.CompareOp.EQUAL,
+              hbaseColumnName.getQualifier()));
     } else {
       // Only let cells from the map-type family ie.:
       //     HBase-qualifier starts with "Kiji-family:"
@@ -396,14 +396,14 @@ public final class HBaseDataRequestAdapter {
    */
   private static final class NameTranslatingFilterContext extends KijiColumnFilter.Context {
     /** The translator to use. */
-    private final HBaseColumnNameTranslator mTranslator;
+    private final KijiColumnNameTranslator mTranslator;
 
     /**
      * Initialize this context with the specified column name translator.
      *
      * @param translator the translator to use.
      */
-    private NameTranslatingFilterContext(HBaseColumnNameTranslator translator) {
+    private NameTranslatingFilterContext(KijiColumnNameTranslator translator) {
       mTranslator = translator;
     }
 

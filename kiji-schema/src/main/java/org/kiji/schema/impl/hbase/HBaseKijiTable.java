@@ -60,7 +60,6 @@ import org.kiji.schema.avro.RowKeyFormat;
 import org.kiji.schema.avro.RowKeyFormat2;
 import org.kiji.schema.hbase.KijiManagedHBaseTableName;
 import org.kiji.schema.impl.HTableInterfaceFactory;
-import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.impl.LayoutConsumer;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
@@ -244,8 +243,7 @@ public final class HBaseKijiTable implements KijiTable {
    * @param consumer the LayoutConsumer to be registered.
    * @throws IOException in case of an error updating the LayoutConsumer.
    */
-  public void registerLayoutConsumer(LayoutConsumer<HBaseLayoutCapsule> consumer)
-      throws IOException {
+  public void registerLayoutConsumer(LayoutConsumer consumer) throws IOException {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot register a new layout consumer to a KijiTable in state %s.", state);

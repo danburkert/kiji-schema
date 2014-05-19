@@ -221,8 +221,7 @@ public final class TestingCassandraFactory implements CassandraFactory {
       for (String dirName : directoriesToDelete) {
         FileUtils.deleteDirectory(new File(dirName));
       }
-      EmbeddedCassandraService embeddedCassandraService = new EmbeddedCassandraService();
-      embeddedCassandraService.start();
+      new EmbeddedCassandraService().start();
 
     } catch (IOException ioe) {
       throw new KijiIOException("Cannot start embedded C* service!");

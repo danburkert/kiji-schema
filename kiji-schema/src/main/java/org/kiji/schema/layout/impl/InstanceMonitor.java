@@ -25,7 +25,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
@@ -40,7 +39,6 @@ import org.kiji.schema.KijiIOException;
 import org.kiji.schema.KijiMetaTable;
 import org.kiji.schema.KijiSchemaTable;
 import org.kiji.schema.KijiURI;
-import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.util.AutoReferenceCountedReaper;
 import org.kiji.schema.util.JvmId;
 import org.kiji.schema.util.ProtocolVersion;
@@ -140,7 +138,7 @@ public final class InstanceMonitor implements Closeable {
    * @return a table layout monitor for the table.
    * @throws IOException on unrecoverable ZooKeeper exception.
    */
-  public TableLayoutMonitor<T> getTableLayoutMonitor(String tableName) throws IOException {
+  public TableLayoutMonitor getTableLayoutMonitor(String tableName) throws IOException {
     Preconditions.checkState(mState.get() == State.OPEN, "InstanceMonitor is closed.");
     LOG.debug("Retrieving TableLayoutMonitor for table {} with userID {}.",
         KijiURI.newBuilder(mInstanceURI).withTableName(tableName).build(), mUserID);

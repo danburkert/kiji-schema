@@ -33,6 +33,7 @@ import org.slf4j.LoggerFactory;
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.AtomicKijiPutter;
 import org.kiji.schema.EntityId;
+import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiIOException;
 import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
 import org.kiji.schema.impl.LayoutConsumer;
@@ -40,7 +41,6 @@ import org.kiji.schema.impl.cassandra.CassandraKijiTableWriter.WriterLayoutCapsu
 import org.kiji.schema.layout.LayoutUpdatedException;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
 import org.kiji.schema.layout.impl.LayoutCapsule;
-import org.kiji.schema.layout.impl.cassandra.CassandraLayoutCapsule;
 
 /**
  * Cassandra implementation of AtomicKijiPutter.
@@ -113,10 +113,10 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
   private boolean mLayoutOutOfDate = false;
 
   /** Provides for the updating of this Writer in response to a table layout update. */
-  private final class InnerLayoutUpdater implements LayoutConsumer<CassandraLayoutCapsule> {
+  private final class InnerLayoutUpdater implements LayoutConsumer {
     /** {@inheritDoc} */
     @Override
-    public void update(final CassandraLayoutCapsule capsule)
+    public void update(final LayoutCapsule capsule)
         throws IOException {
       final State state = mState.get();
       Preconditions.checkState(state != State.CLOSED,
@@ -146,7 +146,7 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
         mWriterLayoutCapsule = new WriterLayoutCapsule(
             provider,
             capsule.getLayout(),
-            capsule.getColumnNameTranslator());
+            capsule.getKijiColumnNameTranslator());
       }
     }
   }
@@ -275,7 +275,8 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
   /** {@inheritDoc} */
   @Override
   public <T> void put(String family, String qualifier, T value) throws IOException {
-    if (mWriterCommon.isCounterColumn(family, qualifier)) {
+    final KijiColumnName column = new KijiColumnName(family, qualifier);
+    if (mWriterCommon.isCounterColumn(column)) {
       throw new UnsupportedOperationException(
           "Cannot modify counters within Cassandra atomic putter.");
     }
@@ -295,13 +296,12 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot put cell to an AtomicKijiPutter instance in state %s.", state);
-    //final WriterLayoutCapsule capsule = getWriterLayoutCapsule();
+    final KijiColumnName column = new KijiColumnName(family, qualifier);
 
     Statement statement = mWriterCommon.getPutStatement(
         mWriterLayoutCapsule.getCellEncoderProvider(),
         mEntityId,
-        family,
-        qualifier,
+        column,
         timestamp,
         value);
     mStatements.add(statement);

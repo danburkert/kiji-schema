@@ -58,7 +58,7 @@ import org.kiji.schema.avro.TableLayoutsBackup;
 import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.impl.AvroCellEncoder;
 import org.kiji.schema.impl.cassandra.CassandraAdmin;
-import org.kiji.schema.impl.cassandra.CassandraByteUtil;
+import org.kiji.schema.util.ByteUtils;
 import org.kiji.schema.layout.CellSpec;
 import org.kiji.schema.layout.InvalidLayoutException;
 import org.kiji.schema.layout.KijiTableLayout;
@@ -305,8 +305,8 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
         tableName,
         new Date(),
         layoutId,
-        CassandraByteUtil.bytesToByteBuffer(encodeTableLayoutDesc(tableLayout.getDesc())),
-        CassandraByteUtil.bytesToByteBuffer(encodeTableLayoutDesc(update))
+        ByteBuffer.wrap(encodeTableLayoutDesc(tableLayout.getDesc())),
+        ByteBuffer.wrap(encodeTableLayoutDesc(update))
     ));
 
     // TODO: C* flush?
@@ -353,7 +353,7 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
     final List<KijiTableLayout> layouts = Lists.newArrayList();
     for (Row row: rows) {
       ByteBuffer blob = row.getBytes(QUALIFIER_LAYOUT);
-      byte[] bytes = CassandraByteUtil.byteBuffertoBytes(blob);
+      byte[] bytes = ByteUtils.toBytes(blob);
       layouts.add(KijiTableLayout.newLayout(decodeTableLayoutDesc(bytes)));
     }
     return layouts;
@@ -371,7 +371,7 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
     final NavigableMap<Long, KijiTableLayout> timedValues = Maps.newTreeMap();
     for (Row row: rows) {
       ByteBuffer blob = row.getBytes(QUALIFIER_LAYOUT);
-      byte[] bytes = CassandraByteUtil.byteBuffertoBytes(blob);
+      byte[] bytes = ByteUtils.toBytes(blob);
       KijiTableLayout layout = KijiTableLayout.newLayout(decodeTableLayoutDesc(bytes));
 
       Long timestamp = row.getDate(QUALIFIER_TIME).getTime();
@@ -466,20 +466,12 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
     for (Row row: rows) {
       final long timestamp = row.getDate(QUALIFIER_TIME).getTime();
       final TableLayoutDesc layout =
-          decodeTableLayoutDesc(
-              CassandraByteUtil.byteBuffertoBytes(
-                row.getBytes(QUALIFIER_LAYOUT)
-              )
-          );
+          decodeTableLayoutDesc(ByteUtils.toBytes(row.getBytes(QUALIFIER_LAYOUT)));
 
 
       // TODO: May need some check here that the update is not null
       final TableLayoutDesc update =
-          decodeTableLayoutDesc(
-              CassandraByteUtil.byteBuffertoBytes(
-                  row.getBytes(QUALIFIER_UPDATE)
-              )
-          );
+          decodeTableLayoutDesc(ByteUtils.toBytes(row.getBytes(QUALIFIER_UPDATE)));
 
       history.add(TableLayoutBackupEntry.newBuilder()
           .setLayout(layout)
@@ -520,11 +512,11 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
     // TODO: Unclear what happens to layout IDs here...
     for (TableLayoutBackupEntry lbe : layoutBackup.getLayouts()) {
       final byte[] layoutBytes = encodeTableLayoutDesc(lbe.getLayout());
-      final ByteBuffer layoutByteBuffer = CassandraByteUtil.bytesToByteBuffer(layoutBytes);
+      final ByteBuffer layoutByteBuffer = ByteBuffer.wrap(layoutBytes);
 
       if (lbe.getUpdate() != null) {
         final byte[] updateBytes = encodeTableLayoutDesc(lbe.getUpdate());
-        final ByteBuffer updateByteBuffer = CassandraByteUtil.bytesToByteBuffer(updateBytes);
+        final ByteBuffer updateByteBuffer = ByteBuffer.wrap(updateBytes);
         final long timestamp = lbe.getTimestamp();
 
         mAdmin.execute(preparedStatementInsertAll.bind(

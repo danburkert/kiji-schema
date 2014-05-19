@@ -164,7 +164,8 @@ public final class HBaseQualifierPager implements Iterator<String[]>, Closeable 
 
     final LayoutCapsule capsule = mTable.getLayoutCapsule();
     final HBaseDataRequestAdapter adapter = new HBaseDataRequestAdapter(
-        nextPageDataRequest, capsule.getColumnNameTranslator());
+            nextPageDataRequest,
+            capsule.getKijiColumnNameTranslator());
     try {
       final Get hbaseGet = adapter.toGet(mEntityId, capsule.getLayout());
       if (LOG.isDebugEnabled()) {

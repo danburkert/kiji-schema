@@ -42,6 +42,7 @@ import org.kiji.schema.KijiURI;
 import org.kiji.schema.avro.KeyValueBackup;
 import org.kiji.schema.avro.KeyValueBackupEntry;
 import org.kiji.schema.cassandra.CassandraTableName;
+import org.kiji.schema.util.ByteUtils;
 
 /**
 * Manages key-value pairs on a per table basis. Storage of these key-value pairs is provided by
@@ -222,7 +223,7 @@ public class CassandraTableKeyValueDatabase
     final List<byte[]> values = Lists.newArrayList();
     for (Row row: rows) {
       ByteBuffer blob = row.getBytes(KV_COLUMN_VALUE);
-      values.add(CassandraByteUtil.byteBuffertoBytes(blob));
+      values.add(ByteUtils.toBytes(blob));
     }
     return values;
   }
@@ -241,7 +242,7 @@ public class CassandraTableKeyValueDatabase
     final NavigableMap<Long, byte[]> timedValues = Maps.newTreeMap();
     for (Row row: rows) {
       ByteBuffer blob = row.getBytes(KV_COLUMN_VALUE);
-      final byte[] bytes = CassandraByteUtil.byteBuffertoBytes(blob);
+      final byte[] bytes = ByteUtils.toBytes(blob);
       Long timestamp = row.getDate(KV_COLUMN_TIME).getTime();
       Preconditions.checkState(timedValues.put(timestamp, bytes) == null);
     }
@@ -253,7 +254,7 @@ public class CassandraTableKeyValueDatabase
   public CassandraTableKeyValueDatabase putValue(String table, String key, byte[] value)
       throws IOException {
     Preconditions.checkNotNull(mPreparedStatementPutValue);
-    ByteBuffer valAsByteBuffer = CassandraByteUtil.bytesToByteBuffer(value);
+    ByteBuffer valAsByteBuffer = ByteBuffer.wrap(value);
     // TODO: Check for success?
     mAdmin.execute(mPreparedStatementPutValue.bind(table, key, new Date(), valAsByteBuffer));
     return this;

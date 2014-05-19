@@ -50,8 +50,6 @@ import org.kiji.schema.impl.Versions;
 import org.kiji.schema.layout.InvalidLayoutException;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.InstanceMonitor;
-import org.kiji.schema.layout.impl.cassandra.CassandraLayoutCapsule;
-import org.kiji.schema.layout.impl.cassandra.CassandraLayoutCapsule.CassandraLayoutCapsuleFactory;
 import org.kiji.schema.security.CassandraKijiSecurityManager;
 import org.kiji.schema.security.KijiSecurityException;
 import org.kiji.schema.security.KijiSecurityManager;
@@ -136,7 +134,7 @@ public final class CassandraKiji implements Kiji {
   private final CuratorFramework mZKClient;
 
   /** Provides table layout updates and user registrations. */
-  private final InstanceMonitor<CassandraLayoutCapsule> mInstanceMonitor;
+  private final InstanceMonitor mInstanceMonitor;
 
   /**
    * Cached copy of the system version, oblivious to system table mutation while the connection to
@@ -227,10 +225,9 @@ public final class CassandraKiji implements Kiji {
       mZKClient = null;
     }
 
-    mInstanceMonitor = new InstanceMonitor<CassandraLayoutCapsule>(
+    mInstanceMonitor = new InstanceMonitor(
         mSystemVersion,
         mURI,
-        CassandraLayoutCapsuleFactory.get(),
         mSchemaTable,
         mMetaTable,
         mZKClient);
@@ -431,7 +428,6 @@ public final class CassandraKiji implements Kiji {
     final Set<CassandraTableName> tables =
         CassandraTableName.getKijiLocalityGroupTableNames(tableURI, layout);
     for (CassandraTableName table : tables) {
-      LOG.
       mAdmin.createTable(table, CQLUtils.getCreateLocalityGroupStatement(table, layout));
       // Add a secondary index on the version
       mAdmin.execute(CQLUtils.getCreateIndexStatement(table, CQLUtils.VERSION_COL));

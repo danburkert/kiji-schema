@@ -21,6 +21,7 @@ package org.kiji.schema.impl.cassandra;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -55,11 +56,12 @@ import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.impl.BoundColumnReaderSpec;
 import org.kiji.schema.impl.cassandra.CassandraDataRequestAdapter.ColumnRow;
 import org.kiji.schema.layout.ColumnReaderSpec;
+import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
+import org.kiji.schema.layout.TranslatedColumnName;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
-import org.kiji.schema.layout.impl.cassandra.CassandraColumnName;
-import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
-import org.kiji.schema.layout.impl.cassandra.CassandraLayoutCapsule;
+import org.kiji.schema.layout.impl.LayoutCapsule;
+import org.kiji.schema.util.ByteUtils;
 import org.kiji.schema.util.TimestampComparator;
 
 /**
@@ -101,7 +103,7 @@ public final class CassandraKijiRowData implements KijiRowData {
    */
   private static CellDecoderProvider createCellProvider(CassandraKijiTable table)
       throws IOException {
-    final CassandraLayoutCapsule capsule = table.getLayoutCapsule();
+    final LayoutCapsule capsule = table.getLayoutCapsule();
     return new CellDecoderProvider(
         capsule.getLayout(),
         Maps.<KijiColumnName, BoundColumnReaderSpec>newHashMap(),
@@ -234,30 +236,29 @@ public final class CassandraKijiRowData implements KijiRowData {
     mFilteredMap = new TreeMap<String, NavigableMap<String, NavigableMap<Long, byte[]>>>();
 
     // Need to translate from short names in Cassandra table into longer names in Kiji table.
-    final CassandraColumnNameTranslator columnNameTranslator =
-        CassandraColumnNameTranslator.from(mTableLayout);
+    final KijiColumnNameTranslator columnNameTranslator =
+        KijiColumnNameTranslator.from(mTableLayout);
 
     // Go through every column in the result set and add the data to the filtered map.
     for (ColumnRow columnRow : mRows) {
       LOG.info("Reading a row back...");
 
       final Row row = columnRow.getRow();
-      final CassandraColumnName attachedColumnName = columnRow.getColumn();
+      final TranslatedColumnName attachedColumnName = columnRow.getColumn();
 
       // Get the Cassandra key (entity Id), qualifier, timestamp, and value.
       final Long timestamp = row.getLong(CQLUtils.VERSION_COL);
 
-      final String rawFamily = row.getString(CQLUtils.FAMILY_COL);
-      final String rawQualifier = row.getString(CQLUtils.QUALIFIER_COL);
+      final byte[] rawFamily = ByteUtils.toBytes(row.getBytes(CQLUtils.FAMILY_COL));
+      final byte[] rawQualifier = ByteUtils.toBytes(row.getBytes(CQLUtils.QUALIFIER_COL));
 
       // TODO: remove these checks
-      assert(rawFamily.equals(attachedColumnName.getFamily()));
+      assert(Arrays.equals(rawFamily, attachedColumnName.getFamily()));
       if (attachedColumnName.getQualifier() != null) {
-        assert(attachedColumnName.getQualifier().equals(rawQualifier));
+        assert(Arrays.equals(rawQualifier, attachedColumnName.getQualifier()));
       }
 
-      final CassandraColumnName columnName =
-          new CassandraColumnName(attachedColumnName.getLocalityGroup(), rawFamily, rawQualifier);
+      final TranslatedColumnName columnName = new TranslatedColumnName(rawFamily, rawQualifier);
 
       KijiColumnName kijiColumnName;
       try {
@@ -265,8 +266,7 @@ public final class CassandraKijiRowData implements KijiRowData {
       } catch (NoSuchColumnException e) {
         LOG.info(String.format(
             "Ignoring Cassandra column '%s:%s' because it doesn't contain Kiji data.",
-            rawFamily,
-            rawQualifier));
+            columnName));
         continue;
       }
 
@@ -389,7 +389,7 @@ public final class CassandraKijiRowData implements KijiRowData {
 
     LOG.info("...Adding the cell!");
     // Finally insert the data into the map!
-    qualifierMap.put(timestamp, CassandraByteUtil.byteBuffertoBytes(value));
+    qualifierMap.put(timestamp, ByteUtils.toBytes(value));
   }
 
   /**

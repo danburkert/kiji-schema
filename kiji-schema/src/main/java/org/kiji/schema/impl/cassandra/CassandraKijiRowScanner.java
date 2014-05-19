@@ -49,8 +49,8 @@ import org.kiji.schema.KijiRowScanner;
 import org.kiji.schema.impl.cassandra.CassandraDataRequestAdapter.ColumnResultSet;
 import org.kiji.schema.impl.cassandra.CassandraDataRequestAdapter.ColumnRow;
 import org.kiji.schema.layout.KijiTableLayout;
+import org.kiji.schema.layout.TranslatedColumnName;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
-import org.kiji.schema.layout.impl.cassandra.CassandraColumnName;
 import org.kiji.schema.util.Debug;
 
 /**
@@ -130,7 +130,7 @@ public class CassandraKijiRowScanner implements KijiRowScanner {
     // Row objects contiguously served by the iterator.
     List<Iterator<ColumnRow>> rowIterators = Lists.newArrayList();
     for (ColumnResultSet columnResultSet : resultSets) {
-      final CassandraColumnName columnName = columnResultSet.getColumn();
+      final TranslatedColumnName columnName = columnResultSet.getColumn();
       final ResultSet resultSet = columnResultSet.getResultSet();
 
       // TODO: is this realistic?

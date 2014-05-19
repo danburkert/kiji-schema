@@ -21,6 +21,7 @@ package org.kiji.schema.impl.cassandra;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.NoSuchElementException;
@@ -44,8 +45,8 @@ import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.filter.KijiColumnFilter;
 import org.kiji.schema.filter.KijiColumnRangeFilter;
-import org.kiji.schema.layout.impl.cassandra.CassandraColumnName;
-import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
+import org.kiji.schema.layout.KijiColumnNameTranslator;
+import org.kiji.schema.layout.TranslatedColumnName;
 
 /**
  * Pages through the many qualifiers of a map-type family.
@@ -87,7 +88,7 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
   private String mMinQualifier = null;
 
 
-  private final CassandraColumnNameTranslator mColumnNameTranslator;
+  private final KijiColumnNameTranslator mColumnNameTranslator;
 
   /**
    * Initializes a qualifier pager.
@@ -116,7 +117,7 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
         String.format("Paging is not enabled for column [%s].", family));
     }
 
-    mColumnNameTranslator = table.getColumnNameTranslator();
+    mColumnNameTranslator = table.getKijiColumnNameTranslator();
 
     mEntityId = entityId;
     mTable = table;
@@ -139,17 +140,18 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
     // Issue a paged SELECT statement to get all of the qualifiers for this map family from C*.
     // Get the Cassandra table name for this column family
     final CassandraTableName cassandraTableName =
-        CassandraTableName.getKijiLocalityGroupTableName(mTable.getURI(), mTable.getName());
+        CassandraTableName
+            .getKijiLocalityGroupTableName(mTable.getURI(), mFamily, mTable.getLayout());
 
-    final CassandraColumnName columnName =
-        mColumnNameTranslator.toCassandraColumnName(mFamily);
+    final TranslatedColumnName columnName =
+        mColumnNameTranslator.toTranslatedColumnName(mFamily);
 
     BoundStatement boundStatement;
     // Need to get versions here so that we can filter out versions that don't match the data
     // request.  Sadly, there is no way to put the version range restriction into this query, since
     // we aren't restricting the qualifiers at all.
     String queryString = String.format(
-        "SELECT %s, %s from %s WHERE %s=? AND %s=? AND %s=?",
+        "SELECT %s, %s from %s WHERE %s=? AND %s=?",
         CQLUtils.QUALIFIER_COL,
         CQLUtils.VERSION_COL,
         cassandraTableName,
@@ -166,7 +168,7 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
 
       PreparedStatement preparedStatement = admin.getPreparedStatement(queryString);
       boundStatement = preparedStatement.bind(
-          CassandraByteUtil.bytesToByteBuffer(mEntityId.getHBaseRowKey()),
+          ByteBuffer.wrap(mEntityId.getHBaseRowKey()),
           columnName.getFamily());
     } else if (columnFilter instanceof KijiColumnRangeFilter) {
       KijiColumnRangeFilter rangeFilter = (KijiColumnRangeFilter) columnFilter;
@@ -174,7 +176,6 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
           admin,
           rangeFilter,
           queryString,
-          columnName.getLocalityGroup(),
           columnName.getFamily());
 
     } else {
@@ -194,7 +195,6 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
    * @param admin for this Kiji instance.
    * @param rangeFilter for the qualifiers.
    * @param queryString for the SELECT statement.
-   * @param translatedLocalityGroup translated name for the locality group.
    * @param translatedFamily translated name for the column family.
    * @return A bound version of the statement with the column qualifier limits.
    */
@@ -202,8 +202,7 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
       CassandraAdmin admin,
       KijiColumnRangeFilter rangeFilter,
       String queryString,
-      String translatedLocalityGroup,
-      String translatedFamily
+      byte[] translatedFamily
   ) {
 
     String minQualifier = rangeFilter.getMinQualifier();
@@ -242,28 +241,24 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
 
     if (null == minQualifier && null == maxQualifier) {
       boundStatement = preparedStatement.bind(
-        CassandraByteUtil.bytesToByteBuffer(mEntityId.getHBaseRowKey()),
-        translatedLocalityGroup,
-        translatedFamily
+        ByteBuffer.wrap(mEntityId.getHBaseRowKey()),
+        ByteBuffer.wrap(translatedFamily)
       );
     } else if (null != minQualifier && null == maxQualifier) {
       boundStatement = preparedStatement.bind(
-          CassandraByteUtil.bytesToByteBuffer(mEntityId.getHBaseRowKey()),
-          translatedLocalityGroup,
+          ByteBuffer.wrap(mEntityId.getHBaseRowKey()),
           translatedFamily,
           minQualifier
       );
     } else if (null == minQualifier && null != maxQualifier) {
       boundStatement = preparedStatement.bind(
-          CassandraByteUtil.bytesToByteBuffer(mEntityId.getHBaseRowKey()),
-          translatedLocalityGroup,
+          ByteBuffer.wrap(mEntityId.getHBaseRowKey()),
           translatedFamily,
           maxQualifier
       );
     } else if (null != minQualifier && null != maxQualifier) {
       boundStatement = preparedStatement.bind(
-          CassandraByteUtil.bytesToByteBuffer(mEntityId.getHBaseRowKey()),
-          translatedLocalityGroup,
+          ByteBuffer.wrap(mEntityId.getHBaseRowKey()),
           translatedFamily,
           minQualifier,
           maxQualifier

@@ -337,8 +337,8 @@ public final class CassandraMetaTable implements KijiMetaTable {
     final CassandraTableName layoutTable = CassandraTableName.getMetaLayoutTableName(uri);
     final CassandraTableName kvTable = CassandraTableName.getMetaKeyValueTableName(uri);
     admin.disableTable(layoutTable);
-    admin.deleteTable(kvTable);
-    admin.disableTable(layoutTable);
+    admin.deleteTable(layoutTable);
+    admin.disableTable(kvTable);
     admin.deleteTable(kvTable);
   }
 

@@ -89,7 +89,7 @@ public abstract class CassandraAdmin implements Closeable {
    * @param kijiURI The URI.
    */
   private void createKeyspaceIfMissingForURI(KijiURI kijiURI) {
-    String keyspace = CassandraTableName.getCassandraKeyspace(kijiURI);
+    String keyspace = CassandraTableName.getQuotedKeyspace(kijiURI);
     LOG.info(String.format("Creating keyspace %s (if missing) for %s.", keyspace, kijiURI));
 
     // TODO: Check whether keyspace is > 48 characters long and if so provide Kiji error to user.
@@ -101,7 +101,6 @@ public abstract class CassandraAdmin implements Closeable {
 
     // Check that the keyspace actually exists!
     assert(keyspaceExists(keyspace));
-
   }
 
   /**
@@ -131,6 +130,8 @@ public abstract class CassandraAdmin implements Closeable {
     // TODO: Keep track of all tables associated with this session
     LOG.info("Creating table {} with statement {}.", tableName, createTableStatement);
     getSession().execute(createTableStatement);
+
+    LOG.info("Table Name:" + tableName);
 
     // Check that the table actually exists
     assert(tableExists(tableName));
@@ -175,14 +176,12 @@ public abstract class CassandraAdmin implements Closeable {
    * @return whether the keyspace is empty.
    */
   public boolean keyspaceIsEmpty() {
-    Preconditions.checkNotNull(getSession());
-    Preconditions.checkNotNull(getSession().getCluster());
-    Preconditions.checkNotNull(getSession().getCluster().getMetadata());
-    String keyspace = CassandraTableName.getCassandraKeyspace(mKijiURI);
-    Preconditions.checkNotNull(getSession().getCluster().getMetadata().getKeyspace(keyspace));
-    Collection<TableMetadata> tables =
-        getSession().getCluster().getMetadata().getKeyspace(keyspace).getTables();
-    return (tables.isEmpty());
+    return getSession()
+        .getCluster()
+        .getMetadata()
+        .getKeyspace(CassandraTableName.getQuotedKeyspace(mKijiURI))
+        .getTables()
+        .isEmpty();
   }
 
   /**
@@ -190,7 +189,7 @@ public abstract class CassandraAdmin implements Closeable {
    */
   public void deleteKeyspace() {
     // TODO: Track whether keyspace exists and assert appropriate keyspace state in all methods.
-    String keyspace = CassandraTableName.getCassandraKeyspace(mKijiURI);
+    String keyspace = CassandraTableName.getQuotedKeyspace(mKijiURI);
     String queryString = "DROP KEYSPACE " + keyspace;
     getSession().execute(queryString);
     assert (!keyspaceExists(keyspace));
@@ -208,13 +207,13 @@ public abstract class CassandraAdmin implements Closeable {
     Preconditions.checkNotNull(getSession());
     Metadata metadata = getSession().getCluster().getMetadata();
 
-    KeyspaceMetadata keyspace = metadata.getKeyspace(tableName.getKeyspace());
+    KeyspaceMetadata keyspace = metadata.getKeyspace(tableName.getQuotedKeyspace());
 
     if (keyspace == null) {
       return false;
     }
 
-    return keyspace.getTable(tableName.getTable()) != null;
+    return keyspace.getTable(tableName.getQuotedTable()) != null;
   }
 
   // TODO: Implement close method

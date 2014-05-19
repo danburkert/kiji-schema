@@ -23,11 +23,11 @@ import java.util.HashMap;
 import java.util.Map;
 
 import com.google.common.base.Preconditions;
-import org.apache.hadoop.hbase.util.Bytes;
 
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.InternalKijiError;
 import org.kiji.schema.impl.InvalidColumnNameException;
+import org.kiji.schema.util.ByteUtils;
 
 /**
  * <p>A very short physical identifier for a column family or qualifier to be used in HBase.</p>
@@ -140,7 +140,7 @@ public final class ColumnId {
    * @return A ColumnId from the byte array.
    */
   public static ColumnId fromByteArray(byte[] encoded) {
-    return fromString(Bytes.toString(encoded));
+    return fromString(ByteUtils.toString(encoded));
   }
 
   /**
@@ -177,7 +177,7 @@ public final class ColumnId {
    * @return The column id encoded as an HBase-friendly byte array.
    */
   public byte[] toByteArray() {
-    return Bytes.toBytes(toString());
+    return ByteUtils.toBytes(toString());
   }
 
   /**

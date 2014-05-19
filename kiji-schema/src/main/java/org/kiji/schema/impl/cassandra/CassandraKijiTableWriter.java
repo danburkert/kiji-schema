@@ -42,11 +42,10 @@ import org.kiji.schema.KijiTableWriter;
 import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
 import org.kiji.schema.impl.LayoutConsumer;
+import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
 import org.kiji.schema.layout.impl.LayoutCapsule;
-import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
-import org.kiji.schema.layout.impl.cassandra.CassandraLayoutCapsule;
 
 /**
  * Makes modifications to a Kiji table by sending requests directly to Cassandra from the local
@@ -89,11 +88,10 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
    * A container for all writer state which should be modified atomically to reflect an update to
    * the underlying table's layout.
    */
-  public static final class WriterLayoutCapsule
-      implements LayoutCapsule<CassandraColumnNameTranslator> {
+  public static final class WriterLayoutCapsule {
     private final CellEncoderProvider mCellEncoderProvider;
     private final KijiTableLayout mLayout;
-    private final CassandraColumnNameTranslator mTranslator;
+    private final KijiColumnNameTranslator mTranslator;
 
     /**
      * Default constructor.
@@ -105,7 +103,7 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     public WriterLayoutCapsule(
         final CellEncoderProvider cellEncoderProvider,
         final KijiTableLayout layout,
-        final CassandraColumnNameTranslator translator) {
+        final KijiColumnNameTranslator translator) {
       mCellEncoderProvider = cellEncoderProvider;
       mLayout = layout;
       mTranslator = translator;
@@ -116,7 +114,7 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
      *
      * @return the column name translator from this container.
      */
-    public CassandraColumnNameTranslator getColumnNameTranslator() {
+    public KijiColumnNameTranslator getColumnNameTranslator() {
       return mTranslator;
     }
 
@@ -140,10 +138,10 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
   }
 
   /** Provides for the updating of this Writer in response to a table layout update. */
-  private final class InnerLayoutUpdater implements LayoutConsumer<CassandraLayoutCapsule> {
+  private final class InnerLayoutUpdater implements LayoutConsumer {
     /** {@inheritDoc} */
     @Override
-    public void update(final CassandraLayoutCapsule capsule) throws IOException {
+    public void update(final LayoutCapsule capsule) throws IOException {
       final State state = mState.get();
       if (state == State.CLOSED) {
         LOG.debug("Writer is closed: ignoring layout update.");
@@ -173,7 +171,7 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
       mWriterLayoutCapsule = new WriterLayoutCapsule(
           provider,
           capsule.getLayout(),
-          capsule.getColumnNameTranslator());
+          capsule.getKijiColumnNameTranslator());
     }
   }
 
@@ -203,9 +201,10 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
   @Override
   public <T> void put(EntityId entityId, String family, String qualifier, T value)
       throws IOException {
+    final KijiColumnName column = new KijiColumnName(family, qualifier);
     // Check whether this col is a counter; if so, do special counter write.
-    if (isCounterColumn(family, qualifier)) {
-      doCounterPut(entityId, family, qualifier, value);
+    if (mWriterCommon.isCounterColumn(column)) {
+      doCounterPut(entityId, column, (Long) value);
     } else {
       put(entityId, family, qualifier, System.currentTimeMillis(), value);
     }
@@ -218,14 +217,15 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot put cell to KijiTableWriter instance %s in state %s.", this, state);
+    final KijiColumnName column = new KijiColumnName(family, qualifier);
 
     // Check whether this col is a counter; if so, do special counter write.
-    if (isCounterColumn(family, qualifier)) {
+    if (mWriterCommon.isCounterColumn(column)) {
       throw new UnsupportedOperationException("Cannot specify a timestamp during a counter put.");
     }
 
     Statement putStatement = mWriterCommon.getPutStatement(
-        mWriterLayoutCapsule.mCellEncoderProvider, entityId, family, qualifier, timestamp, value);
+        mWriterLayoutCapsule.mCellEncoderProvider, entityId, column, timestamp, value);
     mAdmin.execute(putStatement);
   }
 
@@ -233,46 +233,27 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
   // Counter set, get, increment.
 
   /**
-   * Determine whether a column contains a counter value.
-   *
-   * @param family of the column to check.
-   * @param qualifier of the column to check.
-   * @return whether the column contains a counter value.
-   * @throws IOException if there is a problem getting the table layout.
-   */
-  private boolean isCounterColumn(String family, String qualifier) throws IOException {
-    return mWriterLayoutCapsule
-        .getLayout()
-        .getCellSpec(new KijiColumnName(family, qualifier))
-        .isCounter();
-  }
-
-  /**
    * Get the value of a counter.
    *
    * @param entityId of the row containing the counter.
-   * @param family of the column containing the counter.
-   * @param qualifier of the column containing the counter.
+   * @param column containing the counter.
    * @return the value of the counter.
    * @throws IOException if there is a problem reading the counter value.
    */
   private long getCounterValue(
       EntityId entityId,
-      String family,
-      String qualifier
+      KijiColumnName column
   ) throws IOException {
     // Get a reference to the full name of the C* table for this column.
     CassandraTableName cTableName = CassandraTableName.getKijiCounterTableName(mTable.getURI());
-
-    final KijiColumnName columnName = new KijiColumnName(family, qualifier);
-    final CassandraColumnNameTranslator translator = mWriterLayoutCapsule.getColumnNameTranslator();
+    final KijiColumnNameTranslator translator = mWriterLayoutCapsule.getColumnNameTranslator();
 
     Statement statement = CQLUtils.getColumnGetStatement(
         mAdmin,
         mTable.getLayout(),
         cTableName,
         entityId,
-        translator.toCassandraColumnName(columnName),
+        translator.toTranslatedColumnName(column),
         null,
         null,
         null,
@@ -297,23 +278,21 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
    * Increment the value of a counter.
    *
    * @param entityId of the row containing the counter.
-   * @param family of the column containing the counter.
-   * @param qualifier of the column containing the counter.
+   * @param column to increment.
    * @param counterIncrement by which to increment the counter.
    * @throws IOException if there is a problem incrementing the counter value.
    */
   private void incrementCounterValue(
       EntityId entityId,
-      String family,
-      String qualifier,
-      long counterIncrement) throws IOException {
+      KijiColumnName column,
+      long counterIncrement
+  ) throws IOException {
     LOG.info("Incrementing the counter by " + counterIncrement);
 
     // Get a reference to the full name of the C* table for this column.
     CassandraTableName cTableName = CassandraTableName.getKijiCounterTableName(mTable.getURI());
 
-    final KijiColumnName columnName = new KijiColumnName(family, qualifier);
-    final CassandraColumnNameTranslator translator = mWriterLayoutCapsule.getColumnNameTranslator();
+    final KijiColumnNameTranslator translator = mWriterLayoutCapsule.getColumnNameTranslator();
 
     mAdmin.execute(
         CQLUtils.getIncrementCounterStatement(
@@ -321,39 +300,33 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
             mTable.getLayout(),
             cTableName,
             entityId,
-            translator.toCassandraColumnName(columnName),
+            translator.toTranslatedColumnName(column),
             counterIncrement));
   }
 
   /**
    * Perform a put to a counter.
    * @param entityId of the row containing the counter.
-   * @param family of the column containing the counter.
-   * @param qualifier of the column containing the counter.
+   * @param column to increment.
    * @param value to write to the counter.
-   * @param <T> The value to write to the counter.
    * @throws IOException if there is a problem writing the counter.
    */
-  private <T> void doCounterPut(
+  private void doCounterPut(
       EntityId entityId,
-      String family,
-      String qualifier,
-      T value) throws IOException {
+      KijiColumnName column,
+      long value) throws IOException {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot put cell to KijiTableWriter instance %s in state %s.", this, state);
 
-    LOG.info("-------------------- Performing a put to a counter. --------------------");
-    LOG.info(String.format("(%s, %s, %s) := %s", entityId, family, qualifier, value));
-
-    // TODO: Assert that "value" is a long.
+    // TODO: this is really, very, dangerously wrong.  Fix.
 
     // Read back the current value of the counter.
-    long currentCounterValue = getCounterValue(entityId, family, qualifier);
+    long currentCounterValue = getCounterValue(entityId, column);
     LOG.info("Current value of counter is " + currentCounterValue);
     // Increment the counter appropriately to get the new value.
-    long counterIncrement = (Long) value - currentCounterValue;
-    incrementCounterValue(entityId, family, qualifier, counterIncrement);
+    long counterIncrement = value - currentCounterValue;
+    incrementCounterValue(entityId, column, counterIncrement);
 
   }
 
@@ -364,17 +337,18 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot increment cell to KijiTableWriter instance %s in state %s.", this, state);
+    final KijiColumnName column = new KijiColumnName(family, qualifier);
 
-    if (!isCounterColumn(family, qualifier)) {
+    if (!mWriterCommon.isCounterColumn(column)) {
       throw new UnsupportedOperationException(
           String.format("Column '%s:%s' is not a counter", family, qualifier));
     }
 
     // Increment the counter appropriately to get the new value.
-    incrementCounterValue(entityId, family, qualifier, amount);
+    incrementCounterValue(entityId, column, amount);
 
     // Read back the current value of the counter.
-    long currentCounterValue = getCounterValue(entityId, family, qualifier);
+    long currentCounterValue = getCounterValue(entityId, column);
     LOG.info("Value of counter after increment is " + currentCounterValue);
 
     final DecodedCell<Long> counter =
@@ -413,11 +387,12 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot delete family while KijiTableWriter %s is in state %s.", this, state);
+    final KijiColumnName column = new KijiColumnName(family, null);
 
     // TODO: Could check whether this family has an non-counter / counter columns before delete.
     // TODO: Should we wait for these calls to complete before returning?
-    mAdmin.executeAsync(mWriterCommon.getDeleteFamilyStatement(entityId, family));
-    mAdmin.executeAsync(mWriterCommon.getDeleteCounterFamilyStatement(entityId, family));
+    mAdmin.executeAsync(mWriterCommon.getDeleteColumnStatement(entityId, column));
+    mAdmin.executeAsync(mWriterCommon.getDeleteCounterColumnStatement(entityId, column));
   }
 
   /** {@inheritDoc} */
@@ -434,12 +409,13 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot delete column while KijiTableWriter %s is in state %s.", this, state);
-    Statement statement;
+    final KijiColumnName column = new KijiColumnName(family, null);
 
-    if (mWriterCommon.isCounterColumn(family, qualifier)) {
-      statement = mWriterCommon.getDeleteCounterStatement(entityId, family, qualifier);
+    Statement statement;
+    if (mWriterCommon.isCounterColumn(column)) {
+      statement = mWriterCommon.getDeleteCounterColumnStatement(entityId, column);
     } else {
-      statement = mWriterCommon.getDeleteColumnStatement(entityId, family, qualifier);
+      statement = mWriterCommon.getDeleteColumnStatement(entityId, column);
     }
 
     mAdmin.execute(statement);
@@ -467,14 +443,14 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot delete cell while KijiTableWriter %s is in state %s.", this, state);
+    final KijiColumnName column = new KijiColumnName(family, null);
 
-    if (isCounterColumn(family, qualifier)) {
+    if (mWriterCommon.isCounterColumn(column)) {
       throw new UnsupportedOperationException(
           "Cannot delete specific version of counter column in Cassandra Kiji.");
     }
 
-    mAdmin.execute(
-        mWriterCommon.getDeleteCellStatement(entityId, family, qualifier, timestamp));
+    mAdmin.execute(mWriterCommon.getDeleteCellStatement(entityId, column, timestamp));
   }
 
   // ----------------------------------------------------------------------------------------------

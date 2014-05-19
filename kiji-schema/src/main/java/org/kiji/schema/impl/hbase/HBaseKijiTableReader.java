@@ -61,11 +61,12 @@ import org.kiji.schema.impl.BoundColumnReaderSpec;
 import org.kiji.schema.impl.LayoutConsumer;
 import org.kiji.schema.layout.CellSpec;
 import org.kiji.schema.layout.ColumnReaderSpec;
-import org.kiji.schema.layout.ColumnNameTranslator;
 import org.kiji.schema.layout.InvalidLayoutException;
+import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
 import org.kiji.schema.layout.impl.LayoutCapsule;
+import org.kiji.schema.zookeeper.TableLayoutUpdateHandler;
 
 /**
  * Reads from a kiji table by sending the requests directly to the HBase tables.
@@ -114,7 +115,7 @@ public final class HBaseKijiTableReader implements KijiTableReader {
   private static final class ReaderLayoutCapsule {
     private final CellDecoderProvider mCellDecoderProvider;
     private final KijiTableLayout mLayout;
-    private final ColumnNameTranslator mTranslator;
+    private final KijiColumnNameTranslator mTranslator;
 
     /**
      * Default constructor.
@@ -127,7 +128,7 @@ public final class HBaseKijiTableReader implements KijiTableReader {
     private ReaderLayoutCapsule(
         final CellDecoderProvider cellDecoderProvider,
         final KijiTableLayout layout,
-        final ColumnNameTranslator translator) {
+        final KijiColumnNameTranslator translator) {
       mCellDecoderProvider = cellDecoderProvider;
       mLayout = layout;
       mTranslator = translator;
@@ -137,7 +138,7 @@ public final class HBaseKijiTableReader implements KijiTableReader {
      * Get the column name translator for the current layout.
      * @return the column name translator for the current layout.
      */
-    private ColumnNameTranslator getColumnNameTranslator() {
+    private KijiColumnNameTranslator getColumnNameTranslator() {
       return mTranslator;
     }
 
@@ -161,7 +162,7 @@ public final class HBaseKijiTableReader implements KijiTableReader {
   }
 
   /** Provides for the updating of this Reader in response to a table layout update. */
-  private final class InnerLayoutUpdater {
+  private final class InnerLayoutUpdater implements LayoutConsumer {
     /** {@inheritDoc} */
     @Override
     public void update(LayoutCapsule capsule) throws IOException {
@@ -198,7 +199,7 @@ public final class HBaseKijiTableReader implements KijiTableReader {
             capsule.getLayout().getDesc().getLayoutId());
       }
       mReaderLayoutCapsule =
-          new ReaderLayoutCapsule(provider, capsule.getLayout(), capsule.getColumnNameTranslator());
+          new ReaderLayoutCapsule(provider, capsule.getLayout(), capsule.getKijiColumnNameTranslator());
     }
   }
 

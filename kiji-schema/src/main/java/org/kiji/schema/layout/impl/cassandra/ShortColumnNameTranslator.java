@@ -19,17 +19,21 @@
 
 package org.kiji.schema.layout.impl.cassandra;
 
+    import com.google.common.base.Charsets;
     import org.slf4j.Logger;
     import org.slf4j.LoggerFactory;
 
     import org.kiji.annotations.ApiAudience;
     import org.kiji.schema.KijiColumnName;
     import org.kiji.schema.NoSuchColumnException;
+    import org.kiji.schema.layout.KijiColumnNameTranslator;
     import org.kiji.schema.layout.KijiTableLayout;
     import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout;
     import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout;
     import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout.ColumnLayout;
+    import org.kiji.schema.layout.TranslatedColumnName;
     import org.kiji.schema.layout.impl.ColumnId;
+    import org.kiji.schema.util.ByteUtils;
 
 /**
  * Translates Kiji column names into shorter families and qualifiers.
@@ -37,34 +41,33 @@ package org.kiji.schema.layout.impl.cassandra;
  * TODO: translation could be probably benefit from an LRU cache
  */
 @ApiAudience.Private
-public final class CassandraShortColumnNameTranslator extends CassandraColumnNameTranslator {
-  private static final Logger LOG = LoggerFactory.getLogger(CassandraShortColumnNameTranslator.class);
+public final class ShortColumnNameTranslator extends KijiColumnNameTranslator {
+  private static final Logger LOG = LoggerFactory.getLogger(ShortColumnNameTranslator.class);
 
   private final KijiTableLayout mLayout;
 
   /**
-   * Creates a new <code>CassandraColumnNameTranslator</code> instance.
+   * Creates a new <code>TranslatedColumnNameTranslator</code> instance.
    *
    * @param layout The layout of the table to translate column names for.
    */
-  public CassandraShortColumnNameTranslator(KijiTableLayout layout) {
+  public ShortColumnNameTranslator(KijiTableLayout layout) {
     mLayout = layout;
   }
 
   /** {@inheritDoc}. */
   @Override
-  public KijiColumnName toKijiColumnName(CassandraColumnName columnName)
+  public KijiColumnName toKijiColumnName(TranslatedColumnName columnName)
       throws NoSuchColumnException {
     LOG.debug("Translating Cassandra column {} to Kiji column name.", columnName);
 
-    final ColumnId localityGroupID = ColumnId.fromString(columnName.getLocalityGroup());
-    final ColumnId familyID = ColumnId.fromString(columnName.getFamily());
+    final ColumnId familyID = ColumnId.fromByteArray(columnName.getFamily());
 
     final LocalityGroupLayout localityGroup =
-        mLayout.getLocalityGroupMap().get(mLayout.getLocalityGroupIdNameMap().get(localityGroupID));
+        mLayout.getLocalityGroupMap().get(columnName.getLocalityGroup());
     if (localityGroup == null) {
       throw new NoSuchColumnException(String.format(
-          "No locality group with ID %s in table %s.", localityGroupID, mLayout.getName()));
+          "No locality group %s in table %s.", columnName.getLocalityGroup(), mLayout.getName()));
     }
 
     final FamilyLayout family =
@@ -77,7 +80,7 @@ public final class CassandraShortColumnNameTranslator extends CassandraColumnNam
 
     if (family.isGroupType()) {
       // Group type family.
-      final ColumnId qualifierID = ColumnId.fromString(columnName.getQualifier());
+      final ColumnId qualifierID = ColumnId.fromByteArray(columnName.getQualifier());
       final ColumnLayout qualifier =
           family.getColumnMap().get(family.getColumnIdNameMap().get(qualifierID));
       if (qualifier == null) {
@@ -91,7 +94,8 @@ public final class CassandraShortColumnNameTranslator extends CassandraColumnNam
     } else {
       // Map type family.
       assert(family.isMapType());
-      final KijiColumnName column = new KijiColumnName(family.getName(), columnName.getQualifier());
+      final KijiColumnName column =
+          new KijiColumnName(family.getName(), ByteUtils.toString(columnName.getQualifier()));
       LOG.debug("Translated to Kiji map type column {}.", column);
       return column;
     }
@@ -99,20 +103,19 @@ public final class CassandraShortColumnNameTranslator extends CassandraColumnNam
 
   /** {@inheritDoc}. */
   @Override
-  public CassandraColumnName toCassandraColumnName(KijiColumnName kijiColumnName)
+  public TranslatedColumnName toTranslatedColumnName(KijiColumnName kijiColumnName)
       throws NoSuchColumnException {
 
     final String tableName = mLayout.getName();
     final String familyName = kijiColumnName.getFamily();
     final String qualifierName = kijiColumnName.getQualifier();
 
-    final FamilyLayout family = mLayout.getFamilyMap().get(kijiColumnName.getFamily());
+    final FamilyLayout family = mLayout.getFamilyMap().get(familyName);
     if (family == null) {
       throw new NoSuchColumnException(String.format(
           "No column %s in table %s.", kijiColumnName, tableName));
     }
 
-    final String translatedLocalityGroup = family.getLocalityGroup().getId().toString();
     final String translatedFamily = family.getId().toString();
     final String translatedQualifier;
 
@@ -136,6 +139,15 @@ public final class CassandraShortColumnNameTranslator extends CassandraColumnNam
       translatedQualifier = kijiColumnName.getQualifier();
     }
 
-    return new CassandraColumnName(translatedLocalityGroup, translatedFamily, translatedQualifier);
+    final byte[] familyBytes = translatedFamily.getBytes(Charsets.UTF_8);
+    final byte[] qualifierBytes =
+        translatedQualifier == null ? null : translatedQualifier.getBytes(Charsets.UTF_8);
+
+    return new TranslatedColumnName(familyBytes, qualifierBytes);
+  }
+
+  @Override
+  public byte[] translateLocalityGroup(LocalityGroupLayout localityGroup) {
+    throw new UnsupportedOperationException("Cannot translate name of Cassandra locality group.");
   }
 }

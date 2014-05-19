@@ -54,10 +54,10 @@ import org.kiji.schema.impl.cassandra.CassandraDataRequestAdapter.ColumnResultSe
 import org.kiji.schema.impl.cassandra.CassandraDataRequestAdapter.ColumnRow;
 import org.kiji.schema.layout.CellSpec;
 import org.kiji.schema.layout.ColumnReaderSpec;
+import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
-import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
-import org.kiji.schema.layout.impl.cassandra.CassandraLayoutCapsule;
+import org.kiji.schema.layout.impl.LayoutCapsule;
 
 /**
  * Reads from a kiji table by sending the requests directly to the C* tables.
@@ -107,7 +107,7 @@ public final class CassandraKijiTableReader implements KijiTableReader {
   private static final class ReaderLayoutCapsule {
     private final CellDecoderProvider mCellDecoderProvider;
     private final KijiTableLayout mLayout;
-    private final CassandraColumnNameTranslator mTranslator;
+    private final KijiColumnNameTranslator mTranslator;
 
     /**
      * Default constructor.
@@ -120,7 +120,7 @@ public final class CassandraKijiTableReader implements KijiTableReader {
     private ReaderLayoutCapsule(
         final CellDecoderProvider cellDecoderProvider,
         final KijiTableLayout layout,
-        final CassandraColumnNameTranslator translator) {
+        final KijiColumnNameTranslator translator) {
       mCellDecoderProvider = cellDecoderProvider;
       mLayout = layout;
       mTranslator = translator;
@@ -130,7 +130,7 @@ public final class CassandraKijiTableReader implements KijiTableReader {
      * Get the column name translator for the current layout.
      * @return the column name translator for the current layout.
      */
-    private CassandraColumnNameTranslator getColumnNameTranslator() {
+    private KijiColumnNameTranslator getColumnNameTranslator() {
       return mTranslator;
     }
 
@@ -154,10 +154,10 @@ public final class CassandraKijiTableReader implements KijiTableReader {
   }
 
   /** Provides for the updating of this Reader in response to a table layout update. */
-  private final class InnerLayoutUpdater implements LayoutConsumer<CassandraLayoutCapsule> {
+  private final class InnerLayoutUpdater implements LayoutConsumer {
     /** {@inheritDoc} */
     @Override
-    public void update(CassandraLayoutCapsule capsule) throws IOException {
+    public void update(LayoutCapsule capsule) throws IOException {
       final CellDecoderProvider provider;
       if (null != mCellSpecOverrides) {
         provider = new CellDecoderProvider(
@@ -187,7 +187,10 @@ public final class CassandraKijiTableReader implements KijiTableReader {
             capsule.getLayout().getDesc().getLayoutId());
       }
       mReaderLayoutCapsule =
-          new ReaderLayoutCapsule(provider, capsule.getLayout(), capsule.getColumnNameTranslator());
+          new ReaderLayoutCapsule(
+              provider,
+              capsule.getLayout(),
+              capsule.getKijiColumnNameTranslator());
     }
   }
 

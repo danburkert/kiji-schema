@@ -139,10 +139,10 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
 
       CassandraDataRequestAdapter adapter = new CassandraDataRequestAdapter(
           dataRequestAllVersions,
-          mSharedTable.getColumnNameTranslator());
+          mSharedTable.getKijiColumnNameTranslator());
 
       List<ColumnResultSet> results = adapter.doGet(mSharedTable, eid);
-      List<ColumnRow> allRows = Lists.newArrayList();
+      mAllRows = Lists.newArrayList();
 
       // Note that we do not order the results there, since the other classes in Kiji do not
       // preserve row ordering in results from Cassandra either.  We could modify that behavior to
@@ -150,10 +150,9 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
       // filtering).
       for (ColumnResultSet res : results) {
         for (Row row : res.getResultSet().all()) {
-          allRows.add(new ColumnRow(res.getColumn(), row));
+          mAllRows.add(new ColumnRow(res.getColumn(), row));
         }
       }
-      mAllRows = allRows;
 
     } catch (Exception e) {
       throw new KijiIOException(e);
@@ -176,6 +175,8 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
     final EntityId eid = mEntityIdFactory.getEntityId("row0");
 
     List<ColumnRow> allRows = getRowsAppleBananaCarrot(eid);
+
+    LOG.info("rows: {}.", allRows.size());
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create().withMaxVersions(1).add("family", "qual0"))

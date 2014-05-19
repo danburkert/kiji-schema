@@ -43,7 +43,8 @@ import org.kiji.schema.avro.RowKeyComponent;
 import org.kiji.schema.avro.RowKeyFormat2;
 import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.layout.KijiTableLayout;
-import org.kiji.schema.layout.impl.cassandra.CassandraColumnName;
+import org.kiji.schema.layout.TranslatedColumnName;
+import org.kiji.schema.util.ByteUtils;
 
 /**
  * Provides utitity methods and constants for constructing CQL statements.
@@ -143,8 +144,8 @@ public final class CQLUtils {
       default: throw new IllegalArgumentException(
           String.format("Unknown row key encoding %s.", keyFormat.getEncoding()));
     }
-    map.put(FAMILY_COL, STRING_TYPE);
-    map.put(QUALIFIER_COL, STRING_TYPE);
+    map.put(FAMILY_COL, BYTES_TYPE);
+    map.put(QUALIFIER_COL, BYTES_TYPE);
     map.put(VERSION_COL, LONG_TYPE);
     return map;
   }
@@ -180,8 +181,8 @@ public final class CQLUtils {
       EntityId entityID) {
     RowKeyFormat2 keyFormat = (RowKeyFormat2) layout.getDesc().getKeysFormat();
     switch (keyFormat.getEncoding()) {
-      case RAW: return ImmutableList.of(
-          (Object) CassandraByteUtil.bytesToByteBuffer((byte[]) entityID.getComponentByIndex(0)));
+      case RAW: return ImmutableList.<Object>of(
+          ByteBuffer.wrap((byte[]) entityID.getComponentByIndex(0)));
       case FORMATTED: return entityID.getComponents();
       default: throw new IllegalArgumentException(
           String.format("Unknown row key encoding %s.", keyFormat.getEncoding()));
@@ -298,7 +299,7 @@ public final class CQLUtils {
 
     switch (keyFormat.getEncoding()) {
       case RAW: {
-        components = new Object[] {CassandraByteUtil.byteBuffertoBytes(row.getBytes(RAW_KEY_COL))};
+        components = new Object[] { ByteUtils.toBytes(row.getBytes(RAW_KEY_COL)) };
         break;
       }
       case FORMATTED: {
@@ -461,7 +462,7 @@ public final class CQLUtils {
       KijiTableLayout layout,
       CassandraTableName tableName,
       EntityId entityId,
-      CassandraColumnName columnName,
+      TranslatedColumnName columnName,
       Long version,
       Long minVersion,
       Long maxVersion,
@@ -516,9 +517,9 @@ public final class CQLUtils {
 
     List<Object> bindValues = Lists.newArrayList();
     bindValues.addAll(getEntityIDComponentValues(layout, entityId));
-    bindValues.add(columnName.getFamily());
+    bindValues.add(ByteBuffer.wrap(columnName.getFamily()));
     if (columnName.getQualifier() != null) {
-      bindValues.add(columnName.getQualifier());
+      bindValues.add(ByteBuffer.wrap(columnName.getQualifier()));
     }
     if (version != null) {
       bindValues.add(version);
@@ -549,7 +550,7 @@ public final class CQLUtils {
       CassandraAdmin admin,
       KijiTableLayout layout,
       CassandraTableName tableName,
-      CassandraColumnName columnName) {
+      TranslatedColumnName columnName) {
 
     // statement being built:
     //  "SELECT token(${PartitionKeyComponent1}, ${PartitionKeyComponent2} ...),
@@ -592,9 +593,9 @@ public final class CQLUtils {
     LOG.debug("Prepared query string for single column scan: {}", query);
 
     List<Object> bindValues = Lists.newArrayList();
-    bindValues.add(columnName.getFamily());
+    bindValues.add(ByteBuffer.wrap(columnName.getFamily()));
     if (columnName.getQualifier() != null) {
-      bindValues.add(columnName.getQualifier());
+      bindValues.add(ByteBuffer.wrap(columnName.getQualifier()));
     }
 
     return admin.getPreparedStatement(query).bind(bindValues.toArray());
@@ -649,7 +650,7 @@ public final class CQLUtils {
       KijiTableLayout layout,
       CassandraTableName tableName,
       EntityId entityID,
-      CassandraColumnName columnName,
+      TranslatedColumnName columnName,
       long amount
   ) {
 
@@ -676,8 +677,8 @@ public final class CQLUtils {
     List<Object> bindValues = Lists.newArrayList();
     bindValues.add(amount);
     bindValues.addAll(getEntityIDComponentValues(layout, entityID));
-    bindValues.add(columnName.getFamily());
-    bindValues.add(columnName.getQualifier());
+    bindValues.add(ByteBuffer.wrap(columnName.getFamily()));
+    bindValues.add(ByteBuffer.wrap(columnName.getQualifier()));
     bindValues.add(KConstants.CASSANDRA_COUNTER_TIMESTAMP);
 
     // TODO: ask Clint if going through the admin is necessary in this case.
@@ -702,7 +703,7 @@ public final class CQLUtils {
       KijiTableLayout layout,
       CassandraTableName tableName,
       EntityId entityId,
-      CassandraColumnName columnName,
+      TranslatedColumnName columnName,
       Long version,
       ByteBuffer value,
       Integer ttl
@@ -735,8 +736,8 @@ public final class CQLUtils {
 
     List<Object> bindValues = Lists.newArrayList();
     bindValues.addAll(getEntityIDComponentValues(layout, entityId));
-    bindValues.add(columnName.getFamily());
-    bindValues.add(columnName.getQualifier());
+    bindValues.add(ByteBuffer.wrap(columnName.getFamily()));
+    bindValues.add(ByteBuffer.wrap(columnName.getQualifier()));
     bindValues.add(version);
     bindValues.add(value);
 
@@ -763,7 +764,7 @@ public final class CQLUtils {
       KijiTableLayout layout,
       CassandraTableName tableName,
       EntityId entityID,
-      CassandraColumnName columnName,
+      TranslatedColumnName columnName,
       long version
   ) {
     Preconditions.checkNotNull(columnName.getQualifier());
@@ -793,7 +794,7 @@ public final class CQLUtils {
       KijiTableLayout layout,
       CassandraTableName tableName,
       EntityId entityID,
-      CassandraColumnName columnName
+      TranslatedColumnName columnName
   ) {
     return getDeleteStatement(
         admin,
@@ -840,8 +841,8 @@ public final class CQLUtils {
       KijiTableLayout layout,
       CassandraTableName tableName,
       EntityId entityId,
-      String family,
-      String qualifier,
+      byte[] family,
+      byte[] qualifier,
       Long version
   ) {
 
@@ -877,10 +878,10 @@ public final class CQLUtils {
     List<Object> bindValues = Lists.newArrayList();
     bindValues.addAll(getEntityIDComponentValues(layout, entityId));
     if (family != null) {
-      bindValues.add(family);
+      bindValues.add(ByteBuffer.wrap(family));
     }
     if (qualifier != null) {
-      bindValues.add(qualifier);
+      bindValues.add(ByteBuffer.wrap(qualifier));
     }
     if (version != null) {
       bindValues.add(version);

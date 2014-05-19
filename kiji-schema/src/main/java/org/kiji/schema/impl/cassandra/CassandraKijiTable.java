@@ -46,11 +46,10 @@ import org.kiji.schema.KijiWriterFactory;
 import org.kiji.schema.avro.RowKeyFormat;
 import org.kiji.schema.avro.RowKeyFormat2;
 import org.kiji.schema.impl.LayoutConsumer;
+import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.LayoutCapsule;
 import org.kiji.schema.layout.impl.TableLayoutMonitor;
-import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
-import org.kiji.schema.layout.impl.cassandra.CassandraLayoutCapsule;
 import org.kiji.schema.util.Debug;
 import org.kiji.schema.util.DebugResourceTracker;
 import org.kiji.schema.util.VersionInfo;
@@ -111,7 +110,7 @@ public final class CassandraKijiTable implements KijiTable {
   private final KijiReaderFactory mReaderFactory;
 
   /** Monitor for the layout of this table. */
-  private final TableLayoutMonitor<CassandraLayoutCapsule> mLayoutMonitor;
+  private final TableLayoutMonitor mLayoutMonitor;
 
   /**
    * Construct an opened Kiji table stored in Cassandra.
@@ -127,7 +126,7 @@ public final class CassandraKijiTable implements KijiTable {
       CassandraKiji kiji,
       String tableName,
       CassandraAdmin admin,
-      TableLayoutMonitor<CassandraLayoutCapsule> layoutMonitor)
+      TableLayoutMonitor layoutMonitor)
       throws IOException {
     mKiji = kiji;
     mKiji.retain();
@@ -205,7 +204,7 @@ public final class CassandraKijiTable implements KijiTable {
    * @param consumer the LayoutConsumer to be registered.
    * @throws java.io.IOException in case of an error updating the LayoutConsumer.
    */
-  public void registerLayoutConsumer(LayoutConsumer<CassandraLayoutCapsule> consumer)
+  public void registerLayoutConsumer(LayoutConsumer consumer)
       throws IOException {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
@@ -219,7 +218,7 @@ public final class CassandraKijiTable implements KijiTable {
    *
    * @param consumer the LayoutConsumer to unregister.
    */
-  public void unregisterLayoutConsumer(LayoutConsumer<CassandraLayoutCapsule> consumer) {
+  public void unregisterLayoutConsumer(LayoutConsumer consumer) {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot unregister a layout consumer from a KijiTable in state %s.", state);
@@ -254,8 +253,8 @@ public final class CassandraKijiTable implements KijiTable {
    * operation, you should use {@link #getLayoutCapsule()} to ensure consistent state.
    * @return the column name translator for the current layout of this table.
    */
-  public CassandraColumnNameTranslator getColumnNameTranslator() {
-    return getLayoutCapsule().getColumnNameTranslator();
+  public KijiColumnNameTranslator getKijiColumnNameTranslator() {
+    return getLayoutCapsule().getKijiColumnNameTranslator();
   }
 
   /**
@@ -263,7 +262,7 @@ public final class CassandraKijiTable implements KijiTable {
    * corresponding ColumnNameTranslator.  Do not cache this object or its contents.
    * @return a layout capsule representing the current state of this table's layout.
    */
-  public CassandraLayoutCapsule getLayoutCapsule() {
+  public LayoutCapsule getLayoutCapsule() {
     return mLayoutMonitor.getLayoutCapsule();
   }
 

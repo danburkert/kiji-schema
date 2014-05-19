@@ -31,9 +31,12 @@ import com.google.common.collect.ImmutableSet;
 
 import org.kiji.annotations.ApiAudience;
 import org.kiji.annotations.ApiStability;
+import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiURI;
+import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.avro.LocalityGroupDesc;
 import org.kiji.schema.layout.KijiTableLayout;
+import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout;
 import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout;
 
 /**
@@ -265,12 +268,32 @@ public final class CassandraTableName {
    */
   public static CassandraTableName getKijiLocalityGroupTableName(
       KijiURI tableURI,
-      String localityGroup) {
+      LocalityGroupLayout localityGroup) {
     return new CassandraTableName(
         TableType.KIJI_TABLE_LOCALITY_GROUP,
         tableURI.getInstance(),
         tableURI.getTable(),
-        localityGroup);
+        localityGroup.getName());
+  }
+
+  /**
+   * Helper function for retrieving the Cassandra table which holds a Kiji column.
+   *
+   * @param tableURI The name of the Kiji table.
+   * @param column contained in the locality group to retrieve.
+   * @param layout of the Kiji table.
+   * @return The name of the Cassandra table used to store the user-space Kiji table's column.
+   */
+  public static CassandraTableName getKijiLocalityGroupTableName(
+      KijiURI tableURI,
+      KijiColumnName column,
+      KijiTableLayout layout
+  ) throws NoSuchColumnException {
+    final FamilyLayout family = layout.getFamilyMap().get(column.getFamily());
+    if (family == null) {
+      throw new NoSuchColumnException(String.format("Family for column %s no found.", column));
+    }
+    return getKijiLocalityGroupTableName(tableURI, family.getLocalityGroup());
   }
 
   /**
@@ -298,43 +321,45 @@ public final class CassandraTableName {
       KijiURI tableURI,
       KijiTableLayout tableLayout) {
     ImmutableSet.Builder<CassandraTableName> tableNames = ImmutableSet.builder();
-    for (LocalityGroupDesc localityGroup : tableLayout.getDesc().getLocalityGroups()) {
-      tableNames.add(getKijiLocalityGroupTableName(tableURI, localityGroup.getName()));
+    for (LocalityGroupLayout localityGroup : tableLayout.getLocalityGroups()) {
+      tableNames.add(getKijiLocalityGroupTableName(tableURI, localityGroup));
     }
     return tableNames.build();
-  }
-
-  /**
-   * Get a map of Kiji column family to the name of the Cassandra table name which holds it.
-   *
-   * @param tableURI of table.
-   * @param tableLayout of table.
-   * @return a map of Kiji column family to Cassandra table name.
-   */
-  public static Map<String, CassandraTableName> getKijiColumnFamilyLocalityGroups(
-      KijiURI tableURI,
-      KijiTableLayout tableLayout) {
-    ImmutableMap.Builder<String, CassandraTableName> familyTables = ImmutableMap.builder();
-
-    for (Entry<String, FamilyLayout> familyLayout : tableLayout.getFamilyMap().entrySet()) {
-      String columnFamily = familyLayout.getKey();
-      String localityGroup = familyLayout.getValue().getLocalityGroup().getName();
-      CassandraTableName table = getKijiLocalityGroupTableName(tableURI, localityGroup);
-      familyTables.put(columnFamily, table);
-    }
-
-    return familyTables.build();
   }
 
   /**
    * Get the name of the keyspace (formatted for CQL) in C* for the Kiji instance specified in the
    * URI.
    *
-   * @param kijiURI The name of the Kiji instance.
+   * @param instanceURI The name of the Kiji instance.
    * @return The name of the C* keyspace.
    */
-  public static String getCassandraKeyspace(KijiURI kijiURI) {
-    return String.format("\"%s_%s\"", KEYSPACE_PREFIX, kijiURI.getInstance());
+  public static String getQuotedKeyspace(KijiURI instanceURI) {
+    return appendCassandraKeyspace(new StringBuilder("\""), instanceURI.getInstance())
+        .append("\"")
+        .toString();
+  }
+
+  /**
+   * Get the name of the keyspace (formatted for CQL) in C* for the Kiji instance specified in the
+   * URI.
+   *
+   * @param instanceURI The name of the Kiji instance.
+   * @return The name of the C* keyspace.
+   */
+  public static String getKeyspace(KijiURI instanceURI) {
+    return appendCassandraKeyspace(new StringBuilder(), instanceURI.getInstance()).toString();
+  }
+
+  /**
+   * Add the unquoted Cassandra keyspace to the provided StringBuilder, and return it.
+   *
+   * @param builder to add the Cassandra keyspace to.
+   * @return the builder.
+   */
+  private static StringBuilder appendCassandraKeyspace(StringBuilder builder, String instance) {
+    // "${KEYSPACE_PREFIX}_${instanceName}"
+    return builder.append(KEYSPACE_PREFIX).append('_').append(instance);
   }
 
   /**
@@ -343,7 +368,7 @@ public final class CassandraTableName {
    * @return the keyspace of this Cassandra table name.
    */
   public String getKeyspace() {
-    return appendCassandraKeyspace(new StringBuilder()).toString();
+    return appendCassandraKeyspace(new StringBuilder(), mInstance).toString();
   }
 
   /**
@@ -354,18 +379,7 @@ public final class CassandraTableName {
    * @return the quoted keyspace of this Cassandra table name.
    */
   public String getQuotedKeyspace() {
-    return appendCassandraKeyspace(new StringBuilder().append('"')).append('"').toString();
-  }
-
-  /**
-   * Add the unquoted Cassandra keyspace to the provided StringBuilder, and return it.
-   *
-   * @param builder to add the Cassandra keyspace to.
-   * @return the builder.
-   */
-  private StringBuilder appendCassandraKeyspace(StringBuilder builder) {
-    // "${KEYSPACE_PREFIX}_${instanceName}"
-    return builder.append(KEYSPACE_PREFIX).append('_').append(mInstance);
+    return appendCassandraKeyspace(new StringBuilder("\""), mInstance).append('"').toString();
   }
 
   /**
@@ -421,7 +435,7 @@ public final class CassandraTableName {
    * Gets the Kiji locality group of this Cassandra table.
    *
    * Note: If the locality group is translated by the
-   * {@link org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator}, this will be
+   * {@link org.kiji.schema.layout.KijiColumnNameTranslator}, this will be
    * the translated version.
    *
    * @return the Kiji locality group.
@@ -442,7 +456,7 @@ public final class CassandraTableName {
   public String toString() {
     final StringBuilder builder = new StringBuilder();
     builder.append('"');
-    appendCassandraKeyspace(builder);
+    appendCassandraKeyspace(builder, mInstance);
     builder.append("\".\"");
     appendCassandraTableName(builder);
     builder.append('"');

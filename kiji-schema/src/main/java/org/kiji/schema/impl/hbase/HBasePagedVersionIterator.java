@@ -209,7 +209,7 @@ public class HBasePagedVersionIterator<T> implements Iterator<KijiCell<T>> {
   private final long mMinTimestamp;
   private final long mMaxTimestamp;
   private final KijiCellDecoder<T> mCellDecoder;
-  private final ColumnNameTranslator mColumnNameTranslator;
+  private final KijiColumnNameTranslator mColumnNameTranslator;
   private final KijiTableLayout mLayout;
   private final HBaseKijiTable mTable;
   private final HBaseQualifierIterator mQualifierIterator;
@@ -237,7 +237,7 @@ public class HBasePagedVersionIterator<T> implements Iterator<KijiCell<T>> {
       final KijiDataRequest dataRequest,
       final KijiColumnName column,
       final KijiCellDecoder<T> cellDecoder,
-      final ColumnNameTranslator columnNameTranslator,
+      final KijiColumnNameTranslator columnNameTranslator,
       final KijiTableLayout layout,
       final HBaseKijiTable table,
       final HBaseQualifierIterator qualifierIterator // Optional.

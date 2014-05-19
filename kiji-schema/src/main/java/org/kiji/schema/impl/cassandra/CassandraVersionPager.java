@@ -153,7 +153,7 @@ public final class CassandraVersionPager implements KijiPager {
     // Populate the row iterator with a Cassandra SELECT query.
     CassandraDataRequestAdapter adapter = new CassandraDataRequestAdapter(
         mDataRequest,
-        mTable.getColumnNameTranslator());
+        mTable.getKijiColumnNameTranslator());
 
     // Should be only a single ResultSet here, because this was a data request for a single column.
     try {

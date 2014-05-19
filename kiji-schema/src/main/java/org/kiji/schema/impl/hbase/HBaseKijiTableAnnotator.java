@@ -186,7 +186,7 @@ public final class HBaseKijiTableAnnotator implements KijiTableAnnotator {
       final HBaseKijiTable table,
       final String metaTableKey
   ) throws NoSuchColumnException {
-    final HBaseColumnNameTranslator translator = table.getColumnNameTranslator();
+    final KijiColumnNameTranslator translator = table.getColumnNameTranslator();
     // Everything between the prefix and the annotation key.
     final byte[] translatedColumnBytes =
         Bytes.toBytes(

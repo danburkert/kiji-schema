@@ -306,8 +306,6 @@ public final class TableLayoutMonitor implements AutoReferenceCounted {
 
     private final KijiSchemaTable mSchemaTable;
 
-    private final Function<KijiTableLayout, T> mLayoutCapsuleFactory;
-
     /**
      * Create an InnerLayoutUpdater to update the layout of this table in response to a layout node
      * change in ZooKeeper.

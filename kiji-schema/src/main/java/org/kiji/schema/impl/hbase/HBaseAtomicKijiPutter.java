@@ -37,7 +37,6 @@ import org.kiji.schema.EntityId;
 import org.kiji.schema.KijiCellEncoder;
 import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
-import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.impl.LayoutConsumer;
 import org.kiji.schema.impl.hbase.HBaseKijiTableWriter.WriterLayoutCapsule;
 import org.kiji.schema.layout.LayoutUpdatedException;
@@ -246,7 +245,7 @@ public final class HBaseAtomicKijiPutter implements AtomicKijiPutter {
     final WriterLayoutCapsule capsule = getWriterLayoutCapsule();
     final KijiColumnName kijiColumnName = new KijiColumnName(family, qualifier);
     final TranslatedColumnName columnName =
-        capsule.getColumnNameTranslator().toTranslatedColumnName(kijiColumnName);
+        capsule.getKijiColumnNameTranslator().toTranslatedColumnName(kijiColumnName);
     final byte[] encoded;
 
     // If passed value is null, then let encoded value be null.
@@ -300,7 +299,7 @@ public final class HBaseAtomicKijiPutter implements AtomicKijiPutter {
     final WriterLayoutCapsule capsule = getWriterLayoutCapsule();
     final KijiColumnName kijiColumnName = new KijiColumnName(family, qualifier);
     final TranslatedColumnName columnName =
-        capsule.getColumnNameTranslator().toTranslatedColumnName(kijiColumnName);
+        capsule.getKijiColumnNameTranslator().toTranslatedColumnName(kijiColumnName);
 
     final KijiCellEncoder cellEncoder =
         capsule.getCellEncoderProvider().getEncoder(family, qualifier);

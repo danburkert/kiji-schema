@@ -37,8 +37,8 @@ import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiDataRequest;
 import org.kiji.schema.KijiTableReader;
 import org.kiji.schema.cassandra.CassandraTableName;
-import org.kiji.schema.layout.impl.cassandra.CassandraColumnName;
-import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
+import org.kiji.schema.layout.KijiColumnNameTranslator;
+import org.kiji.schema.layout.TranslatedColumnName;
 
 /**
  * Wraps a KijiDataRequest to expose methods that generate meaningful objects in Cassandra land.
@@ -51,7 +51,7 @@ public class CassandraDataRequestAdapter {
   private final KijiDataRequest mKijiDataRequest;
 
   /** The translator for generating Cassandra column names. */
-  private final CassandraColumnNameTranslator mColumnNameTranslator;
+  private final KijiColumnNameTranslator mColumnNameTranslator;
 
   /**
 
@@ -64,7 +64,7 @@ public class CassandraDataRequestAdapter {
    */
   public CassandraDataRequestAdapter(
       KijiDataRequest kijiDataRequest,
-      CassandraColumnNameTranslator translator) {
+      KijiColumnNameTranslator translator) {
     mKijiDataRequest = kijiDataRequest;
     mColumnNameTranslator = translator;
   }
@@ -175,8 +175,8 @@ public class CassandraDataRequestAdapter {
       // Translate the Kiji column name.
       KijiColumnName kijiColumnName = new KijiColumnName(column.getFamily(), column.getQualifier());
       LOG.info("Kiji column name for the requested column is " + kijiColumnName);
-      CassandraColumnName columnName = mColumnNameTranslator.toCassandraColumnName(kijiColumnName);
-      String qualifier = columnName.getQualifier();
+      TranslatedColumnName columnName = mColumnNameTranslator.toTranslatedColumnName(kijiColumnName);
+      final byte[] qualifier = columnName.getQualifier();
 
       // TODO: Optimize these queries such that we need only one RPC per column family.
       // (Right now a data request that asks for "info:foo" and "info:bar" would trigger two
@@ -189,7 +189,8 @@ public class CassandraDataRequestAdapter {
         tableNames.add(
             CassandraTableName.getKijiLocalityGroupTableName(
                 table.getURI(),
-                columnName.getLocalityGroup()));
+                kijiColumnName,
+                table.getLayout()));
       }
 
       if (maybeContainsCounterValues(table, kijiColumnName)) {
@@ -315,15 +316,15 @@ public class CassandraDataRequestAdapter {
    * Wraps the requested Cassandra column and the result rows.
    */
   public static final class ColumnRow {
-    private final CassandraColumnName mColumn;
+    private final TranslatedColumnName mColumn;
     private final Row mRow;
 
-    public ColumnRow(CassandraColumnName column, Row row) {
+    public ColumnRow(TranslatedColumnName column, Row row) {
       mColumn = column;
       mRow = row;
     }
 
-    public CassandraColumnName getColumn() {
+    public TranslatedColumnName getColumn() {
       return mColumn;
     }
 
@@ -341,15 +342,15 @@ public class CassandraDataRequestAdapter {
    * Wraps the requested Cassandra column and the result set containing the result rows.
    */
   public static final class ColumnResultSet {
-    private final CassandraColumnName mColumn;
+    private final TranslatedColumnName mColumn;
     private final ResultSetFuture mResultSetFuture;
 
-    public ColumnResultSet(CassandraColumnName column, ResultSetFuture resultSetFuture) {
+    public ColumnResultSet(TranslatedColumnName column, ResultSetFuture resultSetFuture) {
       mColumn = column;
       mResultSetFuture = resultSetFuture;
     }
 
-    public CassandraColumnName getColumn() {
+    public TranslatedColumnName getColumn() {
       return mColumn;
     }
 

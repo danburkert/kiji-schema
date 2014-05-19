@@ -48,6 +48,7 @@ import org.kiji.schema.avro.SystemTableBackup;
 import org.kiji.schema.avro.SystemTableEntry;
 import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.impl.Versions;
+import org.kiji.schema.util.ByteUtils;
 import org.kiji.schema.util.CloseableIterable;
 import org.kiji.schema.util.ProtocolVersion;
 
@@ -172,8 +173,7 @@ public final class CassandraSystemTable implements KijiSystemTable {
           + "but got back " + rows
     );
     if (rows.size() == 1) {
-      Row row = rows.get(0);
-      return CassandraByteUtil.byteBuffertoBytes(row.getBytes(VALUE_COLUMN));
+      return ByteUtils.toBytes(rows.get(0).getBytes(VALUE_COLUMN));
     }
     return null;
   }
@@ -185,7 +185,7 @@ public final class CassandraSystemTable implements KijiSystemTable {
     Preconditions.checkNotNull(value);
 
     // TODO: Check for success?
-    ByteBuffer valBytes = CassandraByteUtil.bytesToByteBuffer(value);
+    ByteBuffer valBytes = ByteBuffer.wrap(value);
     mAdmin.execute(mPreparedStatementPutValue.bind(key, valBytes));
   }
 
@@ -376,7 +376,7 @@ public final class CassandraSystemTable implements KijiSystemTable {
     public SimpleEntry<String, byte[]> next() {
       Row next = mRowIterator.next();
       String key = next.getString(KEY_COLUMN);
-      byte[] value = CassandraByteUtil.byteBuffertoBytes(next.getBytes(VALUE_COLUMN));
+      byte[] value = ByteUtils.toBytes(next.getBytes(VALUE_COLUMN));
       return new SimpleEntry<String, byte[]>(key, value);
     }
 
