@@ -22,7 +22,7 @@
  *
  * <p>
  * Users generally shouldn't need to reference any of these classes directly, but rather use the
- * classes presented by the {@link org.kiji.schema} package.
+ * classes presented by the {@link org.kiji.schema.layout} package.
  * </p>
  */
 package org.kiji.schema.layout.impl;

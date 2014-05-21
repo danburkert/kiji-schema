@@ -25,6 +25,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
@@ -39,6 +40,7 @@ import org.kiji.schema.KijiIOException;
 import org.kiji.schema.KijiMetaTable;
 import org.kiji.schema.KijiSchemaTable;
 import org.kiji.schema.KijiURI;
+import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.util.AutoReferenceCountedReaper;
 import org.kiji.schema.util.JvmId;
 import org.kiji.schema.util.ProtocolVersion;
@@ -47,9 +49,12 @@ import org.kiji.schema.zookeeper.InstanceUserRegistration;
 /**
  * A Kiji instance monitor. Registers a client as an instance user in ZooKeeper, and provides
  * table layout monitors.
+ *
+ * @param <T> concrete type of {@link LayoutCapsule} cached by table layout monitors owned by this
+ *           instance monitor.
  */
 @ApiAudience.Private
-public final class InstanceMonitor implements Closeable {
+public final class InstanceMonitor<T extends LayoutCapsule<?>> implements Closeable {
 
   private static final Logger LOG = LoggerFactory.getLogger(InstanceMonitor.class);
 
@@ -67,9 +72,11 @@ public final class InstanceMonitor implements Closeable {
 
   private final CuratorFramework mZKClient;
 
-  private final LoadingCache<String, TableLayoutMonitor> mTableLayoutMonitors;
+  private final LoadingCache<String, TableLayoutMonitor<T>> mTableLayoutMonitors;
 
   private final InstanceUserRegistration mUserRegistration;
+
+  private final Function<KijiTableLayout, T> mLayoutCapsuleFactory;
 
   /** States of an instance monitor. */
   private static enum State {
@@ -90,6 +97,7 @@ public final class InstanceMonitor implements Closeable {
    *
    * @param systemVersion of instance user.
    * @param instanceURI uri of instance to monitor.
+   * @param layoutCapsuleFactory function to create concrete instances of {@link LayoutCapsule}.
    * @param schemaTable of instance.
    * @param metaTable of instance.
    * @param zkClient ZooKeeper connection to use for monitoring, or null if ZooKeeper is
@@ -98,11 +106,13 @@ public final class InstanceMonitor implements Closeable {
   public InstanceMonitor(
       ProtocolVersion systemVersion,
       KijiURI instanceURI,
+      Function<KijiTableLayout, T> layoutCapsuleFactory,
       KijiSchemaTable schemaTable,
       KijiMetaTable metaTable,
       CuratorFramework zkClient) {
     mUserID = generateInstanceUserID();
     mInstanceURI = instanceURI;
+    mLayoutCapsuleFactory = layoutCapsuleFactory;
     mSchemaTable = schemaTable;
     mMetaTable = metaTable;
     mZKClient = zkClient;
@@ -202,17 +212,23 @@ public final class InstanceMonitor implements Closeable {
    * KijiTableLayout CacheLoader that adds a ColumnNameTranslator to a cache in the same step.
    */
   private final class TableLayoutMonitorCacheLoader
-      extends CacheLoader<String, TableLayoutMonitor> {
+      extends CacheLoader<String, TableLayoutMonitor<T>> {
     /** {@inheritDoc}. */
     @Override
-    public TableLayoutMonitor load(String tableName) throws IOException {
+    public TableLayoutMonitor<T> load(String tableName) throws IOException {
       Preconditions.checkState(mState.get() == State.OPEN, "InstanceMonitor is closed.");
       KijiURI tableURI = KijiURI.newBuilder(mInstanceURI).withTableName(tableName).build();
 
       LOG.debug("Creating TableLayoutMonitor for table {} with userID {}.", tableURI, mUserID);
 
-      TableLayoutMonitor monitor =
-          new TableLayoutMonitor(tableURI, mSchemaTable, mMetaTable, mZKClient).start();
+      TableLayoutMonitor<T> monitor =
+          new TableLayoutMonitor<T>(
+              tableURI,
+              mLayoutCapsuleFactory,
+              mSchemaTable,
+              mMetaTable,
+              mZKClient)
+            .start();
 
       mReaper.registerAutoReferenceCounted(monitor);
 

@@ -63,6 +63,8 @@ import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.ColumnId;
 import org.kiji.schema.layout.impl.HTableSchemaTranslator;
 import org.kiji.schema.layout.impl.InstanceMonitor;
+import org.kiji.schema.layout.impl.hbase.HBaseLayoutCapsule;
+import org.kiji.schema.layout.impl.hbase.HBaseLayoutCapsule.HBaseLayoutCapsuleFactory;
 import org.kiji.schema.security.KijiSecurityException;
 import org.kiji.schema.security.KijiSecurityManager;
 import org.kiji.schema.util.Debug;
@@ -149,7 +151,7 @@ public final class HBaseKiji implements Kiji {
   private final CuratorFramework mZKClient;
 
   /** Provides table layout updates and user registrations. */
-  private final InstanceMonitor mInstanceMonitor;
+  private final InstanceMonitor<HBaseLayoutCapsule> mInstanceMonitor;
 
   /**
    * Cached copy of the system version, oblivious to system table mutation while the connection to
@@ -258,9 +260,10 @@ public final class HBaseKiji implements Kiji {
       mZKClient = null;
     }
 
-    mInstanceMonitor = new InstanceMonitor(
+    mInstanceMonitor = new InstanceMonitor<HBaseLayoutCapsule>(
         mSystemVersion,
         mURI,
+        HBaseLayoutCapsuleFactory.get(),
         mSchemaTable,
         mMetaTable,
         mZKClient);

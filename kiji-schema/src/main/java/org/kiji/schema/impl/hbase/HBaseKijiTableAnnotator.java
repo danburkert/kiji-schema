@@ -19,6 +19,7 @@
 package org.kiji.schema.impl.hbase;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
@@ -27,6 +28,7 @@ import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+import org.apache.commons.lang.ArrayUtils;
 import org.apache.hadoop.hbase.util.Bytes;
 
 import org.kiji.annotations.ApiAudience;
@@ -35,7 +37,7 @@ import org.kiji.schema.KijiTable;
 import org.kiji.schema.KijiTableAnnotator;
 import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.hbase.HBaseColumnName;
-import org.kiji.schema.layout.KijiColumnNameTranslator;
+import org.kiji.schema.layout.HBaseColumnNameTranslator;
 
 /** HBase implementation of {@link org.kiji.schema.KijiTableAnnotator}. */
 @ApiAudience.Private
@@ -141,11 +143,17 @@ public final class HBaseKijiTableAnnotator implements KijiTableAnnotator {
       final KijiColumnName columnName,
       final String key
   ) throws NoSuchColumnException {
-    final KijiColumnNameTranslator translator = table.getColumnNameTranslator();
+    final HBaseColumnNameTranslator translator = table.getColumnNameTranslator();
     Preconditions.checkArgument(isValidAnnotationKey(key), "Annotation key: %s does not conform to "
         + "required pattern: %s", key, ALLOWED_ANNOTATION_KEY_PATTERN);
-    return String.format("%s%s.%s",
-        METATABLE_KEY_PREFIX, translator.toHBaseColumnName(columnName), key);
+
+    HBaseColumnName hbaseColumnName = translator.toHBaseColumnName(columnName);
+
+    return String.format("%s%s:%s.%s",
+        METATABLE_KEY_PREFIX,
+        Bytes.toString(hbaseColumnName.getFamily()),
+        Bytes.toString(hbaseColumnName.getQualifier()),
+        key);
   }
 
   /**
@@ -176,14 +184,19 @@ public final class HBaseKijiTableAnnotator implements KijiTableAnnotator {
       final HBaseKijiTable table,
       final String metaTableKey
   ) throws NoSuchColumnException {
-    final KijiColumnNameTranslator translator = table.getColumnNameTranslator();
+    final HBaseColumnNameTranslator translator = table.getColumnNameTranslator();
     // Everything between the prefix and the annotation key.
-    final String hbaseColumnString =
-        metaTableKey.substring(METATABLE_KEY_PREFIX.length(), metaTableKey.lastIndexOf("."));
-    // Everything before the first ':'.
-    final String hbaseFamily = hbaseColumnString.substring(0, hbaseColumnString.indexOf(":"));
-    // Everything after the first ':'. The +1 excludes the ':' itself.
-    final String hbaseQualifier = hbaseColumnString.substring(hbaseColumnString.indexOf(":") + 1);
+    final byte[] hbaseColumnBytes =
+        Bytes.toBytes(
+            metaTableKey.substring(
+                METATABLE_KEY_PREFIX.length(),
+                metaTableKey.lastIndexOf(".")));
+
+    int index = ArrayUtils.indexOf(hbaseColumnBytes, (byte) ':');
+
+    byte[] hbaseFamily = Arrays.copyOfRange(hbaseColumnBytes, 0, index);
+    byte[] hbaseQualifier =
+        Arrays.copyOfRange(hbaseColumnBytes, index + 1, hbaseColumnBytes.length);
 
     final HBaseColumnName hbaseColumn = new HBaseColumnName(hbaseFamily, hbaseQualifier);
     return translator.toKijiColumnName(hbaseColumn);

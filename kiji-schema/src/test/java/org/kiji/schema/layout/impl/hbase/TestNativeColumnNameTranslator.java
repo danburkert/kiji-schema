@@ -17,11 +17,9 @@
  * limitations under the License.
  */
 
-package org.kiji.schema.layout;
+package org.kiji.schema.layout.impl.hbase;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
 import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.Before;
@@ -30,8 +28,11 @@ import org.junit.Test;
 import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.hbase.HBaseColumnName;
+import org.kiji.schema.layout.HBaseColumnNameTranslator;
+import org.kiji.schema.layout.KijiTableLayout;
+import org.kiji.schema.layout.KijiTableLayouts;
 
-public class TestHBaseNativeColumnNameTranslator {
+public class TestNativeColumnNameTranslator {
   private KijiTableLayout mTableLayout;
 
   @Before
@@ -43,30 +44,30 @@ public class TestHBaseNativeColumnNameTranslator {
 
   @Test
   public void testTranslateFromKijiToHBase() throws Exception {
-    KijiColumnNameTranslator translator = KijiColumnNameTranslator.from(mTableLayout);
+    HBaseColumnNameTranslator translator = HBaseColumnNameTranslator.from(mTableLayout);
 
     HBaseColumnName infoName = translator.toHBaseColumnName(new KijiColumnName("info:name"));
-    assertEquals("info", infoName.getFamilyAsString());
-    assertEquals("name", infoName.getQualifierAsString());
+    assertEquals("info", Bytes.toString(infoName.getFamily()));
+    assertEquals("name", Bytes.toString(infoName.getQualifier()));
 
     HBaseColumnName infoEmail = translator.toHBaseColumnName(new KijiColumnName("info:email"));
-    assertEquals("info", infoEmail.getFamilyAsString());
-    assertEquals("email", infoEmail.getQualifierAsString());
+    assertEquals("info", Bytes.toString(infoEmail.getFamily()));
+    assertEquals("email", Bytes.toString(infoEmail.getQualifier()));
 
     HBaseColumnName recommendationsProduct = translator.toHBaseColumnName(
         new KijiColumnName("recommendations:product"));
-    assertEquals("recommendations", recommendationsProduct.getFamilyAsString());
-    assertEquals("product", recommendationsProduct.getQualifierAsString());
+    assertEquals("recommendations", Bytes.toString(recommendationsProduct.getFamily()));
+    assertEquals("product", Bytes.toString(recommendationsProduct.getQualifier()));
 
     HBaseColumnName purchases = translator.toHBaseColumnName(
         new KijiColumnName("recommendations:product"));
-    assertEquals("recommendations", purchases.getFamilyAsString());
-    assertEquals("product", purchases.getQualifierAsString());
+    assertEquals("recommendations", Bytes.toString(purchases.getFamily()));
+    assertEquals("product", Bytes.toString(purchases.getQualifier()));
   }
 
   @Test
   public void testTranslateFromHBaseToKiji() throws Exception {
-    KijiColumnNameTranslator translator = KijiColumnNameTranslator.from(mTableLayout);
+    HBaseColumnNameTranslator translator = HBaseColumnNameTranslator.from(mTableLayout);
 
     KijiColumnName infoName =
         translator.toKijiColumnName(getHBaseColumnName("info", "name"));
@@ -88,66 +89,40 @@ public class TestHBaseNativeColumnNameTranslator {
   /**
    * Tests that an exception is thrown when the HBase family doesn't match a Kiji locality group.
    */
-  @Test
+  @Test(expected = NoSuchColumnException.class)
   public void testNoSuchKijiLocalityGroup() throws Exception {
-    KijiColumnNameTranslator translator = KijiColumnNameTranslator.from(mTableLayout);
-
-    try {
-      translator.toKijiColumnName(
-          getHBaseColumnName("fakeFamily", "fakeQualifier"));
-      fail("An exception should have been thrown.");
-    } catch (NoSuchColumnException nsce) {
-      assertEquals("No family 'fakeFamily' in layout.",
-          nsce.getMessage());
-    }
+    HBaseColumnNameTranslator translator = HBaseColumnNameTranslator.from(mTableLayout);
+    translator.toKijiColumnName(getHBaseColumnName("fakeFamily", "fakeQualifier"));
   }
 
   /**
    * Tests that an exception is thrown when the second part of the HBase qualifier doesn't
    * match a Kiji column.
    */
-  @Test
+  @Test(expected = NoSuchColumnException.class)
   public void testNoSuchKijiColumn() throws Exception {
-    KijiColumnNameTranslator translator = KijiColumnNameTranslator.from(mTableLayout);
-
-    try {
-      translator.toKijiColumnName(getHBaseColumnName("recommendations", "fakeQualifier"));
-      fail("An exception should have been thrown.");
-    } catch (NoSuchColumnException nsce) {
-      assertEquals("No column with ColumnId 'fakeQualifier' in family 'recommendations'.",
-          nsce.getMessage());
-    }
+    HBaseColumnNameTranslator translator = HBaseColumnNameTranslator.from(mTableLayout);
+    translator.toKijiColumnName(getHBaseColumnName("recommendations", "fakeQualifier"));
   }
 
   /**
    * Tests that an exception is thrown when trying to translate a non-existent Kiji column.
    */
-  @Test
+  @Test(expected = NoSuchColumnException.class)
   public void testNoSuchHBaseColumn() throws Exception {
-    KijiColumnNameTranslator translator = KijiColumnNameTranslator.from(mTableLayout);
-
-    try {
-      translator.toHBaseColumnName(new KijiColumnName("doesnt:exist"));
-      fail("An exception should have been thrown.");
-    } catch (NoSuchColumnException nsce) {
-      assertEquals("No family 'doesnt' in layout.", nsce.getMessage());
-    }
+    HBaseColumnNameTranslator translator = HBaseColumnNameTranslator.from(mTableLayout);
+    translator.toHBaseColumnName(new KijiColumnName("doesnot:exist"));
   }
 
   /**
    * Tests that an exception is thrown when trying to instantiate a NativeKijiColumnTranslator
    * when the layout contains column families that don't match the locality group.
    */
-  @Test
+  @Test(expected = IllegalArgumentException.class)
   public void testInvalidNativeLayout() throws Exception {
-    try {
-      KijiTableLayout invalidLayout =
-          KijiTableLayout.newLayout(KijiTableLayouts.getLayout(KijiTableLayouts.INVALID_NATIVE));
-      KijiColumnNameTranslator.from(invalidLayout);
-      fail("An exception should have been thrown");
-    } catch (IllegalStateException ise) {
-      assertTrue(ise.getMessage().startsWith("For HBASE_NATIVE column name translation"));
-    }
+    KijiTableLayout invalidLayout =
+        KijiTableLayout.newLayout(KijiTableLayouts.getLayout(KijiTableLayouts.INVALID_NATIVE));
+    HBaseColumnNameTranslator.from(invalidLayout);
   }
 
   /**

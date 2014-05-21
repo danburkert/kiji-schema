@@ -19,48 +19,43 @@
 package org.kiji.schema.layout.impl;
 
 import org.kiji.annotations.ApiAudience;
-import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
 
 /**
- * Container class encapsulating the KijiTableLayout and related objects which must all reflect
- * layout updates atomically.  This object represents a snapshot of the table layout at a moment
- * in time which is valuable for maintaining consistency within a short-lived operation.  Because
- * this object represents a snapshot it should not be cached.
+ * An interface for container classes which hold a {@link KijiTableLayout} and a column name
+ * translator. Implementations of {@code LayoutCapsule} are purely data containers, and are
+ * immutable. {@code LayoutCapsule}s and the layouts and column name translators they hold should
+ * *not* be cached users; instead, a new {@code LayoutCapsule} should be requested from a
+ * {@link TableLayoutMonitor} each time a layout or column name translator is needed.
+ * Alternatively, a user can cache a {@code LayoutCapsule} if they register a callback with the
+ * {@link TableLayoutMonitor} which invalidates the cached copy upon table layout change.
  *
- * Does not include CellDecoderProvider or CellEncoderProvider because readers and writers need to
- * be able to override CellSpecs.  Does not include EntityIdFactory because currently there are no
- * valid table layout updates that modify the row key encoding.
+ * The {@code LayoutCapsule} does not include a {@link CellDecoderProvider} or
+ * {@link CellEncoderProvider} because readers and writers need the flexibility to override
+ * {@link org.kiji.schema.layout.CellSpec}s.
+ *
+ * The {@code LayoutCapsule} does not include an {@link org.kiji.schema.EntityIdFactory}, because
+ * currently there are no valid table layout updates which modify the row key encoding.  Therefore,
+ * {@link org.kiji.schema.EntityIdFactory} instances can be cached on a per-table basis (unlike
+ * {@link KijiTableLayout}s, {@code ColumnNameTranslator}s, {@link CellDecoderProvider}s,
+ * and {@link CellEncoderProvider}s).
+ *
+ * @param <T> type of column name translator held by this layout capsule.
  */
 @ApiAudience.Private
-public final class LayoutCapsule {
-  private final KijiTableLayout mLayout;
-  private final KijiColumnNameTranslator mTranslator;
+public interface LayoutCapsule<T> {
 
   /**
-   * Default constructor.
+   * Get the Kiji table layout held by this layout capsule.
    *
-   * @param layout the layout of the table.
-   * @param translator the ColumnNameTranslator for the given layout.
+   * @return the Kiji table layout held by this layout capsule.
    */
-  public LayoutCapsule(final KijiTableLayout layout, final KijiColumnNameTranslator translator) {
-    mLayout = layout;
-    mTranslator = translator;
-  }
+  KijiTableLayout getLayout();
 
   /**
-   * Get the KijiTableLayout for the associated layout.
-   * @return the KijiTableLayout for the associated layout.
+   * Get the column name translator held by this layout capsule.
+   *
+   * @return the column name translator held by this layout capsule.
    */
-  public KijiTableLayout getLayout() {
-    return mLayout;
-  }
-
-  /**
-   * Get the KijiColumnNameTranslator for the associated layout.
-   * @return the KijiColumnNameTranslator for the associated layout.
-   */
-  public KijiColumnNameTranslator getKijiColumnNameTranslator() {
-    return mTranslator;
-  }
+  T getColumnNameTranslator();
 }

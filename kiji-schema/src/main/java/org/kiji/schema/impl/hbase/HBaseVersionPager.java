@@ -42,7 +42,7 @@ import org.kiji.schema.KijiIOException;
 import org.kiji.schema.KijiPager;
 import org.kiji.schema.KijiRowData;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
-import org.kiji.schema.layout.impl.LayoutCapsule;
+import org.kiji.schema.layout.impl.hbase.HBaseLayoutCapsule;
 
 /**
  * Pages through the versions of a fully-qualified column.
@@ -197,9 +197,9 @@ public final class HBaseVersionPager implements KijiPager {
             .add(mColumnName))
         .build();
 
-    final LayoutCapsule capsule = mTable.getLayoutCapsule();
+    final HBaseLayoutCapsule capsule = mTable.getLayoutCapsule();
     final HBaseDataRequestAdapter adapter = new HBaseDataRequestAdapter(
-        nextPageDataRequest, capsule.getKijiColumnNameTranslator());
+        nextPageDataRequest, capsule.getColumnNameTranslator());
     try {
       final Get hbaseGet = adapter.toGet(mEntityId, capsule.getLayout());
       LOG.debug("Sending HBase Get: {}", hbaseGet);

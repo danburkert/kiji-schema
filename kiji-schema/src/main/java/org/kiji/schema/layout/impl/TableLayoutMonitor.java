@@ -27,6 +27,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
+import com.google.common.base.Function;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
@@ -43,7 +44,6 @@ import org.kiji.schema.KijiSchemaTable;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.RuntimeInterruptedException;
 import org.kiji.schema.impl.LayoutConsumer;
-import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.util.AutoReferenceCounted;
 import org.kiji.schema.util.JvmId;
@@ -66,9 +66,11 @@ import org.kiji.schema.zookeeper.TableUserRegistration;
  *    this TableLayoutMonitor for as long as the registration should remain active. This is either
  *    for the life of the layout consumer if it is never unregistered, or until
  *    {@link #unregisterLayoutConsumer(LayoutConsumer)} is called.
+ *
+ * @param <T> specific type of {@link LayoutCapsule} cached by this table layout monitor.
  */
 @ApiAudience.Private
-public final class TableLayoutMonitor implements AutoReferenceCounted {
+public final class TableLayoutMonitor<T extends LayoutCapsule<?>> implements AutoReferenceCounted {
 
   private static final Logger LOG = LoggerFactory.getLogger(TableLayoutMonitor.class);
 
@@ -86,6 +88,8 @@ public final class TableLayoutMonitor implements AutoReferenceCounted {
 
   private final CountDownLatch mInitializationLatch;
 
+  private final Function<KijiTableLayout, T> mLayoutCapsuleFactory;
+
   /** States of a table layout monitor. */
   private static enum State {
     /** The table layout monitor has been created, but not yet started. */
@@ -100,22 +104,22 @@ public final class TableLayoutMonitor implements AutoReferenceCounted {
   /**
    * Capsule containing all objects which should be mutated in response to a table layout update.
    * The capsule itself is immutable and should be replaced atomically with a new capsule.
-   * References only the LayoutCapsule for the most recent layout for this table.
+   * References only the {@link LayoutCapsule} for the most recent layout for this table.
    */
-  private final AtomicReference<LayoutCapsule> mLayoutCapsule =
-      new AtomicReference<LayoutCapsule>();
+  private final AtomicReference<T> mLayoutCapsule = new AtomicReference<T>();
 
   /**
    * Holds the set of LayoutConsumers who should be notified of layout updates.  Held in a weak
    * hash set so that registering to watch a layout does not prevent garbage collection.
    */
-  private final Set<LayoutConsumer> mConsumers =
-      Collections.newSetFromMap(new MapMaker().weakKeys().<LayoutConsumer, Boolean>makeMap());
+  private final Set<LayoutConsumer<T>> mConsumers =
+      Collections.newSetFromMap(new MapMaker().weakKeys().<LayoutConsumer<T>, Boolean>makeMap());
 
   /**
    * Create a new table layout monitor for the provided user and table.
    *
    * @param tableURI of table being registered.
+   * @param layoutCapsuleFactory function to create concrete instances of {@link LayoutCapsule}.
    * @param schemaTable of Kiji table.
    * @param metaTable of Kiji table.
    * @param zkClient ZooKeeper connection to register monitor with, or null if ZooKeeper is
@@ -123,11 +127,13 @@ public final class TableLayoutMonitor implements AutoReferenceCounted {
    */
   public TableLayoutMonitor(
       KijiURI tableURI,
+      Function<KijiTableLayout, T> layoutCapsuleFactory,
       KijiSchemaTable schemaTable,
       KijiMetaTable metaTable,
       CuratorFramework zkClient) {
     mTableURI = tableURI;
     mSchemaTable = schemaTable;
+    mLayoutCapsuleFactory = layoutCapsuleFactory;
     mMetaTable = metaTable;
     if (zkClient == null) {
       mTableLayoutTracker = null;
@@ -139,10 +145,11 @@ public final class TableLayoutMonitor implements AutoReferenceCounted {
       mTableLayoutTracker = new TableLayoutTracker(
           zkClient,
           mTableURI,
-          new InnerLayoutUpdater(
+          new InnerLayoutUpdater<T>(
               mUserRegistration,
               mInitializationLatch,
               mLayoutCapsule,
+              mLayoutCapsuleFactory,
               mTableURI,
               mConsumers,
               mMetaTable,
@@ -157,7 +164,7 @@ public final class TableLayoutMonitor implements AutoReferenceCounted {
    * @return this table layout monitor.
    * @throws IOException on unrecoverable ZooKeeper or meta table error.
    */
-  public TableLayoutMonitor start() throws IOException {
+  public TableLayoutMonitor<T> start() throws IOException {
     Preconditions.checkState(
         mState.compareAndSet(State.INITIALIZED, State.STARTED),
         "Cannot start TableLayoutMonitor in state %s.", mState.get());
@@ -171,7 +178,7 @@ public final class TableLayoutMonitor implements AutoReferenceCounted {
     } else {
       final KijiTableLayout layout =
           mMetaTable.getTableLayout(mTableURI.getTable()).setSchemaTable(mSchemaTable);
-      mLayoutCapsule.set(new LayoutCapsule(layout, KijiColumnNameTranslator.from(layout)));
+      mLayoutCapsule.set(mLayoutCapsuleFactory.apply(layout));
     }
     return this;
   }
@@ -196,7 +203,7 @@ public final class TableLayoutMonitor implements AutoReferenceCounted {
    *
    * @return the table's layout capsule.
    */
-  public LayoutCapsule getLayoutCapsule() {
+  public T getLayoutCapsule() {
     Preconditions.checkState(mState.get() == State.STARTED,
         "TableLayoutMonitor has not been started.");
     return mLayoutCapsule.get();
@@ -217,7 +224,7 @@ public final class TableLayoutMonitor implements AutoReferenceCounted {
    * @param consumer to notify when the table's layout is updated.
    * @throws java.io.IOException if the consumer's {@code #update} method throws IOException.
    */
-  public void registerLayoutConsumer(LayoutConsumer consumer) throws IOException {
+  public void registerLayoutConsumer(LayoutConsumer<T> consumer) throws IOException {
     Preconditions.checkState(mState.get() == State.STARTED,
         "TableLayoutMonitor has not been started.");
     mConsumers.add(consumer);
@@ -249,7 +256,7 @@ public final class TableLayoutMonitor implements AutoReferenceCounted {
    * </p>
    * @return the set of registered layout consumers.
    */
-  public Set<LayoutConsumer> getLayoutConsumers() {
+  public Set<LayoutConsumer<T>> getLayoutConsumers() {
     Preconditions.checkState(mState.get() == State.STARTED,
         "TableLayoutMonitor has not been started.");
     return ImmutableSet.copyOf(mConsumers);
@@ -267,8 +274,8 @@ public final class TableLayoutMonitor implements AutoReferenceCounted {
     Preconditions.checkState(mState.get() == State.STARTED,
         "TableLayoutMonitor has not been started.");
     layout.setSchemaTable(mSchemaTable);
-    final LayoutCapsule capsule = new LayoutCapsule(layout, KijiColumnNameTranslator.from(layout));
-    for (LayoutConsumer consumer : getLayoutConsumers()) {
+    final T capsule = mLayoutCapsuleFactory.apply(layout);
+    for (LayoutConsumer<T> consumer : getLayoutConsumers()) {
       consumer.update(capsule);
     }
   }
@@ -285,22 +292,26 @@ public final class TableLayoutMonitor implements AutoReferenceCounted {
   /**
    * Updates the layout of this table in response to a layout update pushed from ZooKeeper.
    */
-  private static final class InnerLayoutUpdater implements TableLayoutUpdateHandler {
+  private static final class InnerLayoutUpdater<T extends LayoutCapsule<?>>
+      implements TableLayoutUpdateHandler {
 
     private final TableUserRegistration mUserRegistration;
 
     private final CountDownLatch mInitializationLatch;
 
-    private final AtomicReference<LayoutCapsule> mLayoutCapsule;
+    private final AtomicReference<T> mLayoutCapsule;
 
     private final KijiURI mTableURI;
 
-    private final Set<LayoutConsumer> mConsumers;
+    private final Set<LayoutConsumer<T>> mConsumers;
 
     private final KijiMetaTable mMetaTable;
 
     private final KijiSchemaTable mSchemaTable;
 
+    private final Function<KijiTableLayout, T> mLayoutCapsuleFactory;
+
+    // CSOFF: ParameterNumberCheck
     /**
      * Create an InnerLayoutUpdater to update the layout of this table in response to a layout node
      * change in ZooKeeper.
@@ -308,6 +319,7 @@ public final class TableLayoutMonitor implements AutoReferenceCounted {
      * @param userRegistration ZooKeeper table user registration.
      * @param initializationLatch latch that will be counted down upon successful initialization.
      * @param layoutCapsule layout capsule to store most recent layout in.
+     * @param layoutCapsuleFactory function to create concrete instances of {@link LayoutCapsule}.
      * @param tableURI URI of table whose layout is to be tracked.
      * @param consumers Set of layout consumers to notify on table layout update.
      * @param metaTable containing meta information.
@@ -316,20 +328,23 @@ public final class TableLayoutMonitor implements AutoReferenceCounted {
     private InnerLayoutUpdater(
         TableUserRegistration userRegistration,
         CountDownLatch initializationLatch,
-        AtomicReference<LayoutCapsule> layoutCapsule,
+        AtomicReference<T> layoutCapsule,
+        Function<KijiTableLayout, T> layoutCapsuleFactory,
         KijiURI tableURI,
-        Set<LayoutConsumer> consumers,
+        Set<LayoutConsumer<T>> consumers,
         KijiMetaTable metaTable,
         KijiSchemaTable schemaTable
     ) {
       mUserRegistration = userRegistration;
       mInitializationLatch = initializationLatch;
       mLayoutCapsule = layoutCapsule;
+      mLayoutCapsuleFactory = layoutCapsuleFactory;
       mTableURI = tableURI;
       mConsumers = consumers;
       mMetaTable = metaTable;
       mSchemaTable = schemaTable;
     }
+    // CSON: ParameterNumberCheck
 
     /** {@inheritDoc} */
     @Override
@@ -355,13 +370,12 @@ public final class TableLayoutMonitor implements AutoReferenceCounted {
             "New layout ID %s does not match most recent layout ID %s from meta-table.",
             notifiedLayoutID, newLayout.getDesc().getLayoutId());
 
-        mLayoutCapsule.set(new LayoutCapsule(newLayout, KijiColumnNameTranslator.from(newLayout)));
+        mLayoutCapsule.set(mLayoutCapsuleFactory.apply(newLayout));
 
         // Propagates the new layout to all consumers.
-        // A copy of mConsumers is made in order to avoid concurrent modifications while iterating.
-        // The contract of Guava's ImmutableSet specifies that #copyOf is safe on concurrent
-        // collections
-        for (LayoutConsumer consumer : ImmutableSet.copyOf(mConsumers)) {
+        // A copy of mConsumers is made in order to avoid concurrent modification issues. The
+        // contract of Guava's ImmutableSet specifies that #copyOf is safe on concurrent collections
+        for (LayoutConsumer<T> consumer : ImmutableSet.copyOf(mConsumers)) {
           consumer.update(mLayoutCapsule.get());
         }
 

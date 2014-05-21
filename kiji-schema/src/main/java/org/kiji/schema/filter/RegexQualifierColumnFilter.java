@@ -27,6 +27,7 @@ import org.apache.hadoop.hbase.filter.CompareFilter;
 import org.apache.hadoop.hbase.filter.Filter;
 import org.apache.hadoop.hbase.filter.QualifierFilter;
 import org.apache.hadoop.hbase.filter.RegexStringComparator;
+import org.apache.hadoop.hbase.util.Bytes;
 
 import org.kiji.annotations.ApiAudience;
 import org.kiji.annotations.ApiStability;
@@ -62,7 +63,7 @@ public final class RegexQualifierColumnFilter extends KijiColumnFilter {
   public Filter toHBaseFilter(KijiColumnName kijiColumnName, Context context) throws IOException {
     HBaseColumnName columnName = context.getHBaseColumnName(kijiColumnName);
     return new QualifierFilter(CompareFilter.CompareOp.EQUAL,
-        new RegexStringComparator(columnName.getQualifierAsString() + mRegularExpression));
+        new RegexStringComparator(Bytes.toString(columnName.getQualifier()) + mRegularExpression));
   }
 
   /** {@inheritDoc} */
