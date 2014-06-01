@@ -17,7 +17,7 @@
  * limitations under the License.
  */
 
-package org.kiji.schema.cassandra;
+package org.kiji.schema.impl.cassandra;
 
 import com.google.common.collect.ImmutableMap;
 import org.junit.Test;
@@ -25,7 +25,6 @@ import org.junit.Test;
 import org.kiji.schema.KijiInvalidNameException;
 import org.kiji.schema.KijiNotInstalledException;
 import org.kiji.schema.KijiURI;
-import org.kiji.schema.impl.cassandra.CassandraKijiInstaller;
 
 /** Tests for KijiInstaller. */
 public class TestCassandraKijiInstaller {

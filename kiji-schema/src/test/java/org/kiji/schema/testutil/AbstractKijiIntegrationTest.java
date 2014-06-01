@@ -46,8 +46,8 @@ import org.junit.rules.TestName;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.kiji.schema.KijiInstaller;
 import org.kiji.schema.KijiURI;
-import org.kiji.schema.impl.hbase.HBaseKijiInstaller;
 import org.kiji.schema.platform.SchemaPlatformBridge;
 import org.kiji.schema.tools.BaseTool;
 import org.kiji.schema.util.Debug;
@@ -508,11 +508,10 @@ public abstract class AbstractKijiIntegrationTest {
         while (mActive) {
           // Create a new Kiji instance.
           final String instanceName = UUID.randomUUID().toString().replaceAll("-", "_");
-          final Configuration conf = HBaseConfiguration.create();
           try {
             final KijiURI kijiURI =
                 KijiURI.newBuilder(mHBaseURI).withInstanceName(instanceName).build();
-            HBaseKijiInstaller.get().install(kijiURI, conf);
+            KijiInstaller.get().install(kijiURI);
 
             // This blocks if the queue is full:
             mKijiQueue.put(kijiURI);

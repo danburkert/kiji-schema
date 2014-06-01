@@ -33,7 +33,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
-import org.kiji.schema.impl.hbase.HBaseKijiInstaller;
 import org.kiji.schema.layout.KijiTableLayouts;
 import org.kiji.schema.util.VersionInfo;
 
@@ -47,9 +46,9 @@ public class TestFakeKiji extends KijiClientTest {
     final KijiURI uri = KijiURI
         .newBuilder(String.format("kiji://.fake.%s/instance", getTestId()))
         .build();
-    final Configuration conf = HBaseConfiguration.create();
-    HBaseKijiInstaller.get().install(uri, conf);
+    KijiInstaller.get().install(uri);
 
+    final Configuration conf = HBaseConfiguration.create();
     final Kiji kiji = Kiji.Factory.open(uri, conf);
     try {
       LOG.info(String.format("Opened fake Kiji '%s'.", kiji.getURI()));
