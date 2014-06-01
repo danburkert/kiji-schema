@@ -193,7 +193,6 @@
     <dependency>
       <groupId>com.google.guava</groupId>
       <artifactId>guava</artifactId>
-      <version>15.0</version>
     </dependency>
     <!-- Guava has a "provided" dependency on JSR-305, so we must provide it. -->
     <dependency>
