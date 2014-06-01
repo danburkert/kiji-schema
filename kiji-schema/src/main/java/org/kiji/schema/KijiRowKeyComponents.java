@@ -55,7 +55,7 @@ import org.kiji.annotations.ApiStability;
  * </p>
  */
 @ApiAudience.Public
-@ApiStability.Experimental
+@ApiStability.Evolving
 public final class KijiRowKeyComponents implements Comparable<KijiRowKeyComponents> {
   /** The backing array of components. */
   private Object[] mComponents;
