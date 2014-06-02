@@ -55,10 +55,9 @@ import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.impl.BoundColumnReaderSpec;
 import org.kiji.schema.layout.ColumnReaderSpec;
-import org.kiji.schema.layout.KijiColumnNameTranslator;
+import org.kiji.schema.layout.HBaseColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
-import org.kiji.schema.layout.impl.LayoutCapsule;
 import org.kiji.schema.util.TimestampComparator;
 
 /**
@@ -99,9 +98,8 @@ public final class HBaseKijiRowData implements KijiRowData {
    * @throws IOException on I/O error.
    */
   private static CellDecoderProvider createCellProvider(HBaseKijiTable table) throws IOException {
-    final LayoutCapsule capsule = table.getLayoutCapsule();
     return new CellDecoderProvider(
-        capsule.getLayout(),
+        table.getLayout(),
         Maps.<KijiColumnName, BoundColumnReaderSpec>newHashMap(),
         Sets.<BoundColumnReaderSpec>newHashSet(),
         KijiTableReaderBuilder.DEFAULT_CACHE_MISS);
@@ -173,7 +171,7 @@ public final class HBaseKijiRowData implements KijiRowData {
     /** The cell decoder for this column. */
     private final KijiCellDecoder<T> mDecoder;
     /** The column name translator for the given table. */
-    private final KijiColumnNameTranslator mColumnNameTranslator;
+    private final HBaseColumnNameTranslator mColumnNameTranslator;
     /** The maximum number of versions requested. */
     private final int mMaxVersions;
     /** An array of KeyValues returned by HBase. */
@@ -193,13 +191,18 @@ public final class HBaseKijiRowData implements KijiRowData {
      * @param columnName The Kiji column that is being iterated over.
      * @param rowdata The HBaseKijiRowData instance containing the desired data.
      * @param eId of the rowdata we are iterating over.
+     * @param columnNameTranslator of the table being iterated over.
      * @throws IOException on I/O error
      */
-    protected KijiCellIterator(KijiColumnName columnName, HBaseKijiRowData rowdata, EntityId eId)
-        throws IOException {
+    protected KijiCellIterator(
+        KijiColumnName columnName,
+        HBaseKijiRowData rowdata,
+        EntityId eId,
+        HBaseColumnNameTranslator columnNameTranslator
+    ) throws IOException {
       mColumn = columnName;
       // Initialize column name translator.
-      mColumnNameTranslator = KijiColumnNameTranslator.from(rowdata.mTableLayout);
+      mColumnNameTranslator = Preconditions.checkNotNull(columnNameTranslator);
       // Get cell decoder.
       mDecoder = rowdata.getDecoder(mColumn);
       // Get info about the data request for this column.
@@ -363,24 +366,38 @@ public final class HBaseKijiRowData implements KijiRowData {
     private final HBaseKijiRowData mRowData;
     /** The entity id for the row. */
     private final EntityId mEntityId;
+    /** The HBaseColumnNameTranslator for the column. */
+    private final HBaseColumnNameTranslator mHBaseColumnNameTranslator;
+
     /**
      * An iterable of KijiCells, for a particular column.
      *
      * @param colName The Kiji column family that is being iterated over.
      * @param rowdata The HBaseKijiRowData instance containing the desired data.
      * @param eId of the rowdata we are iterating over.
+     * @param columnNameTranslator of the table we are iterating over.
      */
-    protected CellIterable(KijiColumnName colName, HBaseKijiRowData rowdata, EntityId eId) {
+    protected CellIterable(
+        KijiColumnName colName,
+        HBaseKijiRowData rowdata,
+        EntityId eId,
+        HBaseColumnNameTranslator columnNameTranslator
+    ) {
       mColumnName = colName;
       mRowData = rowdata;
       mEntityId = eId;
+      mHBaseColumnNameTranslator = columnNameTranslator;
     }
 
     /** {@inheritDoc} */
     @Override
     public Iterator<KijiCell<T>> iterator() {
       try {
-        return new KijiCellIterator<T>(mColumnName , mRowData, mEntityId);
+        return new KijiCellIterator<T>(
+            mColumnName,
+            mRowData,
+            mEntityId,
+            mHBaseColumnNameTranslator);
       } catch (IOException ex) {
         throw new KijiIOException(ex);
       }
@@ -449,8 +466,8 @@ public final class HBaseKijiRowData implements KijiRowData {
       return mFilteredMap;
     }
 
-    final KijiColumnNameTranslator columnNameTranslator =
-        KijiColumnNameTranslator.from(mTableLayout);
+    final HBaseColumnNameTranslator columnNameTranslator =
+        HBaseColumnNameTranslator.from(mTableLayout);
     // Loop over the families in the HTable.
     for (NavigableMap.Entry<byte[], NavigableMap<byte[], NavigableMap<Long, byte[]>>> familyEntry
              : map.entrySet()) {
@@ -531,7 +548,7 @@ public final class HBaseKijiRowData implements KijiRowData {
     if (null == columnMap) {
       return false;
     }
-   final  NavigableMap<Long, byte[]> versionMap = columnMap.get(qualifier);
+    final NavigableMap<Long, byte[]> versionMap = columnMap.get(qualifier);
     if (null == versionMap) {
       return false;
     }
@@ -784,7 +801,7 @@ public final class HBaseKijiRowData implements KijiRowData {
     Preconditions.checkArgument(
         mDataRequest.getRequestForColumn(column) != null,
         "Column %s has no data request.", column);
-    return new KijiCellIterator<T>(column, this, mEntityId);
+    return new KijiCellIterator<T>(column, this, mEntityId, mTable.getColumnNameTranslator());
   }
 
   /** {@inheritDoc} */
@@ -800,7 +817,7 @@ public final class HBaseKijiRowData implements KijiRowData {
             + " on map type column families. The column family [%s], is a group type column family."
             + " Please use the iterator(String family, String qualifier) method.",
         family);
-    return new KijiCellIterator<T>(column, this, mEntityId);
+    return new KijiCellIterator<T>(column, this, mEntityId, mTable.getColumnNameTranslator());
   }
 
   /** {@inheritDoc} */
@@ -810,7 +827,7 @@ public final class HBaseKijiRowData implements KijiRowData {
     Preconditions.checkArgument(
         mDataRequest.getRequestForColumn(column) != null,
         "Column %s has no data request.", column);
-    return new CellIterable<T>(column, this, mEntityId);
+    return new CellIterable<T>(column, this, mEntityId, mTable.getColumnNameTranslator());
   }
 
   /** {@inheritDoc} */
@@ -825,7 +842,7 @@ public final class HBaseKijiRowData implements KijiRowData {
             + " on map type column families. The column family [%s], is a group type column family."
             + " Please use the asIterable(String family, String qualifier) method.",
         family);
-    return new CellIterable<T>(column, this, mEntityId);
+    return new CellIterable<T>(column, this, mEntityId, mTable.getColumnNameTranslator());
   }
 
   /** {@inheritDoc} */
@@ -859,7 +876,7 @@ public final class HBaseKijiRowData implements KijiRowData {
         mEntityId,
         mDataRequest,
         mResult,
-        KijiColumnNameTranslator.from(mTableLayout),
+        mTable.getColumnNameTranslator(),
         mDecoderProvider,
         mTable);
   }

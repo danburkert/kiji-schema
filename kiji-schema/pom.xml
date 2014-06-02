@@ -141,7 +141,7 @@
                 <requireFilesSize>
                   <maxsize>0</maxsize>
                   <files>
-                   <file>target/cleanup.log</file>
+                    <file>target/cleanup.log</file>
                   </files>
                 </requireFilesSize>
               </rules>
@@ -446,7 +446,7 @@
               <skip>true</skip>
             </configuration>
           </plugin>
-         </plugins>
+        </plugins>
       </build>
     </profile>
     <profile>
