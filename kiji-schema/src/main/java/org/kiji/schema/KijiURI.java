@@ -19,16 +19,14 @@
 
 package org.kiji.schema;
 
-import java.io.File;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Collection;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.google.common.base.Joiner;
-import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSortedSet;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseConfiguration;
@@ -36,48 +34,100 @@ import org.apache.hadoop.hbase.HConstants;
 
 import org.kiji.annotations.ApiAudience;
 import org.kiji.annotations.ApiStability;
+import org.kiji.delegation.Lookups;
+import org.kiji.delegation.PriorityProvider;
+import org.kiji.schema.hbase.HBaseKijiURI.HBaseKijiURIBuilder;
 import org.kiji.schema.util.KijiNameValidator;
 import org.kiji.schema.zookeeper.ZooKeeperFactory;
 
 /**
- * URI that uniquely identifies a Kiji instance, table, column(s).
- * Use <em>kiji://.env/default/</em> for the default Kiji instance URI.
+ * a {@link URI} that uniquely identifies a Kiji instance, table, and column set.
+ * Use {@code kiji://.env/default/} for the default Kiji instance URI.
  *
  * <p>
- *   KijiURI objects can be constructed directly from parsing a URI string:
- * </p>
+ *
+ * {@code KijiURI} objects can be constructed directly from parsing a URI string:
  * <pre><code>
- *   final KijiURI uri = KijiURI.newBuilder("kiji://.env/default/mytable/col").build();
+ * final KijiURI uri = KijiURI.newBuilder("kiji://.env/default/mytable/col").build();
  * </code></pre>
  *
  * <p>
- *   Alternately, KijiURI objects can be constructed from components by using the builder:
- * </p>
+ *
+ * Alternatively, {@code KijiURI} objects can be constructed from components by using a builder:
  * <pre><code>
- *   final KijiURI uri = KijiURI.newBuilder()
- *     .withInstanceName("default")
- *     .withTableName("mytable")
- *     .addColumnName(KijiColumnName.create(col))
- *     .build();
+ * final KijiURI uri = KijiURI.newBuilder()
+ *   .withInstanceName("default")
+ *   .withTableName("mytable")
+ *   .addColumnName(KijiColumnName.create(col))
+ *   .build();
  * </code></pre>
  *
- * Valid URI forms look like:
- * <li> "kiji://zkHost"
- * <li> "kiji://zkHost/instance"
- * <li> "kiji://zkHost/instance/table"
- * <li> "kiji://zkHost:zkPort/instance/table"
- * <li> "kiji://zkHost1,zkHost2/instance/table"
- * <li> "kiji://(zkHost1,zkHost2):zkPort/instance/table"
- * <li> "kiji://zkHost/instance/table/col"
- * <li> "kiji://zkHost/instance/table/col1,col2"
- * <li> "kiji://.env/instance/table"
- * <li> "kiji://.unset/instance/table"
+ * <H2>Syntax</H2>
+ *
+ * A KijiURI is composed of multiple components: a {@code scheme}, a {@code cluster-identifier},
+ * and optionally, an {@code instance-name}, a {@code table-name}, and {@code column-names}.
+ * The text format of a {@code KijiURI} must be of the form:
+ * <pre><code>
+ * scheme://cluster-identifier[/instance-name[/table-name[/column-names]]]
+ * </code></pre>
+ * where square brackets indicate optional components.
+ *
+ * <H3>Scheme</H3>
+ *
+ * The scheme of all {@code KijiURI}s is a identifier prefixed with the string "{@code kiji}", and
+ * followed by any combination of letters, digits, plus ("+"), period ("."), or hyphen ("-").
+ * <p>
+ * The scheme is specific to the type cluster being identifying, and determines how the
+ * {@code cluster-identifier} component will be parsed.
+ * <p>
+ * The default {@code KijiURI} scheme is "{@code kiji}".  When this scheme is parsed an
+ * {@link org.kiji.schema.hbase.HBaseKijiURI} will be created.
+ *
+ * <H3>Cluster Identifier</H3>
+ *
+ * The cluster identifier contains the information necessary for Kiji to identify the host cluster.
+ * The exact form of the cluster identifier is specific to the cluster type (which is identified
+ * by the scheme). For example, HBase clusters are identified by a ZooKeeper Ensemble address, but
+ * other databases (such as Cassandra) require more information.
+ * <p>
+ * Despite being in the 'authority' position as defined in RFC3986, the cluster identifier component
+ * is <em>not</em> the same as the authority.  In particular, the cluster identifier may contain
+ * characters forbidden in an authority, and may extend into the 'path' position of RFC3986.
+ *
+ * <H3>Instance Name</H3>
+ *
+ * The instance name component is optional. Identifies a Kiji instance hosted on the cluster.
+ * Only valid Kiji instance names may be used.
+ *
+ * <H3>Table Name</H3>
+ *
+ * The table name component is optional, and may only be used if the instance name is defined.
+ * The table name identifies a Kiji table in the identified instance. Only a valid Kiji table name
+ * may be used.
+ *
+ * <H3>Column Names</H3>
+ *
+ * The column names component is optional, and may only be used if the table name is defined.
+ * The column names identify a set of Kiji column names in the specified table. The column names
+ * are comma separated with no spaces, and may contain only valid Kiji column names.
+ *
+ * <H2>Usage</H2>
+ *
+ * The {@link KijiURI} class is not directly instantiable (it is effectively {@code abstract}).
+ * The builder will instead return a concrete subclass based on the scheme of the provided URI or
+ * URI string. If no URI or URI string is provided to create the builder, then the default
+ * {@link org.kiji.schema.hbase.HBaseKijiURI} will be assumed.
+ *
+ * All {@link KijiURI} implementations should be immutable and thread-safe.
  */
 @ApiAudience.Public
 @ApiStability.Stable
-public final class KijiURI {
+public class KijiURI {
 
-  /** URI/URL scheme used to fully qualify a Kiji table. */
+  /**
+   * URI scheme used to fully qualify a Kiji table. When a Kiji URI uses this scheme, the default
+   * URI type ({@link org.kiji.schema.hbase.HBaseKijiURI}) will be used.
+   */
   public static final String KIJI_SCHEME = "kiji";
 
   /** String to specify an unset KijiURI field. */
@@ -90,10 +140,10 @@ public final class KijiURI {
   public static final int DEFAULT_ZOOKEEPER_CLIENT_PORT = 2181;
 
   /** ZooKeeper quorum configured from the local environment.*/
-  private static final ImmutableList<String> ENV_ZOOKEEPER_QUORUM;
+  protected static final ImmutableList<String> ENV_ZOOKEEPER_QUORUM;
 
   /** ZooKeeper client port configured from the local environment. */
-  private static final int ENV_ZOOKEEPER_CLIENT_PORT;
+  protected static final int ENV_ZOOKEEPER_CLIENT_PORT;
 
   /**
    * Resolves the local environment ZooKeeper parameters.
@@ -109,6 +159,14 @@ public final class KijiURI {
 
   /** Pattern matching "(host1,host2,host3):port". */
   public static final Pattern RE_AUTHORITY_GROUP = Pattern.compile("\\(([^)]+)\\):(\\d+)");
+
+  /** Pattern matching valid Kiji schemes. */
+  private static final Pattern RE_SCHEME = Pattern.compile("(?i)kiji[a-z+.-0-9]*://.*");
+
+  /**
+   * The scheme of this KijiURI.
+   */
+  private final String mScheme;
 
   /**
    * Ordered list of Zookeeper quorum host names or IP addresses.
@@ -137,6 +195,8 @@ public final class KijiURI {
   /**
    * Constructs a new KijiURI with the given parameters.
    *
+   *
+   * @param scheme of the KijiURI.
    * @param zookeeperQuorum Zookeeper quorum.
    * @param zookeeperClientPort Zookeeper client port.
    * @param instanceName Instance name.
@@ -144,12 +204,15 @@ public final class KijiURI {
    * @param columnNames Column names.
    * @throws KijiURIException If the parameters are invalid.
    */
-  private KijiURI(
-      Iterable<String> zookeeperQuorum,
-      int zookeeperClientPort,
-      String instanceName,
-      String tableName,
-      Iterable<KijiColumnName> columnNames) {
+  protected KijiURI(
+      final String scheme,
+      final Iterable<String> zookeeperQuorum,
+      final int zookeeperClientPort,
+      final String instanceName,
+      final String tableName,
+      final Iterable<KijiColumnName> columnNames
+  ) {
+    mScheme = scheme;
     mZookeeperQuorum = ImmutableList.copyOf(zookeeperQuorum);
     mZookeeperQuorumNormalized = ImmutableSortedSet.copyOf(mZookeeperQuorum).asList();
     mZookeeperClientPort = zookeeperClientPort;
@@ -162,95 +225,51 @@ public final class KijiURI {
   }
 
   /**
-   * Constructs a URI that fully qualifies a Kiji table.
-   *
-   * @param uri Kiji URI
-   * @throws KijiURIException if the URI is invalid.
-   */
-  private KijiURI(URI uri) {
-    if (!uri.getScheme().equals(KIJI_SCHEME)) {
-      throw new KijiURIException(uri.toString(), "URI scheme must be '" + KIJI_SCHEME + "'");
-    }
-
-    final AuthorityParser parser = new AuthorityParser(uri);
-    mZookeeperQuorum = parser.getZookeeperQuorum();
-    mZookeeperQuorumNormalized = ImmutableSortedSet.copyOf(mZookeeperQuorum).asList();
-    mZookeeperClientPort = parser.getZookeeperClientPort();
-
-    final String[] path = new File(uri.getPath()).toString().split("/");
-    if (path.length > 4) {
-      throw new KijiURIException(uri.toString(),
-          "Invalid path, expecting '/kiji-instance/table-name/(column1, column2, ...)'");
-    }
-    Preconditions.checkState((path.length == 0) || path[0].isEmpty());
-
-    // Instance name:
-    if (path.length >= 2) {
-      mInstanceName = (path[1].equals(UNSET_URI_STRING)) ? null: path[1];
-    } else {
-      mInstanceName = null;
-    }
-
-    // Table name:
-    if (path.length >= 3) {
-      mTableName = (path[2].equals(UNSET_URI_STRING)) ? null : path[2];
-    } else {
-      mTableName = null;
-    }
-
-    // Columns:
-    final ImmutableList.Builder<KijiColumnName> builder = ImmutableList.builder();
-    if (path.length >= 4) {
-      if (!path[3].equals(UNSET_URI_STRING)) {
-        String[] split = path[3].split(",");
-        for (String name : split) {
-          builder.add(KijiColumnName.create(name));
-        }
-      }
-    }
-    mColumnNames = builder.build();
-    mColumnNamesNormalized = ImmutableSortedSet.copyOf(mColumnNames).asList();
-
-    validateNames();
-  }
-
-  /**
    * Builder class for constructing KijiURIs.
    */
-  public static final class KijiURIBuilder {
+  public static class KijiURIBuilder {
+
+    /**
+     * The scheme of the KijiURI being built.
+     */
+    protected final String mScheme;
+
     /**
      * Zookeeper quorum: comma-separated list of Zookeeper host names or IP addresses.
      * Preserves user ordering.
      */
-    private ImmutableList<String> mZookeeperQuorum;
+    protected ImmutableList<String> mZookeeperQuorum;
 
     /** Zookeeper client port number. */
-    private int mZookeeperClientPort;
+    protected int mZookeeperClientPort;
 
     /** Kiji instance name. Null means unset. */
-    private String mInstanceName;
+    protected String mInstanceName;
 
     /** Kiji table name. Null means unset. */
-    private String mTableName;
+    protected String mTableName;
 
     /** Kiji column names. Never null. Empty means unset. Preserves user ordering. */
-    private ImmutableList<KijiColumnName> mColumnNames;
+    protected ImmutableList<KijiColumnName> mColumnNames;
 
     /**
      * Constructs a new builder for KijiURIs.
      *
+     * @param scheme of the URI.
      * @param zookeeperQuorum The initial zookeeper quorum.
      * @param zookeeperClientPort The initial zookeeper client port.
      * @param instanceName The initial instance name.
      * @param tableName The initial table name.
      * @param columnNames The initial column names.
      */
-    private KijiURIBuilder(
-        Iterable<String> zookeeperQuorum,
-        int zookeeperClientPort,
-        String instanceName,
-        String tableName,
-        Iterable<KijiColumnName> columnNames) {
+    protected KijiURIBuilder(
+        final String scheme,
+        final Iterable<String> zookeeperQuorum,
+        final int zookeeperClientPort,
+        final String instanceName,
+        final String tableName,
+        final Iterable<KijiColumnName> columnNames) {
+      mScheme = scheme;
       mZookeeperQuorum = ImmutableList.copyOf(zookeeperQuorum);
       mZookeeperClientPort = zookeeperClientPort;
       mInstanceName =
@@ -263,13 +282,13 @@ public final class KijiURI {
      * Constructs a new builder for KijiURIs with default values.
      * See {@link KijiURI#newBuilder()} for specific values.
      */
-    private KijiURIBuilder() {
+    protected KijiURIBuilder() {
+      mScheme = KIJI_SCHEME;
       mZookeeperQuorum = ENV_ZOOKEEPER_QUORUM;
       mZookeeperClientPort = ENV_ZOOKEEPER_CLIENT_PORT;
       mInstanceName = KConstants.DEFAULT_INSTANCE_NAME;
       mTableName = UNSET_URI_STRING;
-      ImmutableList.Builder<KijiColumnName> columnBuilder = ImmutableList.builder();
-      mColumnNames = columnBuilder.build();
+      mColumnNames = ImmutableList.of();
     }
 
     /**
@@ -386,88 +405,54 @@ public final class KijiURI {
      * @throws KijiURIException If the KijiURI was configured improperly.
      */
     public KijiURI build() {
-      return new KijiURI(
-          mZookeeperQuorum,
-          mZookeeperClientPort,
-          mInstanceName,
-          mTableName,
-          mColumnNames);
+      throw new UnsupportedOperationException("Abstract method.");
     }
   }
 
   /**
-   * Private class for parsing the authority portion of a KijiURI.
+   * A Parser for {@code KijiURI}s in text form.  {@code KijiURIParser}s register themselves to
+   * handle parsing of certain schemes, and the correct parser to use for a given string is decided
+   * by its scheme.
    */
-  private static class AuthorityParser {
-    private final ImmutableList<String> mZookeeperQuorum;
-    private final int mZookeeperClientPort;
+  protected interface KijiURIParser extends PriorityProvider {
+
+    String SCHEME_KEY = "scheme";
 
     /**
-     * Constructs an AuthorityParser.
+     * Parse a URI and return a {@link KijiURIBuilder}.
      *
-     * @param uri The uri whose authority is to be parsed.
-     * @throws KijiURIException If the authority is invalid.
+     * @param uri to parse.
+     * @return a KijiURIBuilder parsed from the URI.
      */
-    public AuthorityParser(URI uri) {
-      String authority = uri.getAuthority();
-      if (null == authority) {
-        throw new KijiURIException(uri.toString(), "HBase address missing.");
-      }
+    KijiURIBuilder parse(URI uri);
 
-      if (authority.equals(ENV_URI_STRING)) {
-        mZookeeperQuorum = ENV_ZOOKEEPER_QUORUM;
-        mZookeeperClientPort = ENV_ZOOKEEPER_CLIENT_PORT;
-        return;
-      }
+    /**
+     * A factory for retrieving a {@link KijiURIParser} for a URI, and parsing it.
+     */
+    static class Factory {
 
-      final Matcher zkMatcher = RE_AUTHORITY_GROUP.matcher(authority);
-      if (zkMatcher.matches()) {
-        mZookeeperQuorum = ImmutableList.copyOf(zkMatcher.group(1).split(","));
-        mZookeeperClientPort = Integer.parseInt(zkMatcher.group(2));
-      } else {
-        final String[] splits = authority.split(":");
-        switch (splits.length) {
-          case 1:
-            mZookeeperQuorum = ImmutableList.copyOf(authority.split(","));
-            mZookeeperClientPort = DEFAULT_ZOOKEEPER_CLIENT_PORT;
-            break;
-          case 2:
-            if (splits[0].contains(",")) {
-              throw new KijiURIException(uri.toString(),
-                  "Multiple zookeeper hosts must be parenthesized.");
-            } else {
-              mZookeeperQuorum = ImmutableList.of(splits[0]);
-            }
-            mZookeeperClientPort = Integer.parseInt(splits[1]);
-            break;
-          default:
-            throw new KijiURIException(uri.toString(),
-                "Invalid address, expecting 'zookeeper-quorum[:zookeeper-client-port]'");
+
+      /**
+       * Parse a {@link URI} into a {@link KijiURIBuilder} based on the {@link URI}'s scheme.
+       *
+       * @param uri to parse.
+       * @return a {@link KijiURIBuilder} for the uri.
+       */
+      public static KijiURIBuilder get(URI uri) {
+        KijiURIParser parser =
+            Lookups
+                .getPriority(KijiURIParser.class)
+                .lookup(ImmutableMap.of(SCHEME_KEY, uri.getScheme().toLowerCase()));
+        if (parser == null) {
+          throw new KijiURIException(String.format("No parser available for KijiURI %s.", uri));
         }
+        return parser.parse(uri);
       }
-    }
-
-    /**
-     * Gets the zookeeper quorum.
-     *
-     * @return The zookeeper quorum.
-     */
-    public ImmutableList<String> getZookeeperQuorum() {
-      return mZookeeperQuorum;
-    }
-
-    /**
-     * Gets the zookeeper client port.
-     *
-     * @return The zookeeper client port.
-     */
-    public int getZookeeperClientPort() {
-      return mZookeeperClientPort;
     }
   }
 
   /**
-   * Gets a builder configured with default Kiji URI fields.
+   * Gets a builder configured with default Kiji URI fields for an HBase cluster.
    *
    * More precisely, the following defaults are initialized:
    * <ul>
@@ -477,10 +462,10 @@ public final class KijiURI {
    *   <li>The table name and column names are explicitly left unset.</li>
    * </ul>
    *
-   * @return A builder configured with this Kiji URI.
+   * @return A builder configured with defaults for an HBase cluster.
    */
   public static KijiURIBuilder newBuilder() {
-    return new KijiURIBuilder();
+    return new HBaseKijiURIBuilder();
   }
 
   /**
@@ -490,11 +475,7 @@ public final class KijiURI {
    * @return A builder configured with uri.
    */
   public static KijiURIBuilder newBuilder(KijiURI uri) {
-    return new KijiURIBuilder(uri.getZookeeperQuorumOrdered(),
-        uri.getZookeeperClientPort(),
-        uri.getInstance(),
-        uri.getTable(),
-        uri.getColumnsOrdered());
+    return uri.getBuilder();
   }
 
   /**
@@ -508,11 +489,11 @@ public final class KijiURI {
    * @throws KijiURIException If the uri is invalid.
    */
   public static KijiURIBuilder newBuilder(String uri) {
-    if (!uri.startsWith("kiji://")) {
+    if (!RE_SCHEME.matcher(uri).matches()) {
       uri = String.format("%s/%s/", KConstants.DEFAULT_HBASE_URI, uri);
     }
     try {
-      return newBuilder(new KijiURI(new URI(uri)));
+      return KijiURIParser.Factory.get(new URI(uri));
     } catch (URISyntaxException exn) {
       throw new KijiURIException(uri, exn.getMessage());
     }
@@ -530,7 +511,7 @@ public final class KijiURI {
       // Without the "./", URI will assume a path containing a colon
       // is a new URI, for example "family:column".
       URI uri = new URI(toString()).resolve(String.format("./%s", path));
-      return new KijiURI(uri);
+      return KijiURIParser.Factory.get(uri).build();
     } catch (URISyntaxException e) {
       throw new RuntimeException(
           String.format("KijiURI was incorrectly constructed (should never happen): %s",
@@ -589,6 +570,15 @@ public final class KijiURI {
   }
 
   /**
+   * Returns the scheme of this KijiURI.
+   *
+   * @return the scheme of this KijiURI.
+   */
+  public String getScheme() {
+    return mScheme;
+  }
+
+  /**
    * Returns the name of the Kiji instance specified by this URI, if any.
    *
    * @return the name of the Kiji instance specified by this URI.
@@ -638,7 +628,7 @@ public final class KijiURI {
    * Returns a string representation of this URI.
    *
    * @param preserveOrdering Whether to preserve ordering of lsits in fields.
-   * @return A string reprresentation of this URI.
+   * @return A string representation of this URI.
    */
   private String toString(boolean preserveOrdering) {
     // Remove trailing unset fields.
@@ -685,28 +675,51 @@ public final class KijiURI {
   }
 
   /**
+   * Appends the cluster identifier for this {@code KijiURI} to the passed in {@link StringBuilder}.
+   *
+   * May be overridden by subclasses if more than the ZooKeeper quorum is necessary for the
+   * cluster identifier.
+   *
+   * @param sb to append cluster identifier to.
+   * @param preserveOrdering whether to preserve ordering in the cluster identifier components.
+   * @return the StringBuilder with the cluster identifier appended.
+   */
+  protected StringBuilder appendClusterIdentifier(
+      final StringBuilder sb,
+      final boolean preserveOrdering
+  ) {
+    ImmutableList<String> zookeeperQuorum =
+        preserveOrdering ? mZookeeperQuorum : mZookeeperQuorumNormalized;
+    if (zookeeperQuorum == null) {
+      sb.append(UNSET_URI_STRING);
+    } else if (zookeeperQuorum.size() == 1) {
+      sb.append(zookeeperQuorum.get(0));
+    } else {
+      sb.append('(');
+      Joiner.on(',').appendTo(sb, zookeeperQuorum);
+      sb.append(')');
+    }
+    sb
+      .append(':')
+      .append(mZookeeperClientPort)
+      .append('/');
+
+    return sb;
+  }
+
+  /**
    * Formats the full KijiURI up to the authority, preserving order.
    *
    * @param preserveOrdering Whether to preserve ordering.
    * @return Representation of this KijiURI up to the authority.
    */
   private String toStringAuthority(boolean preserveOrdering) {
-    String zkQuorum;
-    ImmutableList<String> zookeeperQuorum =
-        preserveOrdering ? mZookeeperQuorum : mZookeeperQuorumNormalized;
-    if (null == zookeeperQuorum) {
-      zkQuorum = UNSET_URI_STRING;
-    } else {
-      if (zookeeperQuorum.size() == 1) {
-        zkQuorum = zookeeperQuorum.get(0);
-      } else {
-        zkQuorum = String.format("(%s)", Joiner.on(",").join(zookeeperQuorum));
-      }
-    }
-    return String.format("%s://%s:%s/",
-        KIJI_SCHEME,
-        zkQuorum,
-        mZookeeperClientPort);
+    StringBuilder sb = new StringBuilder();
+    sb.append(mScheme)
+      .append("://");
+
+    appendClusterIdentifier(sb, preserveOrdering);
+    return sb.toString();
   }
 
   /**
@@ -767,5 +780,63 @@ public final class KijiURI {
     } catch (URISyntaxException e) {
       throw new KijiURIException(e.getMessage());
     }
+  }
+
+  /**
+   * Creates a builder with fields from this {@code KijiURI}.
+   *
+   * @return a builder with fields from this {@code KijiURI}.
+   */
+  protected KijiURIBuilder getBuilder() {
+    throw new UnsupportedOperationException("Abstract method.");
+  }
+
+  /**
+   * Returns a {@link KijiFactory} suitable for installing an instance of this {@code KijiURI}.
+   *
+   * {@code KijiURI} implementations are required to override this method to return a concrete
+   * implementation of {@code KijiFactory} appropriate for the cluster type.
+   *
+   * @return a {@code KijiFactory} for this {@code KijiURI}.
+   */
+  protected KijiFactory getKijiFactoryImpl() {
+    throw new UnsupportedOperationException("Abstract method.");
+  }
+
+  /**
+   * Returns a {@link KijiFactory} suitable for installing an instance of this {@code KijiURI}.
+   *
+   * {@code KijiURI} implementations are required to override this method. Furthermore, the
+   * overridden implementation is required to return a subclass of {@code KijiInstaller} which
+   * has overridden implementations of
+   * {@link KijiInstaller#install(KijiURI, org.kiji.schema.hbase.HBaseFactory, java.util.Map,
+   * org.apache.hadoop.conf.Configuration)} and
+   * {@link KijiInstaller#uninstall(KijiURI, org.kiji.schema.hbase.HBaseFactory,
+   * org.apache.hadoop.conf.Configuration)}.
+   *
+   * @return a {@code KijiFactory} for this {@code KijiURI}.
+   */
+  protected KijiInstaller getKijiInstallerImpl() {
+    throw new UnsupportedOperationException("Abstract method.");
+  }
+
+  /**
+   * Returns a {@link KijiFactory} suitable for installing an instance of this {@code KijiURI}.
+   * Package private to limit scope. Clients should use {@link Kiji.Factory#get(KijiURI)} instead.
+   *
+   * @return a {@code KijiFactory} for this {@code KijiURI}.
+   */
+  protected KijiFactory getKijiFactory() {
+    return getKijiFactoryImpl();
+  }
+
+  /**
+   * Returns a {@link KijiFactory} suitable for installing an instance of this {@code KijiURI}.
+   * Package private to limit scope. Clients should use {@link KijiInstaller} instead.
+   *
+   * @return a {@code KijiFactory} for this {@code KijiURI}.
+   */
+  protected KijiInstaller getKijiInstaller() {
+    return getKijiInstallerImpl();
   }
 }

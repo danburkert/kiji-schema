@@ -17,7 +17,7 @@
  * limitations under the License.
  */
 
-package org.kiji.schema;
+package org.kiji.schema.hbase;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -28,13 +28,16 @@ import java.util.Arrays;
 
 import org.junit.Test;
 
-import org.kiji.schema.KijiURI.KijiURIBuilder;
+import org.kiji.schema.KConstants;
+import org.kiji.schema.KijiColumnName;
+import org.kiji.schema.KijiURI;
+import org.kiji.schema.KijiURIException;
 
-public class TestKijiURI {
+public class TestHBaseKijiURI {
+
   @Test
   public void testClusterIdentifier() {
-    final KijiURI uri = KijiURI.newBuilder("kiji://zkhost:1234").build();
-    assertEquals("kiji", uri.getScheme());
+    final KijiURI uri = KijiURI.newBuilder("kiji-hbase://zkhost:1234").build();
     assertEquals("zkhost", uri.getZookeeperQuorum().get(0));
     assertEquals(1234, uri.getZookeeperClientPort());
     assertEquals(null, uri.getInstance());
@@ -44,8 +47,7 @@ public class TestKijiURI {
 
   @Test
   public void testKijiInstanceUri() {
-    final KijiURI uri = KijiURI.newBuilder("kiji://zkhost:1234/instance").build();
-    assertEquals("kiji", uri.getScheme());
+    final KijiURI uri = KijiURI.newBuilder("kiji-hbase://zkhost:1234/instance").build();
     assertEquals("zkhost", uri.getZookeeperQuorum().get(0));
     assertEquals(1234, uri.getZookeeperClientPort());
     assertEquals("instance", uri.getInstance());
@@ -55,8 +57,7 @@ public class TestKijiURI {
 
   @Test
   public void testSingleHost() {
-    final KijiURI uri = KijiURI.newBuilder("kiji://zkhost:1234/instance/table/col").build();
-    assertEquals("kiji", uri.getScheme());
+    final KijiURI uri = KijiURI.newBuilder("kiji-hbase://zkhost:1234/instance/table/col").build();
     assertEquals("zkhost", uri.getZookeeperQuorum().get(0));
     assertEquals(1234, uri.getZookeeperClientPort());
     assertEquals("instance", uri.getInstance());
@@ -67,8 +68,7 @@ public class TestKijiURI {
   @Test
   public void testSingleHostGroupColumn() {
     final KijiURI uri =
-        KijiURI.newBuilder("kiji://zkhost:1234/instance/table/family:qualifier").build();
-    assertEquals("kiji", uri.getScheme());
+        KijiURI.newBuilder("kiji-hbase://zkhost:1234/instance/table/family:qualifier").build();
     assertEquals("zkhost", uri.getZookeeperQuorum().get(0));
     assertEquals(1234, uri.getZookeeperClientPort());
     assertEquals("instance", uri.getInstance());
@@ -78,8 +78,7 @@ public class TestKijiURI {
 
   @Test
   public void testSingleHostDefaultInstance() {
-    final KijiURI uri = KijiURI.newBuilder("kiji://zkhost:1234/default/table/col").build();
-    assertEquals("kiji", uri.getScheme());
+    final KijiURI uri = KijiURI.newBuilder("kiji-hbase://zkhost:1234/default/table/col").build();
     assertEquals("zkhost", uri.getZookeeperQuorum().get(0));
     assertEquals(1, uri.getZookeeperQuorum().size());
     assertEquals(1234, uri.getZookeeperClientPort());
@@ -90,8 +89,7 @@ public class TestKijiURI {
 
   @Test
   public void testSingleHostDefaultPort() {
-    final KijiURI uri = KijiURI.newBuilder("kiji://zkhost/instance/table/col").build();
-    assertEquals("kiji", uri.getScheme());
+    final KijiURI uri = KijiURI.newBuilder("kiji-hbase://zkhost/instance/table/col").build();
     assertEquals(1, uri.getZookeeperQuorum().size());
     assertEquals("zkhost", uri.getZookeeperQuorum().get(0));
     assertEquals(KijiURI.DEFAULT_ZOOKEEPER_CLIENT_PORT, uri.getZookeeperClientPort());
@@ -103,8 +101,7 @@ public class TestKijiURI {
   @Test
   public void testMultipleHosts() {
     final KijiURI uri =
-        KijiURI.newBuilder("kiji://(zkhost1,zkhost2):1234/instance/table/col").build();
-    assertEquals("kiji", uri.getScheme());
+        KijiURI.newBuilder("kiji-hbase://(zkhost1,zkhost2):1234/instance/table/col").build();
     assertEquals("zkhost1", uri.getZookeeperQuorum().get(0));
     assertEquals("zkhost2", uri.getZookeeperQuorum().get(1));
     assertEquals(1234, uri.getZookeeperClientPort());
@@ -115,8 +112,7 @@ public class TestKijiURI {
 
   @Test
   public void testMultipleHostsDefaultPort() {
-    final KijiURI uri = KijiURI.newBuilder("kiji://zkhost1,zkhost2/instance/table/col").build();
-    assertEquals("kiji", uri.getScheme());
+    final KijiURI uri = KijiURI.newBuilder("kiji-hbase://zkhost1,zkhost2/instance/table/col").build();
     assertEquals("zkhost1", uri.getZookeeperQuorum().get(0));
     assertEquals("zkhost2", uri.getZookeeperQuorum().get(1));
     assertEquals(KijiURI.DEFAULT_ZOOKEEPER_CLIENT_PORT, uri.getZookeeperClientPort());
@@ -127,8 +123,7 @@ public class TestKijiURI {
 
   @Test
   public void testMultipleHostsDefaultPortDefaultInstance() {
-    final KijiURI uri = KijiURI.newBuilder("kiji://zkhost1,zkhost2/default/table/col").build();
-    assertEquals("kiji", uri.getScheme());
+    final KijiURI uri = KijiURI.newBuilder("kiji-hbase://zkhost1,zkhost2/default/table/col").build();
     assertEquals("zkhost1", uri.getZookeeperQuorum().get(0));
     assertEquals("zkhost2", uri.getZookeeperQuorum().get(1));
     assertEquals(KijiURI.DEFAULT_ZOOKEEPER_CLIENT_PORT, uri.getZookeeperClientPort());
@@ -140,7 +135,6 @@ public class TestKijiURI {
   @Test
   public void testRelativeToDefaultHBaseURI() {
     final KijiURI uri = KijiURI.newBuilder("instance/table/col").build();
-    assertEquals("kiji", uri.getScheme());
     assertEquals("instance", uri.getInstance());
     assertEquals("table", uri.getTable());
     assertEquals("col", uri.getColumns().get(0).getName());
@@ -151,32 +145,23 @@ public class TestKijiURI {
   }
 
   @Test
-  public void testIllegalScheme() {
-    try {
-      KijiURI.newBuilder("kiji-foo:///");
-      fail("An exception should have been thrown.");
-    } catch (KijiURIException kurie) {
-      assertTrue(kurie.getMessage().contains("No parser available for"));
-    }
-  }
-
-  @Test
   public void testNoAuthority() {
     try {
-      KijiURI.newBuilder("kiji:///");
+      KijiURI.newBuilder("kiji-hbase:///");
       fail("An exception should have been thrown.");
     } catch (KijiURIException kurie) {
-      assertEquals("Invalid Kiji URI: 'kiji:///' : HBase address missing.", kurie.getMessage());
+      assertEquals("Invalid Kiji URI: 'kiji-hbase:///' : HBase address missing.",
+          kurie.getMessage());
     }
   }
 
   @Test
   public void testMultipleHostsNoParen() {
     try {
-      KijiURI.newBuilder("kiji://zkhost1,zkhost2:1234/instance/table/col");
+      KijiURI.newBuilder("kiji-hbase://zkhost1,zkhost2:1234/instance/table/col");
       fail("An exception should have been thrown.");
     } catch (KijiURIException kurie) {
-      assertEquals("Invalid Kiji URI: 'kiji://zkhost1,zkhost2:1234/instance/table/col' : Multiple "
+      assertEquals("Invalid Kiji URI: 'kiji-hbase://zkhost1,zkhost2:1234/instance/table/col' : Multiple "
           + "zookeeper hosts must be parenthesized.", kurie.getMessage());
     }
   }
@@ -184,11 +169,11 @@ public class TestKijiURI {
   @Test
   public void testMultipleHostsMultiplePorts() {
     try {
-      KijiURI.newBuilder("kiji://zkhost1:1234,zkhost2:2345/instance/table/col");
+      KijiURI.newBuilder("kiji-hbase://zkhost1:1234,zkhost2:2345/instance/table/col");
       fail("An exception should have been thrown.");
     } catch (KijiURIException kurie) {
-      assertEquals("Invalid Kiji URI: 'kiji://zkhost1:1234,zkhost2:2345/instance/table/col' : "
-          + "Invalid address, expecting 'zookeeper-quorum[:zookeeper-client-port]'",
+      assertEquals("Invalid Kiji URI: 'kiji-hbase://zkhost1:1234,zkhost2:2345/instance/table/col'"
+              + " : Invalid address, expecting 'zookeeper-quorum[:zookeeper-client-port]'",
           kurie.getMessage());
     }
   }
@@ -196,7 +181,7 @@ public class TestKijiURI {
   @Test
   public void testMultipleColumns() {
     final KijiURI uri =
-        KijiURI.newBuilder("kiji://zkhost1,zkhost2/default/table/col1,col2").build();
+        KijiURI.newBuilder("kiji-hbase://zkhost1,zkhost2/default/table/col1,col2").build();
     assertEquals("zkhost1", uri.getZookeeperQuorum().get(0));
     assertEquals("zkhost2", uri.getZookeeperQuorum().get(1));
     assertEquals(KijiURI.DEFAULT_ZOOKEEPER_CLIENT_PORT, uri.getZookeeperClientPort());
@@ -208,10 +193,10 @@ public class TestKijiURI {
   @Test
   public void testExtraPath() {
     try {
-      KijiURI.newBuilder("kiji://(zkhost1,zkhost2):1234/instance/table/col/extra");
+      KijiURI.newBuilder("kiji-hbase://(zkhost1,zkhost2):1234/instance/table/col/extra");
       fail("An exception should have been thrown.");
     } catch (KijiURIException kurie) {
-      assertEquals("Invalid Kiji URI: 'kiji://(zkhost1,zkhost2):1234/instance/table/col/extra' : "
+      assertEquals("Invalid Kiji URI: 'kiji-hbase://(zkhost1,zkhost2):1234/instance/table/col/extra' : "
           + "Invalid path, expecting '/kiji-instance/table-name/(column1, column2, ...)'",
           kurie.getMessage());
     }
@@ -220,7 +205,7 @@ public class TestKijiURI {
   @Test
   public void testURIWithQuery() {
     final KijiURI uri =
-        KijiURI.newBuilder("kiji://(zkhost1,zkhost2):1234/instance/table/col?query").build();
+        KijiURI.newBuilder("kiji-hbase://(zkhost1,zkhost2):1234/instance/table/col?query").build();
     assertEquals("zkhost1", uri.getZookeeperQuorum().get(0));
     assertEquals("zkhost2", uri.getZookeeperQuorum().get(1));
     assertEquals(1234, uri.getZookeeperClientPort());
@@ -232,7 +217,7 @@ public class TestKijiURI {
   @Test
   public void testURIWithFragment() {
     final KijiURI uri =
-        KijiURI.newBuilder("kiji://(zkhost1,zkhost2):1234/instance/table/col#frag").build();
+        KijiURI.newBuilder("kiji-hbase://(zkhost1,zkhost2):1234/instance/table/col#frag").build();
     assertEquals("zkhost1", uri.getZookeeperQuorum().get(0));
     assertEquals("zkhost2", uri.getZookeeperQuorum().get(1));
     assertEquals(1234, uri.getZookeeperClientPort());
@@ -243,7 +228,7 @@ public class TestKijiURI {
 
   @Test
   public void testPartialURIZookeeper() {
-    final KijiURI uri = KijiURI.newBuilder("kiji://zkhost:1234").build();
+    final KijiURI uri = KijiURI.newBuilder("kiji-hbase://zkhost:1234").build();
     assertEquals("zkhost", uri.getZookeeperQuorum().get(0));
     assertEquals(1234, uri.getZookeeperClientPort());
     assertEquals(null, uri.getInstance());
@@ -251,72 +236,72 @@ public class TestKijiURI {
 
   @Test
   public void testBasicResolution() {
-    final KijiURI uri = KijiURI.newBuilder("kiji://zkhost:1234").build();
+    final KijiURI uri = KijiURI.newBuilder("kiji-hbase://zkhost:1234").build();
     final KijiURI resolved = uri.resolve("testinstance");
     assertEquals("testinstance", resolved.getInstance());
   }
 
   @Test
   public void testResolution() {
-    final KijiURI uri = KijiURI.newBuilder("kiji://zkhost:1234/.unset").build();
+    final KijiURI uri = KijiURI.newBuilder("kiji-hbase://zkhost:1234/.unset").build();
     final KijiURI resolved = uri.resolve("testinstance");
     assertEquals("testinstance", resolved.getInstance());
   }
 
   @Test
   public void testResolutionColumn() {
-    final KijiURI uri = KijiURI.newBuilder("kiji://zkhost/instance/table").build();
+    final KijiURI uri = KijiURI.newBuilder("kiji-hbase://zkhost/instance/table").build();
     final KijiURI resolved = uri.resolve("col");
     assertEquals("col", resolved.getColumns().get(0).getName());
   }
 
   @Test
   public void testInvalidResolution() {
-    final KijiURI uri = KijiURI.newBuilder("kiji://zkhost:1234").build();
+    final KijiURI uri = KijiURI.newBuilder("kiji-hbase://zkhost:1234").build();
     try {
       uri.resolve("instance/table/col/extra");
       fail("An exception should have been thrown.");
     } catch (KijiURIException kurie) {
-      assertEquals("Invalid Kiji URI: 'kiji://zkhost:1234/instance/table/col/extra' : Invalid path,"
+      assertEquals("Invalid Kiji URI: 'kiji-hbase://zkhost:1234/instance/table/col/extra' : Invalid path,"
           + " expecting '/kiji-instance/table-name/(column1, column2, ...)'", kurie.getMessage());
     }
   }
 
   @Test
   public void testToString() {
-    String uri = "kiji://(zkhost1,zkhost2):1234/instance/table/col/";
+    String uri = "kiji-hbase://(zkhost1,zkhost2):1234/instance/table/col/";
     assertEquals(uri, KijiURI.newBuilder(uri).build().toString());
-    uri = "kiji://zkhost1:1234/instance/table/col/";
+    uri = "kiji-hbase://zkhost1:1234/instance/table/col/";
     assertEquals(uri, KijiURI.newBuilder(uri).build().toString());
-    uri = "kiji://zkhost:1234/instance/table/col1,col2/";
+    uri = "kiji-hbase://zkhost:1234/instance/table/col1,col2/";
     assertEquals(uri, KijiURI.newBuilder(uri).build().toString());
-    uri = "kiji://zkhost:1234/.unset/table/col/";
+    uri = "kiji-hbase://zkhost:1234/.unset/table/col/";
     assertEquals(uri, KijiURI.newBuilder(uri).build().toString());
   }
 
   @Test
   public void testNormalizedQuorum() {
-    KijiURI uri = KijiURI.newBuilder("kiji://(zkhost1,zkhost2):1234/instance/table/col/").build();
+    KijiURI uri = KijiURI.newBuilder("kiji-hbase://(zkhost1,zkhost2):1234/instance/table/col/").build();
     KijiURI reversedQuorumUri =
-        KijiURI.newBuilder("kiji://(zkhost2,zkhost1):1234/instance/table/col/").build();
+        KijiURI.newBuilder("kiji-hbase://(zkhost2,zkhost1):1234/instance/table/col/").build();
     assertEquals(uri.toString(), reversedQuorumUri.toString());
     assertEquals(uri.getZookeeperQuorum(), reversedQuorumUri.getZookeeperQuorum());
   }
 
   @Test
   public void testNormalizedColumns() {
-    KijiURI uri = KijiURI.newBuilder("kiji://(zkhost1,zkhost2):1234/instance/table/col/").build();
+    KijiURI uri = KijiURI.newBuilder("kiji-hbase://(zkhost1,zkhost2):1234/instance/table/col/").build();
     KijiURI reversedColumnURI =
-        KijiURI.newBuilder("kiji://(zkhost2,zkhost1):1234/instance/table/col/").build();
+        KijiURI.newBuilder("kiji-hbase://(zkhost2,zkhost1):1234/instance/table/col/").build();
     assertEquals(uri.toString(), reversedColumnURI.toString());
     assertEquals(uri.getColumns(), reversedColumnURI.getColumns());
   }
 
   @Test
   public void testOrderedQuorum() {
-    KijiURI uri = KijiURI.newBuilder("kiji://(zkhost1,zkhost2):1234/instance/table/col/").build();
+    KijiURI uri = KijiURI.newBuilder("kiji-hbase://(zkhost1,zkhost2):1234/instance/table/col/").build();
     KijiURI reversedQuorumUri =
-        KijiURI.newBuilder("kiji://(zkhost2,zkhost1):1234/instance/table/col/").build();
+        KijiURI.newBuilder("kiji-hbase://(zkhost2,zkhost1):1234/instance/table/col/").build();
     assertFalse(uri.getZookeeperQuorumOrdered()
         .equals(reversedQuorumUri.getZookeeperQuorumOrdered()));
     assertFalse(uri.toOrderedString().equals(reversedQuorumUri.toOrderedString()));
@@ -325,9 +310,9 @@ public class TestKijiURI {
   @Test
   public void testOrderedColumns() {
     KijiURI uri =
-        KijiURI.newBuilder("kiji://(zkhost1,zkhost2):1234/instance/table/col1,col2/").build();
+        KijiURI.newBuilder("kiji-hbase://(zkhost1,zkhost2):1234/instance/table/col1,col2/").build();
     KijiURI reversedColumnURI =
-        KijiURI.newBuilder("kiji://(zkhost1,zkhost2):1234/instance/table/col2,col1/").build();
+        KijiURI.newBuilder("kiji-hbase://(zkhost1,zkhost2):1234/instance/table/col2,col1/").build();
     assertFalse(uri.toOrderedString().equals(reversedColumnURI.toOrderedString()));
     assertFalse(uri.getColumnsOrdered().equals(reversedColumnURI.getColumnsOrdered()));
   }
@@ -350,14 +335,14 @@ public class TestKijiURI {
 
   @Test
   public void testKijiURIBuilderFromInstance() {
-    final KijiURI uri = KijiURI.newBuilder("kiji://zkhost:1234/.unset/table").build();
+    final KijiURI uri = KijiURI.newBuilder("kiji-hbase://zkhost:1234/.unset/table").build();
     KijiURI built = KijiURI.newBuilder(uri).build();
     assertEquals(uri, built);
   }
 
   @Test
   public void testKijiURIBuilderWithInstance() {
-    final KijiURI uri = KijiURI.newBuilder("kiji://zkhost:1234/instance1/table").build();
+    final KijiURI uri = KijiURI.newBuilder("kiji-hbase://zkhost:1234/instance1/table").build();
     assertEquals("instance1", uri.getInstance());
     final KijiURI modified =
         KijiURI.newBuilder(uri).withInstanceName("instance2").build();
@@ -367,7 +352,7 @@ public class TestKijiURI {
 
   @Test
   public void testSetColumn() {
-    KijiURI uri = KijiURI.newBuilder("kiji://zkhost/instance/table/").build();
+    KijiURI uri = KijiURI.newBuilder("kiji-hbase://zkhost/instance/table/").build();
     assertTrue(uri.getColumns().isEmpty());
     uri =
         KijiURI.newBuilder(uri).withColumnNames(Arrays.asList("testcol1", "testcol2"))
@@ -377,7 +362,7 @@ public class TestKijiURI {
 
   @Test
   public void testSetZookeeperQuorum() {
-    final KijiURI uri = KijiURI.newBuilder("kiji://zkhost/instance/table/col").build();
+    final KijiURI uri = KijiURI.newBuilder("kiji-hbase://zkhost/instance/table/col").build();
     final KijiURI modified = KijiURI.newBuilder(uri)
         .withZookeeperQuorum(new String[] {"zkhost1", "zkhost2"}).build();
     assertEquals(2, modified.getZookeeperQuorum().size());
@@ -387,23 +372,23 @@ public class TestKijiURI {
 
   @Test
   public void testTrailingUnset() {
-    final KijiURI uri = KijiURI.newBuilder("kiji://zkhost/.unset/table/.unset").build();
+    final KijiURI uri = KijiURI.newBuilder("kiji-hbase://zkhost/.unset/table/.unset").build();
     KijiURI result = KijiURI.newBuilder(uri).withTableName(".unset").build();
-    assertEquals("kiji://zkhost:2181/", result.toString());
+    assertEquals("kiji-hbase://zkhost:2181/", result.toString());
   }
 
   @Test
   public void testEscapedMapColumnQualifier() {
-    final KijiURI uri = KijiURI.newBuilder("kiji://zkhost/instance/table/map:one%20two").build();
+    final KijiURI uri = KijiURI.newBuilder("kiji-hbase://zkhost/instance/table/map:one%20two").build();
     assertEquals("map:one two", uri.getColumns().get(0).getName());
   }
 
   @Test
   public void testConstructedUriIsEscaped() {
     // SCHEMA-6. Column qualifier must be URL-encoded in KijiURI.
-    final KijiURI uri = KijiURI.newBuilder("kiji://zkhost/instance/table/")
+    final KijiURI uri = KijiURI.newBuilder("kiji-hbase://zkhost/instance/table/")
         .addColumnName(KijiColumnName.create("map:one two")).build();
-    assertEquals("kiji://zkhost:2181/instance/table/map:one%20two/", uri.toString());
+    assertEquals("kiji-hbase://zkhost:2181/instance/table/map:one%20two/", uri.toString());
   }
 }
 
