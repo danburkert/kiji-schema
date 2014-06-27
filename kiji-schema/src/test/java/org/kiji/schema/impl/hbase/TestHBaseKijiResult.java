@@ -25,6 +25,7 @@ import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Set;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSortedMap;
 import com.google.common.collect.Lists;
@@ -43,7 +44,10 @@ import org.kiji.schema.KijiClientTest;
 import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiDataRequest;
 import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
+import org.kiji.schema.KijiPager;
 import org.kiji.schema.KijiResult;
+import org.kiji.schema.KijiRowData;
+import org.kiji.schema.KijiRowScanner;
 import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.layout.KijiTableLayouts;
 import org.kiji.schema.util.InstanceBuilder;
@@ -320,6 +324,29 @@ public class TestHBaseKijiResult extends KijiClientTest {
   @After
   public void cleanupTestHBaseKijiResult() throws IOException {
     mReader.close();
+  }
+
+  @Test
+  public void testFoo() throws Exception {
+
+    final KijiDataRequest mapRequest = KijiDataRequest.builder().addColumns(
+        ColumnsDef.create().withPageSize(2).withMaxVersions(10).addFamily("string_map").addFamily("primitive")).build();
+
+    final KijiRowScanner scanner = mReader.getScanner(mapRequest);
+    try {
+      final KijiRowData result = scanner.iterator().next();
+
+      final KijiPager pager = result.getPager("string_map");
+      try {
+        while (pager.hasNext()) {
+          System.out.println(pager.next());
+        }
+      } finally {
+        pager.close();
+      }
+    } finally {
+      scanner.close();
+    }
   }
 
   @Test

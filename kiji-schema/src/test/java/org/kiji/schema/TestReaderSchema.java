@@ -285,7 +285,6 @@ public class TestReaderSchema extends KijiClientTest {
         assertTrue(ate.getMessage(),
             ate.getMessage().contains("Found int, expecting org.kiji.schema.avro.TestRecord2"));
       }
-
     } finally {
       reader.close();
     }

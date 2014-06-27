@@ -58,6 +58,7 @@ import org.kiji.schema.filter.KijiRowFilter;
 import org.kiji.schema.filter.KijiRowFilterApplicator;
 import org.kiji.schema.hbase.HBaseScanOptions;
 import org.kiji.schema.impl.BoundColumnReaderSpec;
+import org.kiji.schema.impl.KijiResultRowData;
 import org.kiji.schema.impl.LayoutConsumer;
 import org.kiji.schema.layout.CellSpec;
 import org.kiji.schema.layout.ColumnReaderSpec;
@@ -360,28 +361,8 @@ public final class HBaseKijiTableReader implements KijiTableReader {
     Preconditions.checkState(state == State.OPEN,
         "Cannot get row from KijiTableReader instance %s in state %s.", this, state);
 
-    final ReaderLayoutCapsule capsule = mReaderLayoutCapsule;
-    // Make sure the request validates against the layout of the table.
-    final KijiTableLayout tableLayout = capsule.getLayout();
-    validateRequestAgainstLayout(dataRequest, tableLayout);
-
-    // Construct an HBase Get to send to the HTable.
-    HBaseDataRequestAdapter hbaseRequestAdapter =
-        new HBaseDataRequestAdapter(dataRequest, capsule.getColumnNameTranslator());
-    Get hbaseGet;
-    try {
-      hbaseGet = hbaseRequestAdapter.toGet(entityId, tableLayout);
-    } catch (InvalidLayoutException e) {
-      // The table layout should never be invalid at this point, since we got it from a valid
-      // opened table.  If it is, there's something seriously wrong.
-      throw new InternalKijiError(e);
-    }
-    // Send the HTable Get.
-    final Result result = hbaseGet.hasFamilies() ? doHBaseGet(hbaseGet) : new Result();
-
-    // Parse the result.
-    return new HBaseKijiRowData(
-        mTable, dataRequest, entityId, result, capsule.getCellDecoderProvider());
+    final KijiResult result = getResult(entityId, dataRequest);
+    return new KijiResultRowData(result);
   }
 
   /**
