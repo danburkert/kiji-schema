@@ -16,20 +16,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.kiji.schema;
-
-import java.io.Closeable;
-import java.util.Iterator;
-
-import org.kiji.annotations.ApiAudience;
-import org.kiji.annotations.ApiStability;
-import org.kiji.annotations.Inheritance;
 
 /**
- * A scanner over rows in a KijiTable. Rows are returned as {@link KijiResult}s.
- * {@code KijiResultScanner} must be closed when it will no longer be used.
+ * Helper classes for the {@code KijiResult} API.
+ *
+ * <p>
+ *   Users should not use these classes directly.
+ * </p>
  */
-@ApiAudience.Framework
-@ApiStability.Experimental
-@Inheritance.Sealed
-public interface KijiResultScanner<T> extends Closeable, Iterator<KijiResult<T>> { }
+package org.kiji.schema.impl.hbase.result;

@@ -392,7 +392,7 @@ public final class HBaseKijiTableReader implements KijiTableReader {
    * @return a new KijiResult for the given EntityId and data request.
    * @throws IOException in case of an error getting the data.
    */
-  public KijiResult getResult(
+  public <T> KijiResult<T> getResult(
       final EntityId entityId,
       final KijiDataRequest dataRequest
   ) throws IOException {
@@ -406,10 +406,11 @@ public final class HBaseKijiTableReader implements KijiTableReader {
         new HBaseDataRequestAdapter(dataRequest, capsule.getColumnNameTranslator());
     final Get get = hbaseDataRequestAdapter.toGet(entityId, tableLayout);
     final Result result = get.hasFamilies() ? doHBaseGet(get) : new Result();
-    return new HBaseKijiResult(
+    return HBaseKijiResult.create(
         entityId,
         dataRequest,
         result,
+        capsule.getLayout(),
         capsule.getColumnNameTranslator(),
         capsule.getCellDecoderProvider(),
         mTable);
@@ -510,7 +511,7 @@ public final class HBaseKijiTableReader implements KijiTableReader {
    * @return A new KijiResultScanner.
    * @throws IOException in case of an error creating the scanner.
    */
-  public HBaseKijiResultScanner getKijiResultScanner(
+  public <T> HBaseKijiResultScanner<T> getKijiResultScanner(
       final KijiDataRequest request,
       final KijiScannerOptions scannerOptions
   ) throws IOException {
@@ -542,6 +543,7 @@ public final class HBaseKijiTableReader implements KijiTableReader {
         request,
         mTable,
         scan,
+        capsule.getLayout(),
         capsule.getCellDecoderProvider(),
         capsule.getColumnNameTranslator(),
         scannerOptions.getReopenScannerOnTimeout());

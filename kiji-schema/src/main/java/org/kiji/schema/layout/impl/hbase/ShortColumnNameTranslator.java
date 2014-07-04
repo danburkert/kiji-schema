@@ -119,8 +119,9 @@ public final class ShortColumnNameTranslator extends HBaseColumnNameTranslator {
 
   /** {@inheritDoc} */
   @Override
-  public HBaseColumnName toHBaseColumnName(KijiColumnName kijiColumnName)
-      throws NoSuchColumnException {
+  public HBaseColumnName toHBaseColumnName(
+      final KijiColumnName kijiColumnName
+  ) throws NoSuchColumnException {
     final String familyName = kijiColumnName.getFamily();
     final String qualifierName = kijiColumnName.getQualifier();
 

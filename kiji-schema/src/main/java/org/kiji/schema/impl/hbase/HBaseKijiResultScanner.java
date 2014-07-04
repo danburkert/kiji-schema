@@ -38,10 +38,11 @@ import org.kiji.schema.KijiDataRequest;
 import org.kiji.schema.KijiIOException;
 import org.kiji.schema.KijiResultScanner;
 import org.kiji.schema.layout.HBaseColumnNameTranslator;
+import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
 
 /** Scanner across rows of a KijiTable which returns a KijiResult per row. */
-public class HBaseKijiResultScanner implements KijiResultScanner {
+public class HBaseKijiResultScanner<T> implements KijiResultScanner<T> {
   private static final Logger LOG = LoggerFactory.getLogger(HBaseKijiResultScanner.class);
 
   private static final int MAX_RETRIES_ON_TIMEOUT = 3;
@@ -67,6 +68,7 @@ public class HBaseKijiResultScanner implements KijiResultScanner {
   private final KijiDataRequest mRequest;
   private final HBaseKijiTable mTable;
   private final Scan mScan;
+  private final KijiTableLayout mLayout;
   private final CellDecoderProvider mDecoderProvider;
   private final HBaseColumnNameTranslator mColumnNameTranslator;
   private final EntityIdFactory mEidFactory;
@@ -92,6 +94,7 @@ public class HBaseKijiResultScanner implements KijiResultScanner {
       final KijiDataRequest request,
       final HBaseKijiTable table,
       final Scan scan,
+      final KijiTableLayout layout,
       final CellDecoderProvider decoderProvider,
       final HBaseColumnNameTranslator columnNameTranslator,
       final boolean reopenScannerOnTimeout
@@ -99,6 +102,7 @@ public class HBaseKijiResultScanner implements KijiResultScanner {
     mRequest = request;
     mTable = table;
     mScan = scan;
+    mLayout = layout;
     mDecoderProvider = decoderProvider;
     mColumnNameTranslator = columnNameTranslator;
     mReopenScannerOnTimeout = reopenScannerOnTimeout;
@@ -171,7 +175,7 @@ public class HBaseKijiResultScanner implements KijiResultScanner {
 
   /** {@inheritDoc} */
   @Override
-  public HBaseKijiResult next() {
+  public HBaseKijiResult<T> next() {
     final State oldState = mState.get();
     Preconditions.checkState(oldState == State.OPEN,
         "Cannot get element from KijiResultScanner in state %s.", oldState);
@@ -180,10 +184,11 @@ public class HBaseKijiResultScanner implements KijiResultScanner {
       throw new NoSuchElementException();
     }
     mNextResult = getNextResult();
-    return new HBaseKijiResult(
+    return HBaseKijiResult.create(
         mEidFactory.getEntityIdFromHBaseRowKey(next.getRow()),
         mRequest,
         next,
+        mLayout,
         mColumnNameTranslator,
         mDecoderProvider,
         mTable);

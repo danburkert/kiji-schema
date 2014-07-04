@@ -284,12 +284,10 @@ public final class CellDecoderProvider {
    *     Null means no qualifier, ie. get a decoder for a (map-type) family.
    * @return a cell decoder for the specified column.
    *     Null if the column does not exist or if the family is not map-type.
-   * @throws IOException on I/O error.
-   *
    * @param <T> Type of the data to decode.
    */
   @SuppressWarnings("unchecked")
-  public <T> KijiCellDecoder<T> getDecoder(String family, String qualifier) throws IOException {
+  public <T> KijiCellDecoder<T> getDecoder(String family, String qualifier) {
     final String column = (qualifier != null) ? (family + ":" + qualifier) : family;
     final KijiCellDecoder<T> decoder = (KijiCellDecoder<T>) mColumnDecoderMap.get(column);
     if (decoder != null) {

@@ -884,11 +884,12 @@ public final class HBaseKijiRowData implements KijiRowData {
    * @return a KijiResult corresponding to the same data as this KijiRowData.
    */
   public HBaseKijiResult asKijiResult() {
-    return new HBaseKijiResult(
+    return HBaseKijiResult.create(
         mEntityId,
         mDataRequest,
         mResult,
-        mTable.getColumnNameTranslator(),
+        mTableLayout,
+        HBaseColumnNameTranslator.from(mTableLayout),
         mDecoderProvider,
         mTable);
   }
