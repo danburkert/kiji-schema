@@ -51,6 +51,7 @@ import org.kiji.schema.KijiColumnPagingNotEnabledException;
 import org.kiji.schema.KijiDataRequest;
 import org.kiji.schema.KijiIOException;
 import org.kiji.schema.KijiPager;
+import org.kiji.schema.KijiResult;
 import org.kiji.schema.KijiRowData;
 import org.kiji.schema.KijiTableReaderBuilder;
 import org.kiji.schema.NoSuchColumnException;
@@ -867,15 +868,17 @@ public final class HBaseKijiRowData implements KijiRowData {
    * Get a KijiResult corresponding to the same data as this KjiRowData.
    *
    * @return a KijiResult corresponding to the same data as this KijiRowData.
+   * @throws IOException if error while decoding cells.
    */
-  public HBaseKijiResult asKijiResult() {
-    return new HBaseKijiResult(
+  public KijiResult<Object> asKijiResult() throws IOException {
+    return HBaseKijiResult.create(
         mEntityId,
         mDataRequest,
         mResult,
-        mTable.getColumnNameTranslator(),
-        mDecoderProvider,
-        mTable);
+        mTable,
+        mTableLayout,
+        HBaseColumnNameTranslator.from(mTableLayout),
+        mDecoderProvider);
   }
 
   /** {@inheritDoc} */
