@@ -37,6 +37,7 @@ import org.kiji.schema.InternalKijiError;
 import org.kiji.schema.KijiCellDecoder;
 import org.kiji.schema.KijiCellDecoderFactory;
 import org.kiji.schema.KijiColumnName;
+import org.kiji.schema.KijiDataRequest;
 import org.kiji.schema.KijiSchemaTable;
 import org.kiji.schema.KijiTableReaderBuilder;
 import org.kiji.schema.KijiTableReaderBuilder.OnDecoderCacheMiss;
@@ -70,6 +71,12 @@ import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout.C
  *     <li> using the Avro writer schema (this forces using generic records). </li>
  *   </ul>
  * </p>
+ *
+ * <h2>Thread Safety</h2>
+ * <p>
+ *   {@code CellDecoderProvider} is <em>not</em> thread safe.
+ * </p>
+ *
  */
 @ApiAudience.Private
 public final class CellDecoderProvider {
@@ -79,7 +86,7 @@ public final class CellDecoderProvider {
   /** Layout of the table for which decoders are provided. */
   private final KijiTableLayout mLayout;
   /** Maps column names to decoders. */
-  private final ImmutableMap<String, KijiCellDecoder<?>> mColumnDecoderMap;
+  private final ImmutableMap<KijiColumnName, KijiCellDecoder<?>> mColumnDecoderMap;
   /** Maps bound column reader specs to decoders. */
   private final Map<BoundColumnReaderSpec, KijiCellDecoder<?>> mSpecDecoderMap;
   /** Behavior when a decoder cannot be found. */
@@ -99,8 +106,8 @@ public final class CellDecoderProvider {
       final KijiTableLayout layout,
       final KijiSchemaTable schemaTable,
       final KijiCellDecoderFactory factory,
-      final Map<KijiColumnName, CellSpec> overrides)
-      throws IOException {
+      final Map<KijiColumnName, CellSpec> overrides
+  ) throws IOException {
     mLayout = layout;
     // Compute the set of all the column names (map-type families and fully-qualified columns).
     // Note: nothing prevents one from overriding the specification for one specific qualifier
@@ -120,7 +127,7 @@ public final class CellDecoderProvider {
     }
 
     // Pro-actively build cell decoders for all columns in the table:
-    final Map<String, KijiCellDecoder<?>> decoderMap = Maps.newHashMap();
+    final Map<KijiColumnName, KijiCellDecoder<?>> decoderMap = Maps.newHashMap();
     for (KijiColumnName column : columns) {
       // Gets the specification for this column,
       // from the overlay map or else from the actual table layout:
@@ -141,7 +148,7 @@ public final class CellDecoderProvider {
       }
 
       final KijiCellDecoder<?> decoder = cellSpec.getDecoderFactory().create(cellSpec);
-      decoderMap.put(column.getName(), decoder);
+      decoderMap.put(column, decoder);
     }
     mColumnDecoderMap = ImmutableMap.copyOf(decoderMap);
     mSpecDecoderMap = Maps.newHashMap();
@@ -247,21 +254,21 @@ public final class CellDecoderProvider {
    * @return a map from all columns in a table and overrides to decoders for those columns.
    * @throws IOException in case of an error making decoders.
    */
-  private static Map<String, KijiCellDecoder<?>> makeColumnDecoderMap(
+  private static Map<KijiColumnName, KijiCellDecoder<?>> makeColumnDecoderMap(
       final KijiTableLayout layout,
       final Map<KijiColumnName, BoundColumnReaderSpec> overrides
   ) throws IOException {
     final Set<KijiColumnName> columns = layout.getColumnNames();
-    final Map<String, KijiCellDecoder<?>> decoderMap = Maps.newHashMap();
+    final Map<KijiColumnName, KijiCellDecoder<?>> decoderMap = Maps.newHashMap();
     for (KijiColumnName column : columns) {
       // Gets the specification for this column,
       // from the overlay map or else from the actual table layout:
       final BoundColumnReaderSpec spec = overrides.get(column);
       if (null != spec) {
-        decoderMap.put(column.getName(), createDecoderFromSpec(layout, spec));
+        decoderMap.put(column, createDecoderFromSpec(layout, spec));
       } else {
         final CellSpec cellSpec = layout.getCellSpec(column);
-        decoderMap.put(column.getName(), cellSpec.getDecoderFactory().create(cellSpec));
+        decoderMap.put(column, cellSpec.getDecoderFactory().create(cellSpec));
       }
     }
     return decoderMap;
@@ -279,28 +286,23 @@ public final class CellDecoderProvider {
    *   exact fully-qualified column.
    * </p>
    *
-   * @param family Family of the column to look up.
-   * @param qualifier Qualifier of the column to look up.
-   *     Null means no qualifier, ie. get a decoder for a (map-type) family.
-   * @return a cell decoder for the specified column.
-   *     Null if the column does not exist or if the family is not map-type.
-   * @throws IOException on I/O error.
-   *
-   * @param <T> Type of the data to decode.
+   * @param column to look up.
+   * @return a cell decoder for the specified column. {@code null} if the column does not exist or
+   *     if the column is a group-type family.
+   * @param <T> type of the data to decode.
    */
   @SuppressWarnings("unchecked")
-  public <T> KijiCellDecoder<T> getDecoder(String family, String qualifier) throws IOException {
-    final String column = (qualifier != null) ? (family + ":" + qualifier) : family;
+  public <T> KijiCellDecoder<T> getDecoder(KijiColumnName column) {
     final KijiCellDecoder<T> decoder = (KijiCellDecoder<T>) mColumnDecoderMap.get(column);
     if (decoder != null) {
       // There already exists a decoder for this column:
       return decoder;
     }
 
-    if (qualifier != null) {
+    if (column.isFullyQualified()) {
       // There is no decoder for the specified fully-qualified column.
       // Try the family (this will only work for map-type families):
-      return getDecoder(family, null);
+      return getDecoder(KijiColumnName.create(column.getFamily(), null));
     }
 
     return null;
@@ -315,6 +317,7 @@ public final class CellDecoderProvider {
    * @return a new or cached cell decoder corresponding to the given specification.
    * @throws IOException in case of an error creating a new decoder.
    */
+  @SuppressWarnings("unchecked")
   public <T> KijiCellDecoder<T> getDecoder(BoundColumnReaderSpec spec) throws IOException {
     final KijiCellDecoder<T> decoder = (KijiCellDecoder<T>) mSpecDecoderMap.get(spec);
     if (null != decoder) {
@@ -345,5 +348,10 @@ public final class CellDecoderProvider {
         }
       }
     }
+  }
+
+  public CellDecoderProvider getRequestCellDecoderProvider(final KijiDataRequest kijiDataRequest) {
+
+
   }
 }
