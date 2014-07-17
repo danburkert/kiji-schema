@@ -1,5 +1,5 @@
 /**
- * (c) Copyright 2012 WibiData, Inc.
+ * (c) Copyright 2014 WibiData, Inc.
  *
  * See the NOTICE file distributed with this work for additional
  * information regarding copyright ownership.
@@ -61,8 +61,8 @@ import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayouts;
 import org.kiji.schema.util.InstanceBuilder;
 
-public class TestHBaseKijiRowData extends KijiClientTest {
-  private static final Logger LOG = LoggerFactory.getLogger(TestHBaseKijiRowData.class);
+public class TestKijiResultRowData extends KijiClientTest {
+  private static final Logger LOG = LoggerFactory.getLogger(TestKijiResultRowData.class);
 
   /** Test layout. */
   public static final String TEST_LAYOUT_V1 =
@@ -576,8 +576,8 @@ public class TestHBaseKijiRowData extends KijiClientTest {
     final long timestamp = 1L;
     final Kiji kiji = new InstanceBuilder(getKiji())
         .withTable(KijiTableLayouts.getLayout(TEST_LAYOUT_V1))
-            .withRow("row1")
-                .withFamily(family).withQualifier(qualifier).withValue(timestamp, "foo1")
+        .withRow("row1")
+        .withFamily(family).withQualifier(qualifier).withValue(timestamp, "foo1")
         .build();
     final KijiTable table = kiji.openTable(TABLE_NAME);
     try {
@@ -645,14 +645,14 @@ public class TestHBaseKijiRowData extends KijiClientTest {
   public void testIteratorMapFamilyTypes() throws IOException {
     new InstanceBuilder(getKiji())
         .withTable(mTable)
-            .withRow("row1")
-              .withFamily("map")
-                  .withQualifier("key0").withValue(1L, 0)
-                  .withQualifier("key1").withValue(1L, 1)
-                  .withQualifier("key2").withValue(1L, 2)
-              .withFamily("family")
-                  .withQualifier("qual0").withValue(1L, "string1")
-                  .withQualifier("qual0").withValue(2L, "string2")
+        .withRow("row1")
+        .withFamily("map")
+        .withQualifier("key0").withValue(1L, 0)
+        .withQualifier("key1").withValue(1L, 1)
+        .withQualifier("key2").withValue(1L, 2)
+        .withFamily("family")
+        .withQualifier("qual0").withValue(1L, "string1")
+        .withQualifier("qual0").withValue(2L, "string2")
         .build();
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
@@ -716,12 +716,12 @@ public class TestHBaseKijiRowData extends KijiClientTest {
   public void testIteratorMapFamilyMaxVersionsTypes() throws IOException {
     new InstanceBuilder(getKiji())
         .withTable(mTable)
-            .withRow("row1")
-                .withFamily("map")
-                  .withQualifier("key0")
-                    .withValue(1L, 0)
-                    .withValue(2L, 1)
-                    .withValue(3L, 2)
+        .withRow("row1")
+        .withFamily("map")
+        .withQualifier("key0")
+        .withValue(1L, 0)
+        .withValue(2L, 1)
+        .withValue(3L, 2)
         .build();
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
@@ -748,14 +748,14 @@ public class TestHBaseKijiRowData extends KijiClientTest {
   public void testMapAsIterable() throws IOException {
     new InstanceBuilder(getKiji())
         .withTable(mTable)
-            .withRow("row1")
-              .withFamily("map")
-                  .withQualifier("key0").withValue(1L, 0)
-                  .withQualifier("key1").withValue(1L, 1)
-                  .withQualifier("key2").withValue(1L, 2)
-              .withFamily("family")
-                  .withQualifier("qual0").withValue(1L, "string1")
-                  .withQualifier("qual0").withValue(2L, "string2")
+        .withRow("row1")
+        .withFamily("map")
+        .withQualifier("key0").withValue(1L, 0)
+        .withQualifier("key1").withValue(1L, 1)
+        .withQualifier("key2").withValue(1L, 2)
+        .withFamily("family")
+        .withQualifier("qual0").withValue(1L, "string1")
+        .withQualifier("qual0").withValue(2L, "string2")
         .build();
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
@@ -803,22 +803,22 @@ public class TestHBaseKijiRowData extends KijiClientTest {
     // Test that we can select a timestamped value that is not the most recent value.
     new InstanceBuilder(getKiji())
         .withTable(mTable)
-            .withRow("row1")
-                .withFamily("family")
-                    .withQualifier("qual0")
-                        .withValue(4L, "oldest")
-                        .withValue(6L, "middle")
-                        .withValue(8L, "newest")
-                    .withQualifier("qual1")
-                        .withValue(1L, "one")
-                        .withValue(2L, "two")
-                        .withValue(3L, "three")
-                        .withValue(4L, "four")
-                        .withValue(8L, "eight")
-                    .withQualifier("qual2")
-                        .withValue(3L, "q2-three")
-                        .withValue(4L, "q2-four")
-                        .withValue(6L, "q2-six")
+        .withRow("row1")
+        .withFamily("family")
+        .withQualifier("qual0")
+        .withValue(4L, "oldest")
+        .withValue(6L, "middle")
+        .withValue(8L, "newest")
+        .withQualifier("qual1")
+        .withValue(1L, "one")
+        .withValue(2L, "two")
+        .withValue(3L, "three")
+        .withValue(4L, "four")
+        .withValue(8L, "eight")
+        .withQualifier("qual2")
+        .withValue(3L, "q2-three")
+        .withValue(4L, "q2-four")
+        .withValue(6L, "q2-six")
         .build();
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
@@ -863,10 +863,10 @@ public class TestHBaseKijiRowData extends KijiClientTest {
   public void testEmptyResult() throws IOException {
     new InstanceBuilder(getKiji())
         .withTable(mTable)
-            .withRow("row1")
-              .withFamily("family")
-                  .withQualifier("qual0").withValue(1L, "string1")
-                  .withQualifier("qual0").withValue(2L, "string2")
+        .withRow("row1")
+        .withFamily("family")
+        .withQualifier("qual0").withValue(1L, "string1")
+        .withQualifier("qual0").withValue(2L, "string2")
         .build();
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
@@ -885,7 +885,7 @@ public class TestHBaseKijiRowData extends KijiClientTest {
 
       final Iterator<KijiCell<CharSequence>> iterator =  row1.iterator("family", "qual1");
       assertFalse("iterator obtained on a column the rowdata has no data for should return false"
-          + "when hasNext is called.",
+              + "when hasNext is called.",
           iterator.hasNext());
 
       final CharSequence value = row1.getMostRecentValue("family", "qual1");
@@ -909,10 +909,10 @@ public class TestHBaseKijiRowData extends KijiClientTest {
     final Kiji kiji = getKiji();
     new InstanceBuilder(kiji)
         .withTable(mTable)
-            .withRow("row1")
-              .withFamily("family")
-                  .withQualifier("qual0").withValue(1L, "string1")
-                  .withQualifier("qual0").withValue(2L, "string2")
+        .withRow("row1")
+        .withFamily("family")
+        .withQualifier("qual0").withValue(1L, "string1")
+        .withQualifier("qual0").withValue(2L, "string2")
         .build();
 
     final TableLayoutDesc update = KijiTableLayouts.getLayout(TEST_LAYOUT_V2);
@@ -954,7 +954,7 @@ public class TestHBaseKijiRowData extends KijiClientTest {
       // Write a (generic) record:
       final Schema writerSchema = Schema.createRecord("Found", null, "class.not", false);
       writerSchema.setFields(Lists.newArrayList(
-          new Field("field", Schema.create(Schema.Type.STRING), null, null)));
+              new Field("field", Schema.create(Schema.Type.STRING), null, null)));
 
       final KijiTableWriter writer = table.openTableWriter();
       try {
