@@ -21,6 +21,9 @@ package org.kiji.schema.util;
 import java.io.Closeable;
 import java.lang.ref.ReferenceQueue;
 import java.lang.ref.WeakReference;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -291,9 +294,7 @@ public final class DebugResourceTracker {
    *
    * @param resource Object which has been cleaned up and need no longer be tracked.
    */
-  public void unregisterResource(
-      final Object resource
-  ) {
+  public void unregisterResource(final Object resource) {
     switch(TRACKING_LEVEL) {
       case NONE: break;
       case COUNTER: {
@@ -307,6 +308,25 @@ public final class DebugResourceTracker {
       }
       default: throw new InternalKijiError(String.format(
           "Unknown DebugResourceTracker.TrackingType: %s", TRACKING_LEVEL));
+    }
+  }
+
+  /**
+   * Returns whether the resource is registered with this debug resource tracker. This is useful for
+   * testing interactions with the debug resource tracker.
+   *
+   * @param resource The resource to test for registration.
+   * @return Whether the provided resource is registered.
+   * @throws IllegalStateException if the tracking level is not {@code TrackingLevel.REFERENCES}.
+   */
+  public boolean isResourceRegistered(final Object resource) {
+    switch(TRACKING_LEVEL) {
+      case REFERENCES: {
+        return mReferenceTracker.resourceIsRegistered(resource);
+      }
+      default: throw new IllegalStateException(String.format(
+          "Tracking level must be REFERENCES in order to check if resource is registered."
+              + " Current tracking level: %s.", TRACKING_LEVEL));
     }
   }
 
@@ -373,6 +393,27 @@ public final class DebugResourceTracker {
         }
       }
       CLEANUP_LOG.info("Attempted to unregister an untracked resource: {}.", resource);
+    }
+
+    /**
+     * Returns whether the resource is registered with this debug resource tracker. This is mostly
+     * useful for testing the reference tracker itself.
+     *
+     * @param resource The resource to test for registration.
+     * @return Whether the provided resource is registered.
+     */
+    public boolean resourceIsRegistered(final Object resource) {
+      synchronized (mReferences) {
+        final List<ResourceReference> refs = mReferences.get(System.identityHashCode(resource));
+        for (int i = 0; i < refs.size(); i++) {
+          final ResourceReference ref = refs.get(i);
+          // The referent is guaranteed to be present, because the argument is a strong reference
+          if (resource == ref.get()) {
+            return true;
+          }
+        }
+      }
+      return false;
     }
 
     /**
@@ -496,6 +537,74 @@ public final class DebugResourceTracker {
             .add("stack trace", mStackTrace)
             .toString();
       }
+    }
+  }
+
+  /**
+   * Creates a proxy object to a closeable resource.
+   *
+   * <p>
+   *   All calls to the proxy will be passed through to the underlying resource. The passed in
+   *   resource should not be used or closed after creating the proxy. The returned proxy will be an
+   *   instance of the provided interface.
+   * </p>
+   *
+   * <p>
+   *   When the proxy is created the resource is registered with the debug resource tracker.  When
+   *   the proxy is closed, the resource will be unregistered.
+   * </p>
+   *
+   * @param iface The interface that the returned proxy will implement.
+   * @param resource The resource to pass through calls to.
+   * @param <T> Interface that defines the object to be returned.
+   * @param <U> Type of resource provided.
+   * @return A tracked proxy of the provided resource.
+   */
+  public static <T extends Closeable, U extends T> T getTrackedProxy(
+      final Class<T> iface,
+      final U resource
+  ) {
+    @SuppressWarnings("unchecked")
+    final T proxy = (T) Proxy.newProxyInstance(
+        resource.getClass().getClassLoader(),
+        new Class[] { iface },
+        new TrackedProxy<T>(resource));
+    get().registerResource(resource);
+    return proxy;
+  }
+
+  /**
+   * A dynamic proxy that wraps a {@link Closeable} resource.
+   *
+   * <p>
+   *   When the proxy is closed, the resource will be unregistered from the debug resource tracker.
+   * </p>
+   *
+   * @param <T> Type of resource.
+   */
+  private static final class TrackedProxy<T extends Closeable> implements InvocationHandler {
+    private final T mResource;
+
+    /**
+     * Create a tracked resource proxy.
+     *
+     * @param resource The resource to track.
+     */
+    private TrackedProxy(final T resource) {
+      mResource = resource;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public Object invoke(
+        final Object proxy,
+        final Method method,
+        final Object[] args
+    ) throws Throwable {
+      if (method.getName().equals("close") && args == null) {
+        get().unregisterResource(mResource);
+      }
+      return method.invoke(mResource, args);
     }
   }
 }

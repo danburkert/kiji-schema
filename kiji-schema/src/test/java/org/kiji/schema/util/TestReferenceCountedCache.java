@@ -48,7 +48,7 @@ public class TestReferenceCountedCache {
   @Test
   public void referenceCountedCacheKeepsValuesCached() throws Exception {
     String key = "key";
-    ReferenceCountedCache<String, CloseableOnce> cache =
+    ReferenceCountedCache<String, CloseableOnce<String>> cache =
         ReferenceCountedCache.create(new KeyedCloseableOnceLoader<String>());
 
     CloseableOnce ref1 = cache.get(key);
@@ -65,7 +65,7 @@ public class TestReferenceCountedCache {
   @Test
   public void referenceCountedCacheInvalidatesUnreferencedEntries() throws Exception {
     String key = "key";
-    ReferenceCountedCache<String, CloseableOnce> cache =
+    ReferenceCountedCache<String, CloseableOnce<String>> cache =
         ReferenceCountedCache.create(new KeyedCloseableOnceLoader<String>());
 
     CloseableOnce ref = cache.get(key);
@@ -85,7 +85,7 @@ public class TestReferenceCountedCache {
     // This test basically throws a bunch of threads at a cache, and makes sure that the values
     // returned from the cache are valid (open, and created from the correct key).
 
-    final ReferenceCountedCache<Integer, CloseableOnce> cache =
+    final ReferenceCountedCache<Integer, CloseableOnce<Integer>> cache =
         ReferenceCountedCache.create(new KeyedCloseableOnceLoader<Integer>());
 
     final int numThreads = 100;
@@ -137,7 +137,7 @@ public class TestReferenceCountedCache {
 
   @Test
   public void referenceCountedCacheClosesCachedValuesOnClose() throws Exception {
-    ReferenceCountedCache<String, CloseableOnce> cache =
+    ReferenceCountedCache<String, CloseableOnce<String>> cache =
         ReferenceCountedCache.create(new KeyedCloseableOnceLoader<String>());
 
     CloseableOnce ref1 = cache.get("a");
@@ -166,11 +166,31 @@ public class TestReferenceCountedCache {
     closeable.close();
   }
 
+  @Test
+  public void testTrackingValues() throws Exception {
+    ReferenceCountedCache<String, Closeable> cache =
+        ReferenceCountedCache.<String, Closeable>createWithResourceTracking(
+            new KeyedCloseableOnceLoader<String>());
+
+    Closeable ref1 = cache.get("a");
+    Closeable ref2 = cache.get("b");
+
+    Assert.assertTrue(DebugResourceTracker.get().isResourceRegistered(ref1));
+    Assert.assertTrue(DebugResourceTracker.get().isResourceRegistered(ref2));
+
+    cache.release("a");
+    Assert.assertFalse(DebugResourceTracker.get().isResourceRegistered(ref1));
+    Assert.assertTrue(DebugResourceTracker.get().isResourceRegistered(ref2));
+
+    cache.close();
+    Assert.assertFalse(DebugResourceTracker.get().isResourceRegistered(ref1));
+    Assert.assertFalse(DebugResourceTracker.get().isResourceRegistered(ref2));
+  }
+
   /**
    * A function which produces a new {@link CloseableOnce} when evaluated with a key.
    */
-  private static final class KeyedCloseableOnceLoader<K>
-      implements Function<K, CloseableOnce> {
+  public static final class KeyedCloseableOnceLoader<K> implements Function<K, CloseableOnce<K>> {
     @Nullable
     @Override
     public CloseableOnce<K> apply(@Nullable K key) {
@@ -183,7 +203,7 @@ public class TestReferenceCountedCache {
    * {@link java.io.Closeable}, but it is convenient for testing the existence of duplicate
    * {@link #close()} calls.
    */
-  private static final class CloseableOnce<K> implements Closeable {
+  public static final class CloseableOnce<K> implements Closeable {
     private K mKey;
 
     /**
