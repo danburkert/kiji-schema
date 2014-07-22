@@ -572,7 +572,7 @@ public final class CassandraKiji implements Kiji {
     // Delete from Cassandra.
     final KijiURI tableURI = KijiURI.newBuilder(mURI).withTableName(tableName).build();
     final CassandraTableName mainTable = CassandraTableName.getKijiTableName(tableURI);
-    final CassandraTableName counterTable = CassandraTableName.getKijiCounterTableName(tableURI);
+    final CassandraTableName counterTable = CassandraTableName.getCounterTableName(tableURI);
     CassandraAdmin admin = getCassandraAdmin();
 
     admin.disableTable(mainTable);
@@ -755,7 +755,7 @@ public final class CassandraKiji implements Kiji {
     // Also create a second table, which we can use for counters.
     // Create a C* table name for this Kiji table.
     final CassandraTableName counterTableName =
-        CassandraTableName.getKijiCounterTableName(tableURI);
+        CassandraTableName.getCounterTableName(tableURI);
 
     String createCounterTableStatement =
         CQLUtils.getCreateCounterTableStatement(counterTableName, layout);

@@ -170,7 +170,7 @@ public class CassandraDataRequestAdapter {
 
     // Get the counter table name.
     final CassandraTableName counterTableName =
-        CassandraTableName.getKijiCounterTableName(table.getURI());
+        CassandraTableName.getCounterTableName(table.getURI());
 
     // A single Kiji data request can result in many Cassandra queries, so we use asynchronous IO
     // and keep a list of all of the futures that will contain results from Cassandra.

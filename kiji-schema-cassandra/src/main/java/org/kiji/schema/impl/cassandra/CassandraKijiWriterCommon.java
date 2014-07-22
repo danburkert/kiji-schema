@@ -59,7 +59,7 @@ class CassandraKijiWriterCommon {
     mTable = table;
     mAdmin = mTable.getAdmin();
     mTableName = CassandraTableName.getKijiTableName(mTable.getURI());
-    mCounterTableName = CassandraTableName.getKijiCounterTableName(mTable.getURI());
+    mCounterTableName = CassandraTableName.getCounterTableName(mTable.getURI());
   }
 
   /**

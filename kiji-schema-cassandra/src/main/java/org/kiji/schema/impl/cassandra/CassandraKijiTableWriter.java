@@ -265,7 +265,7 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
   ) throws IOException {
     // Get a reference to the full name of the C* table for this column.
     CassandraTableName cTableName =
-        CassandraTableName.getKijiCounterTableName(mTable.getURI());
+        CassandraTableName.getCounterTableName(mTable.getURI());
 
     final KijiColumnName columnName = new KijiColumnName(family, qualifier);
     final CassandraColumnName cassandraColumn =
@@ -315,7 +315,7 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
 
     // Get a reference to the full name of the C* table for this column.
     CassandraTableName cTableName =
-        CassandraTableName.getKijiCounterTableName(mTable.getURI());
+        CassandraTableName.getCounterTableName(mTable.getURI());
 
     final KijiColumnName columnName = new KijiColumnName(family, qualifier);
     final CassandraColumnName cassandraColumn =
