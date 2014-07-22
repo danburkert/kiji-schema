@@ -1,5 +1,11 @@
 package org.kiji.schema.impl.cassandra;
 
+import java.util.List;
+
+import com.datastax.driver.core.Statement;
+import com.datastax.driver.core.querybuilder.Clause;
+import com.datastax.driver.core.querybuilder.QueryBuilder;
+import com.datastax.driver.core.querybuilder.Select;
 import com.google.common.collect.ImmutableListMultimap;
 import com.google.common.collect.ListMultimap;
 import org.slf4j.Logger;
@@ -21,7 +27,6 @@ import org.kiji.schema.layout.impl.ColumnId;
  */
 public class CassandraKijiResultUtils {
   private static final Logger LOG = LoggerFactory.getLogger(CassandraKijiResultUtils.class);
-
 
   /**
    * Translates a {@link KijiDataRequest} into a map of {@link CassandraTableName} to column
@@ -63,19 +68,40 @@ public class CassandraKijiResultUtils {
               columnRequest);
         }
       } else { // group type family
+        boolean containsCounterColumn = false;
+        boolean containsNonCounterColumn = false;
         for (final ColumnLayout columnLayout : family.getColumns()) {
           if (columnLayout.getDesc().getColumnSchema().getType() == SchemaType.COUNTER) {
-            columnRequests.put(CassandraTableName.getCounterTableName(tableURI), columnRequest);
+            containsCounterColumn = true;
           } else {
-            final ColumnId localityGroupID = family.getLocalityGroup().getId();
-            columnRequests.put(
-                CassandraTableName.getLocalityGroupTableName(tableURI, localityGroupID),
-                columnRequest);
+            containsNonCounterColumn = true;
           }
+          if (containsCounterColumn && containsNonCounterColumn) {
+            break;
+          }
+        }
+
+        if (containsCounterColumn) {
+          columnRequests.put(CassandraTableName.getCounterTableName(tableURI), columnRequest);
+        }
+        if (containsNonCounterColumn) {
+          columnRequests.put(
+              CassandraTableName.getLocalityGroupTableName(tableURI, family.getId()),
+              columnRequest);
         }
       }
     }
 
     return columnRequests.build();
   }
+
+  private static Statement getQueryStatement(
+      final CassandraTableName tableName,
+      final List<Column> columnRequests
+  ) {
+
+    Select select = QueryBuilder.select().all().from(tableName.getKeyspace(), tableName.getTable());
+
+  }
+
 }
