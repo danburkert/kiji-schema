@@ -46,31 +46,42 @@ import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.layout.KijiTableLayout;
 
 /**
- * Provides utitity methods and constants for constructing CQL statements.
+ * Provides utility methods and constants for constructing CQL statements.
  *
- * Notes on Kiji & Cassandra data model Entity ID to Primary Key translation
+ * <h2>Notes on Kiji & Cassandra data model Entity ID to Primary Key translation</h2>
  *
- * Cassandra (CQL) has the notion of a primary key, which consists of 1 or more CQL columns.  A
- * primary key composed of >1 column is a compound primary key.  For example, the following table
- * definition has a compound primary key consisting of two columns (c1, c2):
+ * <p>
+ *   Cassandra (CQL) has the notion of a primary key, which consists of 1 or more CQL columns.  A
+ *   primary key composed of >1 column is a compound primary key.  For example, the following table
+ *   definition has a compound primary key consisting of two columns (c1, c2):
+ * </p>
  *
+ * <pre>
  *    CREATE TABLE t1 (
  *      c1 varchar,
  *      c2 int,
  *      c3 blob,
  *      PRIMARY KEY (c1, c2)
  *    )
+ * </pre>
  *
- * The first element of a compound primary key (or the sole element of a non-compound primary key)
- * is the partition key. For example, in table t1, c1 is the partition key. The partition key is
- * tokenized in order to determine what partition a row will fall into. IUD operations on rows
- * with the same partition key are performed atomically and in isolation (theoretically).
+ * <p>
+ *   The first element of a compound primary key (or the sole element of a non-compound primary key)
+ *   is the partition key. For example, in table t1, c1 is the partition key. The partition key is
+ *   tokenized in order to determine what partition a row will fall into. IUD operations on rows
+ *   with the same partition key are performed atomically and in isolation (theoretically).
+ * </p>
  *
- * The remaining elements of a primary key (if they exist) are referred to as the clustering
- * columns.  For example, in table t1, c2 is the sole clustering column.
+ * <p>
+ *   The remaining elements of a primary key (if they exist) are referred to as the clustering
+ *   columns.  For example, in table t1, c2 is the sole clustering column.
+ * </p>
  *
- * Partition keys can be made up of multiple columns using a composite partition key, for example:
+ * <p>
+ *   Partition keys can be made up of multiple columns using a composite partition key, for example:
+ * </p>
  *
+ * <pre>
  *    CREATE TABLE t2 (
  *      c1 uuid,
  *      c2 varchar,
@@ -79,21 +90,31 @@ import org.kiji.schema.layout.KijiTableLayout;
  *      c5 blob,
  *      PRIMARY KEY((c1, c2), c3, c4)
  *    );
+ * </pre>
  *
- * Table t2 has a composite partition key consisting of c1 and c2. Table t2 has clustering columns
- * c3 and c4.
+ * <p>
+ *   Table t2 has a composite partition key consisting of c1 and c2. Table t2 has clustering columns
+ *   c3 and c4.
+ * </p>
  *
- * Kiji RowKeyFormat2 defines 2 valid entity ID formats: formatted and raw.
+ * <p>
+ *   Kiji RowKeyFormat2 defines 2 valid entity ID formats: formatted and raw.
+ * </p>
  *
- * Formatted: formatted entity IDs consist of 1 or more components of type STRING, INT, or LONG.
- *            additionally, 1 or more of the components (in sequence) must be hashed.  The hashed
- *            components correspond exactly to the partition key of the CQL primary key.  The
- *            unhashed components correspond exactly to the clustering columns of the CQL primary
- *            key. The name of the columns will match the component names of the entity ID.
+ * <ul>
+ *   <li><em>Formatted</em>: formatted entity IDs consist of 1 or more components of type STRING,
+ *     INT, or LONG. additionally, 1 or more of the components (in sequence) must be hashed.  The
+ *     hashed components correspond exactly to the partition key of the CQL primary key.  The
+ *     unhashed components correspond exactly to the clustering columns of the CQL primary key. The
+ *     name of the columns will match the component names of the entity ID.
+ *   </li>
  *
- * Raw: raw entity IDs consist of a single byte array blob component. This single component
- *      corresponds to the partition key of the CQL primary key. There are no clustering columns
- *      in the CQL primary key. The name of the single primary key column will be a constant.
+ *   <li><em>Raw</em>: raw entity IDs consist of a single byte array blob component. This single
+ *     component corresponds to the partition key of the CQL primary key. There are no clustering
+ *     columns in the CQL primary key. The name of the single primary key column is
+ *     {@value #RAW_KEY_COL}.
+ *   </li>
+ * </ul>
  */
 public final class CQLUtils {
   private static final Logger LOG = LoggerFactory.getLogger(CQLUtils.class);
