@@ -240,7 +240,6 @@ public class CassandraDataRequestAdapter {
                   cassandraTableName,
                   entityId,
                   cassandraColumn,
-                  null,
                   cassandraColumn.containsQualifier() ? minTimestamp : null,
                   cassandraColumn.containsQualifier() ? maxTimestamp : null,
                   cassandraColumn.containsQualifier() ? column.getMaxVersions() : null);

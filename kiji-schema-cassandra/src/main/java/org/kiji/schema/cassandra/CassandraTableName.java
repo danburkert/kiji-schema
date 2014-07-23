@@ -355,17 +355,6 @@ public final class CassandraTableName {
   }
 
   /**
-   * Get the keyspace of this Cassandra table name.
-   *
-   * The keyspace is formatted with quotes to be CQL-compatible.
-   *
-   * @return the quoted keyspace of this Cassandra table name.
-   */
-  public String getQuotedKeyspace() {
-    return appendCassandraKeyspace(new StringBuilder("\""), mInstance).append('"').toString();
-  }
-
-  /**
    * Get the table name of this Cassandra table name.
    *
    * @return the table name of this Cassandra table name.
@@ -412,6 +401,24 @@ public final class CassandraTableName {
    */
   public String getKijiTable() {
     return mTable;
+  }
+
+  /**
+   * Returns whether this Cassandra table name is for a Kiji locality group.
+   *
+   * @return Whether this Cassandra table name is for a Kiji locality group.
+   */
+  public boolean isLocalityGroup() {
+    return mType == TableType.LOCALITY_GROUP;
+  }
+
+  /**
+   * Returns whether this Cassandra table name is for Kiji counters.
+   *
+   * @return Whether this Cassandra table name is for a Kiji counters.
+   */
+  public boolean isCounter() {
+    return mType == TableType.COUNTER_GROUP;
   }
 
   /**

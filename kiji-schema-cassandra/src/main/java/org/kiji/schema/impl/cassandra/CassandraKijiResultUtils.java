@@ -1,11 +1,5 @@
 package org.kiji.schema.impl.cassandra;
 
-import java.util.List;
-
-import com.datastax.driver.core.Statement;
-import com.datastax.driver.core.querybuilder.Clause;
-import com.datastax.driver.core.querybuilder.QueryBuilder;
-import com.datastax.driver.core.querybuilder.Select;
 import com.google.common.collect.ImmutableListMultimap;
 import com.google.common.collect.ListMultimap;
 import org.slf4j.Logger;
@@ -94,14 +88,4 @@ public class CassandraKijiResultUtils {
 
     return columnRequests.build();
   }
-
-  private static Statement getQueryStatement(
-      final CassandraTableName tableName,
-      final List<Column> columnRequests
-  ) {
-
-    Select select = QueryBuilder.select().all().from(tableName.getKeyspace(), tableName.getTable());
-
-  }
-
 }

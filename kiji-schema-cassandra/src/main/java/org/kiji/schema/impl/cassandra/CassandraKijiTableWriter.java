@@ -279,7 +279,6 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
         cassandraColumn,
         null,
         null,
-        null,
         1);
     ResultSet resultSet = mAdmin.execute(statement);
 

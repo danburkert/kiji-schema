@@ -744,7 +744,7 @@ public final class CassandraKiji implements Kiji {
     final CassandraTableName tableName = CassandraTableName.getKijiTableName(tableURI);
 
     // Create the table!
-    mAdmin.createTable(tableName, CQLUtils.getCreateTableStatement(tableName, layout));
+    mAdmin.createTable(tableName, CQLUtils.getCreateLocalityGroupTableStatement(tableName, layout));
 
     // Add a secondary index on the locality group (needed for row scans - SCHEMA-846).
     mAdmin.createIndex(tableName, CQLUtils.LOCALITY_GROUP_COL);

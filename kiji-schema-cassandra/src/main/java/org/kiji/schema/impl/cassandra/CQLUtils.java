@@ -26,6 +26,7 @@ import java.util.List;
 
 import com.datastax.driver.core.Row;
 import com.datastax.driver.core.Statement;
+import com.datastax.driver.core.querybuilder.QueryBuilder;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
@@ -115,16 +116,34 @@ import org.kiji.schema.layout.KijiTableLayout;
  *     {@value #RAW_KEY_COL}.
  *   </li>
  * </ul>
+ *
+ *
+ * <h2>Notes on Kiji Cassandra Tables</h2>
+ *
+ * <p>
+ *   A single Kiji table is stored in Cassandra as multiple tables. There will be a Cassandra table
+ *   per Kiji locality group, plus a Cassandra table to hold counters.  The counter table holds
+ *   counters from all locality groups.  See the javadoc for {@link CassandraTableName} for details
+ *   on what the tables are named.
+ * </p>
+ *
+ * <p>
+ *   The Cassandra table schema for Kiji locality groups is slightly different than the counters
+ *   table. A Cassandra table holding a Kiji locality group contains columns for each entity ID
+ *   component, the family, the qualifier, the version, and the value.  The Cassandra table holding
+ *   the Kiji table counters contains columns for each entity ID component, the locality group,
+ *   the family, the qualifier, and the value.
+ * </p>
  */
 public final class CQLUtils {
   private static final Logger LOG = LoggerFactory.getLogger(CQLUtils.class);
 
   // Useful static members for referring to different fields in the C* tables.
-  public static final String RAW_KEY_COL = "key";
-  public static final String LOCALITY_GROUP_COL = "lg";
+  public static final String RAW_KEY_COL = "key";         // Only used for tables with raw eids
+  public static final String LOCALITY_GROUP_COL = "lg";   // Only used for counter tables
   public static final String FAMILY_COL = "family";
   public static final String QUALIFIER_COL = "qualifier";
-  public static final String VERSION_COL = "version";
+  public static final String VERSION_COL = "version";     // Only used for locality group tables
   public static final String VALUE_COL = "value";
 
   private static final String BYTES_TYPE = "blob";
@@ -396,10 +415,51 @@ public final class CQLUtils {
    * @param layout of kiji table.
    * @return a CQL 'CREATE TABLE' statement which will create the provided table.
    */
-  public static String getCreateTableStatement(
-      CassandraTableName tableName,
-      KijiTableLayout layout) {
-    return getCreateTableStatement(tableName, layout, BYTES_TYPE);
+  public static Statement getCreateLocalityGroupTableStatement(
+      final CassandraTableName tableName,
+      final KijiTableLayout layout
+  ) {
+    Preconditions.checkArgument(tableName.isLocalityGroup(),
+        "Table name '%s' is not for a locality group table.", tableName);
+
+    LinkedHashMap<String, String> columns = getPrimaryKeyColumnTypes(layout);
+    columns.put(VALUE_COL, BYTES_TYPE);
+
+    // statement being built:
+    //  "CREATE TABLE ${tableName} (
+    //   ${PKColumn1} ${PKColumn1Type}, ${PKColumn2} ${PKColumn2Type}..., ${VALUE_COL} ${valueType}
+    //   PRIMARY KEY ((${PartitionKeyComponent1} ${type}, ${PartitionKeyComponent2} ${type}...),
+    //                ${ClusterColumn1} ${type}, ${ClusterColumn2} ${type}..))
+    //   WITH CLUSTERING
+    //   ORDER BY (${ClusterColumn1} ASC, ${ClusterColumn2} ASC..., ${VERSION_COL} DESC);
+
+    StringBuilder sb = new StringBuilder();
+    sb.append("CREATE TABLE ").append(tableName).append(" (");
+
+    COMMA_JOINER.withKeyValueSeparator(" ").appendTo(sb, columns);
+
+    sb.append(", PRIMARY KEY ((");
+    COMMA_JOINER.appendTo(sb, getPartitionKeyColumns(layout));
+    sb.append(")");
+
+    List<String> clusterColumns = getClusterColumns(layout);
+    if (clusterColumns.size() > 0) {
+      sb.append(", ");
+    }
+    COMMA_JOINER.appendTo(sb, clusterColumns);
+
+    sb.append(")) WITH CLUSTERING ORDER BY (");
+    Joiner.on(" ASC, ").appendTo(sb, clusterColumns);
+
+    sb.append(" DESC);");
+
+    String query = sb.toString();
+
+    LOG.info("Prepared query string for table create: {}", query);
+
+    return query;
+
+
   }
 
   /**
@@ -417,20 +477,22 @@ public final class CQLUtils {
   }
 
   /**
-   * Creates a 'CREATE TABLE' statement for the provided table and layout with the provided value
-   * column type.
+   * Creates a 'CREATE TABLE' statement for the provided locality group table
+   */
+
+  /**
+   * Creates a 'CREATE TABLE' statement for the provided locality group table name and layout.
    *
-   * @param tableName of table to be created.
+   * @param tableName of locality group table to be created.
    * @param layout of kiji table.
-   * @param valueType type to assign to the value column.
    * @return a CQL 'CREATE TABLE' statement for the table.
    */
   private static String getCreateTableStatement(
-      CassandraTableName tableName,
-      KijiTableLayout layout,
-      String valueType) {
+      final CassandraTableName tableName,
+      final KijiTableLayout layout
+  ) {
     LinkedHashMap<String, String> columns = getPrimaryKeyColumnTypes(layout);
-    columns.put(VALUE_COL, valueType);
+    columns.put(VALUE_COL, BYTES_TYPE);
 
     // statement being built:
     //  "CREATE TABLE ${tableName} (
@@ -487,8 +549,6 @@ public final class CQLUtils {
    * @param tableName translated table name as known by Cassandra.
    * @param entityId of row to select.
    * @param column to get.  May be unqualified.
-   * @param version being requested, or null if no version. May not be used with minVersion or
-   *                maxVersion.
    * @param minVersion being requested (inclusive), or null if no minimum version. May not be used
    *                   with version.
    * @param maxVersion being requested (exclusive), or null if no maximum version. May not be used
@@ -502,7 +562,6 @@ public final class CQLUtils {
       CassandraTableName tableName,
       EntityId entityId,
       CassandraColumnName column,
-      Long version,
       Long minVersion,
       Long maxVersion,
       Integer numVersions
@@ -512,10 +571,8 @@ public final class CQLUtils {
     minVersion = minVersion == null || minVersion <= 0L ? null : minVersion;
 
     Preconditions.checkArgument(
-        (version == null && minVersion == null && maxVersion == null) || column.containsQualifier(),
-        "Deletes with version must be qualified.");
-    Preconditions.checkArgument(!(version != null && (minVersion != null || maxVersion != null)),
-        "Cannot specify version and minVersion or maxVersion.");
+        (minVersion == null && maxVersion == null) || column.containsQualifier(),
+        "Get with version must be qualified.");
     Preconditions.checkArgument(column.containsFamily(),
         "Column must contain a locality group and family.");
 
@@ -530,9 +587,6 @@ public final class CQLUtils {
     columns.add(FAMILY_COL);
     if (column.containsQualifier()) {
       columns.add(QUALIFIER_COL);
-    }
-    if (version != null) {
-      columns.add(VERSION_COL);
     }
 
     StringBuilder sb = new StringBuilder()
@@ -563,9 +617,6 @@ public final class CQLUtils {
     bindValues.add(column.getFamilyBuffer());
     if (column.containsQualifier()) {
       bindValues.add(column.getQualifierBuffer());
-    }
-    if (version != null) {
-      bindValues.add(version);
     }
     if (minVersion != null) {
       bindValues.add(minVersion);
