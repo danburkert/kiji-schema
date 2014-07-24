@@ -19,6 +19,8 @@
 
 package org.kiji.schema.impl.cassandra;
 
+import static com.datastax.driver.core.querybuilder.QueryBuilder.*;
+
 import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -27,6 +29,7 @@ import java.util.List;
 import com.datastax.driver.core.Row;
 import com.datastax.driver.core.Statement;
 import com.datastax.driver.core.querybuilder.QueryBuilder;
+import com.datastax.driver.core.querybuilder.Select;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
@@ -38,6 +41,8 @@ import org.slf4j.LoggerFactory;
 
 import org.kiji.schema.EntityId;
 import org.kiji.schema.KConstants;
+import org.kiji.schema.KijiDataRequest;
+import org.kiji.schema.KijiDataRequest.Column;
 import org.kiji.schema.KijiRowKeyComponents;
 import org.kiji.schema.avro.ComponentType;
 import org.kiji.schema.avro.RowKeyComponent;
@@ -160,24 +165,19 @@ public final class CQLUtils {
   private CQLUtils() {
   }
 
-  /**
-   * Return the columns and their associated types of the primary key for the associated table
-   * layout. The returned LinkedHashMap can be iterated through in primary key column order.
-   *
-   * @param layout to get primary key column and types for.
-   * @return a map of column name to CQL column type with proper iteration order.
-   */
-  private static LinkedHashMap<String, String> getPrimaryKeyColumnTypes(KijiTableLayout layout) {
+  private static LinkedHashMap<String, String> getEntityIdColumns(
+      final KijiTableLayout layout
+  ) {
+    LinkedHashMap<String, String> columns = Maps.newLinkedHashMap();
     RowKeyFormat2 keyFormat = (RowKeyFormat2) layout.getDesc().getKeysFormat();
-    LinkedHashMap<String, String> map = Maps.newLinkedHashMap();
     switch (keyFormat.getEncoding()) {
       case RAW: {
-        map.put(RAW_KEY_COL, BYTES_TYPE);
+        columns.put(RAW_KEY_COL, BYTES_TYPE);
         break;
       }
       case FORMATTED: {
         for (RowKeyComponent component : keyFormat.getComponents()) {
-          map.put(
+          columns.put(
               translateEntityIDComponentNameToColumnName(component.getName()),
               getCQLType(component.getType()));
         }
@@ -186,11 +186,34 @@ public final class CQLUtils {
       default: throw new IllegalArgumentException(
           String.format("Unknown row key encoding %s.", keyFormat.getEncoding()));
     }
-    map.put(LOCALITY_GROUP_COL, STRING_TYPE);
-    map.put(FAMILY_COL, BYTES_TYPE);
-    map.put(QUALIFIER_COL, BYTES_TYPE);
-    map.put(VERSION_COL, LONG_TYPE);
-    return map;
+    return columns;
+  }
+
+  /**
+   * Return the columns and their associated types of the primary key for the associated table
+   * layout. The returned LinkedHashMap can be iterated through in primary key column order.
+   *
+   * @param layout to get primary key column and types for.
+   * @return a map of column name to CQL column type with proper iteration order.
+   */
+  private static LinkedHashMap<String, String> getLocalityGroupPrimaryKeyColumns(
+      final KijiTableLayout layout
+  ) {
+    final LinkedHashMap<String, String> columns = getEntityIdColumns(layout);
+    columns.put(FAMILY_COL, BYTES_TYPE);
+    columns.put(QUALIFIER_COL, BYTES_TYPE);
+    columns.put(VERSION_COL, LONG_TYPE);
+    return columns;
+  }
+
+  private static LinkedHashMap<String, String> getCounterPrimaryKeyColumns(
+      final KijiTableLayout layout
+  ) {
+    final LinkedHashMap<String, String> columns = getEntityIdColumns(layout);
+    columns.put(LOCALITY_GROUP_COL, BYTES_TYPE);
+    columns.put(FAMILY_COL, BYTES_TYPE);
+    columns.put(QUALIFIER_COL, BYTES_TYPE);
+    return columns;
   }
 
   /**
@@ -221,7 +244,8 @@ public final class CQLUtils {
    */
   private static List<Object> getEntityIDComponentValues(
       KijiTableLayout layout,
-      EntityId entityID) {
+      EntityId entityID
+  ) {
     RowKeyFormat2 keyFormat = (RowKeyFormat2) layout.getDesc().getKeysFormat();
     switch (keyFormat.getEncoding()) {
       case RAW: return ImmutableList.of(
@@ -229,38 +253,6 @@ public final class CQLUtils {
       case FORMATTED: return entityID.getComponents();
       default: throw new IllegalArgumentException(
           String.format("Unknown row key encoding %s.", keyFormat.getEncoding()));
-    }
-  }
-
-  /**
-   * Return the ordered list of columns in the primary key for the table layout.
-   *
-   * @param layout to return primary key columns for.
-   * @return the primary key columns for the layout.
-   */
-  private static List<String> getPrimaryKeyColumns(KijiTableLayout layout) {
-    List<String> columns = getEntityIDColumns(layout);
-    columns.add(LOCALITY_GROUP_COL);
-    columns.add(FAMILY_COL);
-    columns.add(QUALIFIER_COL);
-    columns.add(VERSION_COL);
-    return columns;
-  }
-
-  /**
-   * Return the ordered list of columns in the Kiji entity ID for the table layout.
-   *
-   * @param layout to return entity ID columns for
-   * @return the entity ID columns of the table.
-   */
-  public static List<String> getEntityIDColumns(KijiTableLayout layout) {
-    RowKeyFormat2 keyFormat = (RowKeyFormat2) layout.getDesc().getKeysFormat();
-    switch (keyFormat.getEncoding()) {
-      case RAW: return Lists.newArrayList(RAW_KEY_COL);
-      case FORMATTED: return transformToColumns(keyFormat.getComponents());
-      default:
-        throw new IllegalArgumentException(
-            String.format("Unknown row key encoding %s.", keyFormat.getEncoding()));
     }
   }
 
@@ -422,7 +414,7 @@ public final class CQLUtils {
     Preconditions.checkArgument(tableName.isLocalityGroup(),
         "Table name '%s' is not for a locality group table.", tableName);
 
-    LinkedHashMap<String, String> columns = getPrimaryKeyColumnTypes(layout);
+    LinkedHashMap<String, String> columns = getLocalityGroupPrimaryKeyColumns(layout);
     columns.put(VALUE_COL, BYTES_TYPE);
 
     // statement being built:
@@ -458,8 +450,6 @@ public final class CQLUtils {
     LOG.info("Prepared query string for table create: {}", query);
 
     return query;
-
-
   }
 
   /**
@@ -471,36 +461,17 @@ public final class CQLUtils {
    * @return a CQL 'CREATE TABLE' statement which will create the provided table's counter table.
    */
   public static String getCreateCounterTableStatement(
-      CassandraTableName tableName,
-      KijiTableLayout layout) {
-    return getCreateTableStatement(tableName, layout, COUNTER_TYPE);
-  }
-
-  /**
-   * Creates a 'CREATE TABLE' statement for the provided locality group table
-   */
-
-  /**
-   * Creates a 'CREATE TABLE' statement for the provided locality group table name and layout.
-   *
-   * @param tableName of locality group table to be created.
-   * @param layout of kiji table.
-   * @return a CQL 'CREATE TABLE' statement for the table.
-   */
-  private static String getCreateTableStatement(
       final CassandraTableName tableName,
       final KijiTableLayout layout
   ) {
-    LinkedHashMap<String, String> columns = getPrimaryKeyColumnTypes(layout);
-    columns.put(VALUE_COL, BYTES_TYPE);
+    LinkedHashMap<String, String> columns = getCounterPrimaryKeyColumns(layout);
+    columns.put(VALUE_COL, COUNTER_TYPE);
 
     // statement being built:
     //  "CREATE TABLE ${tableName} (
     //   ${PKColumn1} ${PKColumn1Type}, ${PKColumn2} ${PKColumn2Type}..., ${VALUE_COL} ${valueType}
     //   PRIMARY KEY ((${PartitionKeyComponent1} ${type}, ${PartitionKeyComponent2} ${type}...),
-    //                ${ClusterColumn1} ${type}, ${ClusterColumn2} ${type}..))
-    //   WITH CLUSTERING
-    //   ORDER BY (${ClusterColumn1} ASC, ${ClusterColumn2} ASC..., ${VERSION_COL} DESC);
+    //                ${ClusterColumn1} ${type}, ${ClusterColumn2} ${type}..));
 
     StringBuilder sb = new StringBuilder();
     sb.append("CREATE TABLE ").append(tableName).append(" (");
@@ -517,10 +488,7 @@ public final class CQLUtils {
     }
     COMMA_JOINER.appendTo(sb, clusterColumns);
 
-    sb.append(")) WITH CLUSTERING ORDER BY (");
-    Joiner.on(" ASC, ").appendTo(sb, clusterColumns);
-
-    sb.append(" DESC);");
+    sb.append("));");
 
     String query = sb.toString();
 
@@ -632,6 +600,49 @@ public final class CQLUtils {
   }
   // CSOFF
 
+  public static Statement getColumnStatement(
+      KijiTableLayout layout,
+      CassandraTableName table,
+      CassandraColumnName column,
+      KijiDataRequest dataRequest,
+      Column columnRequest
+  ) {
+    Preconditions.checkArgument(table.isLocalityGroup());
+    Preconditions.checkArgument(column.containsFamily());
+
+    // statement being built:
+    //  "SELECT *
+    //   FROM ${tableName}
+    //   WHERE ${FAMILY_COL}=? [AND ${QUALIFIER_COL}=? [AND ${VERSION_COL} >= ]]
+    //   LIMIT ${column
+    //   ALLOW FILTERING"
+
+    Select select =
+        QueryBuilder.select().all()
+        .from(table.getKeyspace(), table.getTable())
+        .where(eq(FAMILY_COL, column.getFamilyBuffer()))
+        .limit(columnRequest.getMaxVersions());
+
+    if (column.containsQualifier()) {
+      select
+          .where()
+          .and(eq(QUALIFIER_COL, column.getQualifierBuffer()));
+    }
+
+    long maxVersion = dataRequest.getMaxTimestamp();
+    long minVersion = dataRequest.getMinTimestamp();
+
+    if (column.containsQualifier()) {
+      select.where()
+          .and()
+    }
+
+
+
+    return null;
+  }
+
+
   /**
    * Create a CQL statement for selecting a single row from a column of a Cassandra Kiji table.
    *
@@ -663,7 +674,7 @@ public final class CQLUtils {
     }
 
     List<String> tokenColumns = getPartitionKeyColumns(layout);
-    List<String> fromColumns = getPrimaryKeyColumns(layout);
+    List<String> fromColumns = getLocalityGroupPrimaryKeyColumns(layout);
     fromColumns.add(VALUE_COL);
 
     StringBuilder sb = new StringBuilder();

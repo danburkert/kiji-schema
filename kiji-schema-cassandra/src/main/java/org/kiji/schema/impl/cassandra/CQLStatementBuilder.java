@@ -3,6 +3,7 @@ package org.kiji.schema.impl.cassandra;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.kiji.schema.avro.RowKeyFormat2;
 import org.kiji.schema.layout.KijiTableLayout;
 
 /**
@@ -47,8 +48,18 @@ public class CQLStatementBuilder {
 
   private final KijiTableLayout mLayout;
 
-
-  public CQLStatementBuilder(final KijiTableLayout layout) {
+  private CQLStatementBuilder(final KijiTableLayout layout) {
     mLayout = layout;
+
+    // Get EntityID columns
+    RowKeyFormat2 keyFormat = (RowKeyFormat2) layout.getDesc().getKeysFormat();
+
+
   }
+
+  public static CQLStatementBuilder create(final KijiTableLayout layout) {
+    return new CQLStatementBuilder(layout);
+  }
+
+
 }
