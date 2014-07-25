@@ -28,7 +28,6 @@ import java.util.List;
 
 import com.datastax.driver.core.Row;
 import com.datastax.driver.core.Statement;
-import com.datastax.driver.core.querybuilder.QueryBuilder;
 import com.datastax.driver.core.querybuilder.Select;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
@@ -165,7 +164,7 @@ public final class CQLUtils {
   private CQLUtils() {
   }
 
-  private static LinkedHashMap<String, String> getEntityIdColumns(
+  private static LinkedHashMap<String, String> getEntityIdColumnTypes(
       final KijiTableLayout layout
   ) {
     LinkedHashMap<String, String> columns = Maps.newLinkedHashMap();
@@ -189,6 +188,35 @@ public final class CQLUtils {
     return columns;
   }
 
+  private static List<EntityIDComponentValue> getEntityIdColumnValues(
+      final KijiTableLayout layout,
+      final EntityId entityId
+  ) {
+    RowKeyFormat2 keyFormat = (RowKeyFormat2) layout.getDesc().getKeysFormat();
+    switch (keyFormat.getEncoding()) {
+      case RAW: {
+        return ImmutableList.of(new EntityIDComponentValue(RAW_KEY_COL, entityId.getHBaseRowKey()));
+      }
+      case FORMATTED: {
+        final List<RowKeyComponent> names = keyFormat.getComponents();
+        final List<Object> values = entityId.getComponents();
+        Preconditions.checkArgument(names.size() == values.size(),
+          "Number of entity ID components (%s) must match the number of entity ID values (%s).",
+            names, values);
+
+        final List<EntityIDComponentValue> columnValues =
+            Lists.newArrayListWithCapacity(names.size());
+
+        for (int i = 0; i < names.size(); i++) {
+          columnValues.add(new EntityIDComponentValue(names.get(i).getName(), values.get(i)));
+        }
+        return columnValues;
+      }
+      default: throw new IllegalArgumentException(
+          String.format("Unknown row key encoding %s.", keyFormat.getEncoding()));
+    }
+  }
+
   /**
    * Return the columns and their associated types of the primary key for the associated table
    * layout. The returned LinkedHashMap can be iterated through in primary key column order.
@@ -199,7 +227,7 @@ public final class CQLUtils {
   private static LinkedHashMap<String, String> getLocalityGroupPrimaryKeyColumns(
       final KijiTableLayout layout
   ) {
-    final LinkedHashMap<String, String> columns = getEntityIdColumns(layout);
+    final LinkedHashMap<String, String> columns = getEntityIdColumnTypes(layout);
     columns.put(FAMILY_COL, BYTES_TYPE);
     columns.put(QUALIFIER_COL, BYTES_TYPE);
     columns.put(VERSION_COL, LONG_TYPE);
@@ -209,7 +237,7 @@ public final class CQLUtils {
   private static LinkedHashMap<String, String> getCounterPrimaryKeyColumns(
       final KijiTableLayout layout
   ) {
-    final LinkedHashMap<String, String> columns = getEntityIdColumns(layout);
+    final LinkedHashMap<String, String> columns = getEntityIdColumnTypes(layout);
     columns.put(LOCALITY_GROUP_COL, BYTES_TYPE);
     columns.put(FAMILY_COL, BYTES_TYPE);
     columns.put(QUALIFIER_COL, BYTES_TYPE);
@@ -600,9 +628,10 @@ public final class CQLUtils {
   }
   // CSOFF
 
-  public static Statement getColumnStatement(
+  public static Statement getColumnGetStatement(
       KijiTableLayout layout,
       CassandraTableName table,
+      EntityId entityId,
       CassandraColumnName column,
       KijiDataRequest dataRequest,
       Column columnRequest
@@ -610,36 +639,45 @@ public final class CQLUtils {
     Preconditions.checkArgument(table.isLocalityGroup());
     Preconditions.checkArgument(column.containsFamily());
 
-    // statement being built:
-    //  "SELECT *
-    //   FROM ${tableName}
-    //   WHERE ${FAMILY_COL}=? [AND ${QUALIFIER_COL}=? [AND ${VERSION_COL} >= ]]
-    //   LIMIT ${column
-    //   ALLOW FILTERING"
+    Select get = getColumnSelect(table, column, dataRequest, columnRequest);
 
+    for (EntityIDComponentValue componentValue : getEntityIdColumnValues(layout, entityId)) {
+      get.where(eq(componentValue.getName(), componentValue.getValue()));
+    }
+
+    return get;
+  }
+
+  private static Select getColumnSelect(
+      CassandraTableName table,
+      CassandraColumnName column,
+      KijiDataRequest dataRequest,
+      Column columnRequest
+  ) {
     Select select =
-        QueryBuilder.select().all()
-        .from(table.getKeyspace(), table.getTable())
-        .where(eq(FAMILY_COL, column.getFamilyBuffer()))
-        .limit(columnRequest.getMaxVersions());
+        select()
+            .all()
+            .from(table.getKeyspace(), table.getTable())
+            .where(eq(FAMILY_COL, column.getFamilyBuffer()))
+            .limit(columnRequest.getMaxVersions());
 
     if (column.containsQualifier()) {
-      select
-          .where()
-          .and(eq(QUALIFIER_COL, column.getQualifierBuffer()));
+      select.where(eq(QUALIFIER_COL, column.getQualifierBuffer()));
     }
 
-    long maxVersion = dataRequest.getMaxTimestamp();
-    long minVersion = dataRequest.getMinTimestamp();
-
-    if (column.containsQualifier()) {
-      select.where()
-          .and()
+    if (dataRequest.getMaxTimestamp() != Long.MAX_VALUE) {
+      select.where(lt(VERSION_COL, dataRequest.getMaxTimestamp()));
     }
 
+    if (dataRequest.getMinTimestamp() != 0L) {
+      select.where(gte(VERSION_COL, dataRequest.getMaxTimestamp()));
+    }
 
+    select.setFetchSize(
+        columnRequest.getPageSize() == 0 ? Integer.MAX_VALUE : columnRequest.getPageSize()
+    );
 
-    return null;
+    return select;
   }
 
 
@@ -1021,4 +1059,24 @@ public final class CQLUtils {
 
     return admin.getPreparedStatement(query).bind(bindValues.toArray());
   }
+
+  private static class EntityIDComponentValue {
+    private final String mName;
+    private final Object mValue;
+
+    private EntityIDComponentValue(final String name, final Object value) {
+      mName = name;
+      mValue = value;
+    }
+
+    public String getName() {
+      return mName;
+    }
+
+    public Object getValue() {
+      return mValue;
+    }
+  }
+
+
 }
