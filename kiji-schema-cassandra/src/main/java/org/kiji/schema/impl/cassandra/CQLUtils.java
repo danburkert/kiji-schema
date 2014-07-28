@@ -110,7 +110,7 @@ import org.kiji.schema.layout.KijiTableLayout;
  *   <li><em>Formatted</em>: formatted entity IDs consist of 1 or more components of type STRING,
  *     INT, or LONG. additionally, 1 or more of the components (in sequence) must be hashed.  The
  *     hashed components correspond exactly to the partition key of the CQL primary key.  The
- *     unhashed components correspond exactly to the clustering columns of the CQL primary key. The
+ *     unhashed components correspond to the first clustering columns of the CQL primary key. The
  *     name of the columns will match the component names of the entity ID.
  *   </li>
  *
