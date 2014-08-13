@@ -24,33 +24,58 @@ import java.nio.ByteBuffer;
 
 import com.datastax.driver.core.Statement;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableMap;
 import org.apache.hadoop.hbase.HConstants;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import org.kiji.schema.EntityId;
 import org.kiji.schema.KijiColumnName;
-import org.kiji.schema.NoSuchColumnException;
+import org.kiji.schema.KijiURI;
 import org.kiji.schema.cassandra.CassandraColumnName;
 import org.kiji.schema.cassandra.CassandraTableName;
+import org.kiji.schema.layout.CassandraColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
+import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
+import org.kiji.schema.layout.impl.ColumnId;
 
 /**
- * Contains code common to a TableWriter and BufferedWriter.
+ * Contains code common to a TableWriter and BufferedWriter. This class should only be cached for
+ * the lifetime of the table layout (it should be recreated when the table layout changes).
  */
 class CassandraKijiWriterCommon {
-  private static final Logger LOG = LoggerFactory.getLogger(CassandraKijiWriterCommon.class);
+  private final KijiURI mTableURI;
 
-  private final CassandraKijiTable mTable;
+  private final KijiTableLayout mLayout;
+
+  private final CellEncoderProvider mEncoderProvider;
+
+  private final CassandraColumnNameTranslator mColumnTranslator;
 
   /**
    * Create an object for performing common write operations for a given table.
    *
-   * @param table to which to write.
+   * @param layout The layout of the table to which to write.
    */
-  public CassandraKijiWriterCommon(CassandraKijiTable table) {
-    mTable = table;
+  public CassandraKijiWriterCommon(
+      final KijiURI tableURI,
+      final KijiTableLayout layout,
+      final CassandraColumnNameTranslator columnTranslator,
+      final CellEncoderProvider encoderProvider
+  ) {
+    mTableURI = tableURI;
+    mLayout = layout;
+    mColumnTranslator = columnTranslator;
+    mEncoderProvider = encoderProvider;
+
+    final ImmutableMap.Builder<ColumnId, CassandraTableName> localityGroupTables =
+        ImmutableMap.builder();
+
+    for (LocalityGroupLayout localityGroup : mLayout.getLocalityGroups()) {
+      final ColumnId localityGroupId = localityGroup.getId();
+      final CassandraTableName tableName =
+          CassandraTableName.getLocalityGroupTableName(tableURI, localityGroupId);
+      localityGroupTables.put(localityGroupId, tableName);
+    }
   }
 
   /**
@@ -62,19 +87,18 @@ class CassandraKijiWriterCommon {
    * @throws java.io.IOException if there is a problem reading the table layout.
    */
   public boolean isCounterColumn(final String family, final String qualifier) throws IOException {
-    return mTable.getLayout().getCellSpec(KijiColumnName.create(family, qualifier)).isCounter();
+    return mLayout.getCellSpec(KijiColumnName.create(family, qualifier)).isCounter();
   }
 
   /**
    * Get the TTL for a column family.
    *
-   * @param layout of the table.
    * @param family for which to get the TTL.
    * @return the TTL.
    */
-  private static int getTTL(final KijiTableLayout layout, final String family) {
+  private int getTTL(final String family) {
     // Get the locality group name from the column name.
-    return layout
+    return mLayout
       .getFamilyMap()
       .get(family)
       .getLocalityGroup()
@@ -91,12 +115,10 @@ class CassandraKijiWriterCommon {
    * @param timestamp The timestamp of the destination cell.
    * @param value The bytes to be written to the destination cell.
    * @param <T> the type of the value to put.
-   * @param encoderProvider for the value to put.
    * @return A CQL `Statement` that implements the put.
    * @throws java.io.IOException If something goes wrong (e.g., the column does not exist).
    */
   public <T> Statement getPutStatement(
-      final CellEncoderProvider encoderProvider,
       final EntityId entityId,
       final String family,
       final String qualifier,
@@ -111,218 +133,28 @@ class CassandraKijiWriterCommon {
       timestamp = System.currentTimeMillis();
     }
 
-    final KijiTableLayout layout = mTable.getLayout();
-
-    int ttl = getTTL(layout, family);
+    int ttl = getTTL(family);
 
     final KijiColumnName columnName = KijiColumnName.create(family, qualifier);
-    final CassandraColumnName cassandraColumn =
-        mTable.getColumnNameTranslator().toCassandraColumnName(columnName);
+    final CassandraColumnName cassandraColumn = mColumnTranslator.toCassandraColumnName(columnName);
 
     final ByteBuffer valueBytes =
         CassandraByteUtil.bytesToByteBuffer(
-            encoderProvider.getEncoder(family, qualifier).encode(value));
+            mEncoderProvider.getEncoder(family, qualifier).encode(value));
 
     final CassandraTableName table =
         CassandraTableName.getLocalityGroupTableName(
-            mTable.getURI(),
+            mTableURI,
             columnName,
-            layout);
+            mLayout);
 
-    return CQLUtils.getInsertStatement(
-        layout,
+    return CQLUtils.getLocalityGroupInsert(
+        mLayout,
         table,
         entityId,
         cassandraColumn,
         timestamp,
         valueBytes,
         ttl);
-  }
-
-  /**
-   * Create a delete statement for a fully-qualified cell.
-   *
-   * @param entityId of the cell to delete.
-   * @param family of the cell to delete.
-   * @param qualifier of the cell to delete.
-   * @param version of the cell to delete.
-   * @return a statement that will delete the cell.
-   * @throws java.io.IOException if there is a problem creating the delete statement.
-   */
-  public Statement getDeleteCellStatement(
-      final EntityId entityId,
-      final String family,
-      final String qualifier,
-      final long version
-  ) throws IOException {
-    checkFamily(family);
-
-    final KijiColumnName column = KijiColumnName.create(family, qualifier);
-    final CassandraColumnName cassandraColumn =
-        mTable.getColumnNameTranslator().toCassandraColumnName(column);
-
-    final KijiTableLayout layout = mTable.getLayout();
-    final CassandraTableName table =
-        CassandraTableName.getLocalityGroupTableName(mTable.getURI(), column, layout);
-
-    return CQLUtils.getDeleteCellStatement(
-        layout,
-        table,
-        entityId,
-        cassandraColumn,
-        version);
-  }
-
-  /**
-   * Create a delete statement for the latest version of a cell.
-   *
-   * @param entityId of the cell to delete.
-   * @param family of the cell to delete.
-   * @param qualifier of the cell to delete.
-   * @return a statement that will delete the cell.
-   * @throws java.io.IOException if there is a problem creating the delete statement.
-   */
-  public Statement getDeleteColumnStatement(
-      final EntityId entityId,
-      final String family,
-      final String qualifier
-  ) throws IOException {
-    checkFamily(family);
-
-    final KijiColumnName column = KijiColumnName.create(family, qualifier);
-    final CassandraColumnName cassandraColumn =
-        mTable.getColumnNameTranslator().toCassandraColumnName(column);
-
-    final KijiTableLayout layout = mTable.getLayout();
-    final CassandraTableName table =
-        CassandraTableName.getLocalityGroupTableName(mTable.getURI(), column, layout);
-
-    return CQLUtils.getDeleteColumnStatement(
-        layout,
-        table,
-        entityId,
-        cassandraColumn);
-  }
-
-  /**
-   * Create a delete statement for a cell containing a counter.
-   *
-   * @param entityId of the cell to delete.
-   * @param family of the cell to delete.
-   * @param qualifier of the cell to delete.
-   * @return a statement that will delete the cell.
-   * @throws java.io.IOException if there is a problem creating the delete statement.
-   */
-  public Statement getDeleteCounterStatement(
-      final EntityId entityId,
-      final String family,
-      final String qualifier
-  ) throws IOException {
-    checkFamily(family);
-
-    final KijiColumnName column = KijiColumnName.create(family, qualifier);
-    final CassandraColumnName cassandraColumn =
-        mTable.getColumnNameTranslator().toCassandraColumnName(column);
-
-    final CassandraTableName table =
-        CassandraTableName.getCounterTableName(mTable.getURI());
-
-    return CQLUtils.getDeleteColumnStatement(
-        mTable.getLayout(),
-        table,
-        entityId,
-        cassandraColumn);
-  }
-
-  /**
-   * Create a delete statement for a column family.
-   *
-   * @param entityId to delete.
-   * @param family to delete.
-   * @return a statement that will delete the family.
-   * @throws java.io.IOException if there is a problem creating the delete statement.
-   */
-  public Statement getDeleteFamilyStatement(
-      final EntityId entityId,
-      final String family
-  ) throws IOException {
-    checkFamily(family);
-
-    final KijiColumnName column = KijiColumnName.create(family, null);
-    final CassandraColumnName cassandraColumn =
-        mTable.getColumnNameTranslator().toCassandraColumnName(column);
-
-    final KijiTableLayout layout = mTable.getLayout();
-    final CassandraTableName table =
-        CassandraTableName.getLocalityGroupTableName(mTable.getURI(), column, layout);
-
-    return CQLUtils.getDeleteColumnStatement(
-        layout,
-        table,
-        entityId,
-        cassandraColumn);
-  }
-
-  /**
-   * Create a delete statement for a column family containing counters.
-   *
-   * @param entityId to delete.
-   * @param family to delete.
-   * @return a statement that will delete the family.
-   * @throws java.io.IOException if there is a problem creating the delete statement.
-   */
-  public Statement getDeleteCounterFamilyStatement(
-      final EntityId entityId,
-      final String family
-  ) throws IOException {
-    checkFamily(family);
-
-    final KijiColumnName column = KijiColumnName.create(family, null);
-    final CassandraColumnName cassandraColumn =
-        mTable.getColumnNameTranslator().toCassandraColumnName(column);
-
-    final CassandraTableName table =
-        CassandraTableName.getCounterTableName(mTable.getURI());
-
-    return CQLUtils.getDeleteColumnStatement(
-        mTable.getLayout(),
-        table,
-        entityId,
-        cassandraColumn
-    );
-  }
-
-  /**
-   * Create a delete statement for an entire row.
-   *
-   * @param entityId of the row to delete.
-   * @return a statement that will delete the row.
-   * @throws java.io.IOException if there is a problem creating the delete statement.
-   */
-  public Statement getDeleteRowStatement(final EntityId entityId) throws IOException {
-    return CQLUtils.getDeleteRowStatement(mTable.getLayout(), mTableName, entityId);
-  }
-
-  /**
-   * Create a delete statement for the counters within a row.
-   *
-   * @param entityId of the row to delete.
-   * @return a statement that will delete the row.
-   * @throws java.io.IOException if there is a problem creating the delete statement.
-   */
-  public Statement getDeleteCounterRowStatement(final EntityId entityId) throws IOException {
-    return CQLUtils.getDeleteRowStatement(mTable.getLayout(), mCounterTableName, entityId);
-  }
-
-  /**
-   * Checks that the provided column family exists in this table.
-   *
-   * @param family to check.
-   * @throws NoSuchColumnException if the family does not exist.
-   */
-  private void checkFamily(final String family) throws NoSuchColumnException {
-    if (!mTable.getLayout().getFamilyMap().containsKey(family)) {
-      throw new NoSuchColumnException(String.format("Family '%s' not found.", family));
-    }
   }
 }

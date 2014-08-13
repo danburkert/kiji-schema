@@ -23,6 +23,8 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 
+import javax.annotation.concurrent.ThreadSafe;
+
 import com.datastax.driver.core.BatchStatement;
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Statement;
@@ -36,7 +38,7 @@ import org.kiji.schema.EntityId;
 import org.kiji.schema.KijiIOException;
 import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
 import org.kiji.schema.impl.LayoutConsumer;
-import org.kiji.schema.impl.cassandra.CassandraKijiTableWriter.WriterLayoutCapsule;
+import org.kiji.schema.impl.cassandra.CassandraKijiBufferedWriter.WriterLayoutCapsule;
 import org.kiji.schema.layout.CassandraColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.LayoutUpdatedException;
@@ -45,7 +47,7 @@ import org.kiji.schema.layout.impl.CellEncoderProvider;
 /**
  * Cassandra implementation of AtomicKijiPutter.
  *
- * Facilitates guaranteed atomic puts in batch on a single row.
+ * Facilitates guaranteed atomic puts in batch on a single row to a single locality group.
  *
  * Use <code>begin(EntityId)</code> to open a new transaction,
  * <code>put(family, qualifier, value)</code> to stage a put in the transaction,
@@ -56,6 +58,7 @@ import org.kiji.schema.layout.impl.CellEncoderProvider;
  * concurrent access to a writer while a transaction is being constructed.
  */
 @ApiAudience.Private
+@ThreadSafe
 public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
   // TODO: Implement compare-and-set.  Should be possible in C* 2.0.6.
   // See this thread on the C* user list: http://tinyurl.com/lcz73s3
@@ -276,7 +279,11 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
 
   /** {@inheritDoc} */
   @Override
-  public <T> void put(String family, String qualifier, T value) throws IOException {
+  public <T> void put(
+      final String family,
+      final String qualifier,
+      final T value
+  ) throws IOException {
     if (mWriterCommon.isCounterColumn(family, qualifier)) {
       throw new UnsupportedOperationException(
           "Cannot modify counters within Cassandra atomic putter.");
@@ -287,10 +294,11 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
   /** {@inheritDoc} */
   @Override
   public <T> void put(
-      String family,
-      String qualifier,
-      long timestamp,
-      T value) throws IOException {
+      final String family,
+      final String qualifier,
+      final long timestamp,
+      final T value
+  ) throws IOException {
     Preconditions.checkState(mStatements != null,
         "calls to put() must be between calls to begin() and "
             + "commit(), checkAndCommit(), or rollback()");

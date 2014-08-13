@@ -107,7 +107,7 @@ public final class CassandraKijiTable implements KijiTable {
   private final AtomicInteger mRetainCount = new AtomicInteger(0);
 
   /** Writer factory for this table. */
-  private final KijiWriterFactory mWriterFactory;
+  private final CassandraKijiWriterFactory mWriterFactory;
 
   /** Reader factory for this table. */
   private final KijiReaderFactory mReaderFactory;
@@ -280,7 +280,7 @@ public final class CassandraKijiTable implements KijiTable {
 
   /** {@inheritDoc} */
   @Override
-  public KijiWriterFactory getWriterFactory() throws IOException {
+  public CassandraKijiWriterFactory getWriterFactory() throws IOException {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot get the writer factory for a KijiTable in state %s.", state);

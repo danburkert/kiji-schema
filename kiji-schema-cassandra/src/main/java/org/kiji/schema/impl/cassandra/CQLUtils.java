@@ -561,7 +561,7 @@ public final class CQLUtils {
     if (table.isLocalityGroup()) {
       get = getLocalityGroupGet(table, column, dataRequest, columnRequest);
     } else if (table.isCounter()) {
-      get = getCounterGet(table, column, columnRequest);
+      get = getCounterGet(table, column);
     } else {
       throw new IllegalArgumentException(
           String.format("Table %s must be a locality group or counter table.", table));
@@ -621,20 +621,18 @@ public final class CQLUtils {
    *
    * @param table The name of the table.
    * @param column The name of the column to get.
-   * @param columnRequest The column request defining the get.
    * @return a statement which will get the column.
    */
-  private static Select getCounterGet(
+  public static Select getCounterGet(
       CassandraTableName table,
-      CassandraColumnName column,
-      Column columnRequest
+      CassandraColumnName column
   ) {
     return select()
         .all()
         .from(table.getKeyspace(), table.getTable())
         .where(eq(LOCALITY_GROUP_COL, column.getLocalityGroup()))
         .and(eq(FAMILY_COL, column.getFamilyBuffer()))
-        .limit(columnRequest.getMaxVersions());
+        .limit(1);
   }
 
   /**
@@ -819,7 +817,7 @@ public final class CQLUtils {
    * @param amount to increment value.
    * @return a CQL statement to increment a counter column.
    */
-  public static Statement getIncrementCounterStatement(
+  public static Statement getCounterIncrement(
       final KijiTableLayout layout,
       final CassandraTableName tableName,
       final EntityId entityId,
@@ -841,7 +839,6 @@ public final class CQLUtils {
     return update;
   }
 
-  // CSOFF: ParameterNumberCheck
   /**
    * Create a CQL statement that executes a Kiji put into a non-counter cell.
    *
@@ -854,7 +851,7 @@ public final class CQLUtils {
    * @param ttl of value, or null if forever.
    * @return a Statement which will execute the insert.
    */
-  public static Statement getInsertStatement(
+  public static Statement getLocalityGroupInsert(
       final KijiTableLayout layout,
       final CassandraTableName table,
       final EntityId entityId,
@@ -882,7 +879,6 @@ public final class CQLUtils {
 
     return insert;
   }
-  // CSON
 
   /**
    * Create a CQL statement to delete a cell.
@@ -894,7 +890,7 @@ public final class CQLUtils {
    * @param version of cell.
    * @return a CQL statement to delete a cell.
    */
-  public static Statement getDeleteCellStatement(
+  public static Statement getLocalityGroupDeleteCell(
       final KijiTableLayout layout,
       final CassandraTableName tableName,
       final EntityId entityID,
@@ -902,11 +898,11 @@ public final class CQLUtils {
       final long version
   ) {
     Preconditions.checkArgument(column.containsQualifier());
-    return getDeleteStatement(layout, tableName, entityID, column, version);
+    return getLocalityGroupDeleteStatement(layout, tableName, entityID, column, version);
   }
 
   /**
-   * Create a CQL statement to delete a column.
+   * Create a CQL statement to delete a non-counter column from a row.
    *
    * @param layout of table.
    * @param tableName of table.
@@ -915,43 +911,43 @@ public final class CQLUtils {
    *
    * @return a CQL statement to delete a column.
    */
-  public static Statement getDeleteColumnStatement(
+  public static Statement getLocalityGroupDeleteColumn(
       final KijiTableLayout layout,
       final CassandraTableName tableName,
       final EntityId entityID,
       final CassandraColumnName column
   ) {
-    return getDeleteStatement(layout, tableName, entityID, column, null);
+    return getLocalityGroupDeleteStatement(layout, tableName, entityID, column, null);
   }
 
   /**
-   * Create a CQL statement to delete a row.
+   * Create a CQL statement to delete all columns in a locality group from a row.
    *
    * @param layout of table.
    * @param tableName of table.
    * @param entityID of row.
    * @return a CQL statement to delete a row.
    */
-  public static Statement getDeleteRowStatement(
+  public static Statement getLocalityGroupDelete(
       final KijiTableLayout layout,
       final CassandraTableName tableName,
       final EntityId entityID
   ) {
     final CassandraColumnName column = new CassandraColumnName(null, (byte[]) null, null);
-    return getDeleteStatement(layout, tableName, entityID, column, null);
+    return getLocalityGroupDeleteStatement(layout, tableName, entityID, column, null);
   }
 
   /**
-   * Create a CQL statement for deleting a column from a row of a Cassandra Kiji table.
+   * Create a CQL statement for deleting from a locality group in a row of a Cassandra Kiji table.
    *
    * @param layout table layout of table.
    * @param tableName translated table name as known by Cassandra.
    * @param entityId of row to delete from.
-   * @param column to delete.  May be unqualified.
+   * @param column to delete. May be unqualified.
    * @param version to delete, or null if all versions.
    * @return a statement which will delete the column.
    */
-  private static Statement getDeleteStatement(
+  private static Statement getLocalityGroupDeleteStatement(
       KijiTableLayout layout,
       CassandraTableName tableName,
       EntityId entityId,
@@ -969,14 +965,85 @@ public final class CQLUtils {
 
     if (column.containsFamily()) {
       delete.where(eq(FAMILY_COL, column.getFamilyBuffer()));
+      if (column.containsQualifier()) {
+        delete.where(eq(QUALIFIER_COL, column.getQualifierBuffer()));
+        if (version != null) {
+          delete.where(eq(VERSION_COL, version));
+        }
+      }
     }
 
-    if (column.containsQualifier()) {
-      delete.where(eq(QUALIFIER_COL, column.getQualifierBuffer()));
+    return delete;
+  }
+
+  /**
+   * Create a CQL statement to delete a counter column from a row.
+   *
+   * @param layout of table.
+   * @param tableName of table.
+   * @param entityID of row.
+   * @param column containing counter(s) to delete.
+   *
+   * @return a CQL statement to delete a column.
+   */
+  public static Statement getCounterDeleteColumn(
+      final KijiTableLayout layout,
+      final CassandraTableName tableName,
+      final EntityId entityID,
+      final CassandraColumnName column
+  ) {
+    return getCounterDeleteStatement(layout, tableName, entityID, column);
+  }
+
+  /**
+   * Create a CQL statement to delete all counters in a row.
+   *
+   * @param layout of table.
+   * @param tableName of table.
+   * @param entityID of row.
+   * @return a CQL statement to delete a row.
+   */
+  public static Statement getCounterDelete(
+      final KijiTableLayout layout,
+      final CassandraTableName tableName,
+      final EntityId entityID
+  ) {
+    final CassandraColumnName column = new CassandraColumnName(null, (byte[]) null, null);
+    return getCounterDeleteStatement(layout, tableName, entityID, column);
+  }
+
+  /**
+   * Create a CQL statement for deleting from a locality group in a row of a Cassandra Kiji table.
+   *
+   * @param layout table layout of table.
+   * @param tableName translated table name as known by Cassandra.
+   * @param entityId of row to delete from.
+   * @param column to delete.
+   * @return a statement which will delete the column.
+   */
+  private static Statement getCounterDeleteStatement(
+      KijiTableLayout layout,
+      CassandraTableName tableName,
+      EntityId entityId,
+      CassandraColumnName column
+  ) {
+    final Delete delete = delete()
+        .all()
+        .from(tableName.getKeyspace(), tableName.getTable());
+
+    for (Map.Entry<String, Object> component
+        : getEntityIdColumnValues(layout, entityId).entrySet()) {
+      delete.where(eq(component.getKey(), component.getValue()));
     }
 
-    if (version != null) {
-      delete.where(eq(VERSION_COL, version));
+    if (column.containsLocalityGroup()) {
+      delete.where(eq(LOCALITY_GROUP_COL, column.getLocalityGroup()));
+      if (column.containsFamily()) {
+        delete.where(eq(FAMILY_COL, column.getFamilyBuffer()));
+        if (column.containsQualifier()) {
+          delete.where(eq(QUALIFIER_COL, column.getQualifierBuffer()));
+        }
+      }
     }
 
     return delete;
