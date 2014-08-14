@@ -113,12 +113,12 @@ public class TestCassandraAtomicKijiPutter {
 //
     mPutter.begin(mEntityId);
     mPutter.put(INFO, NAME, BIRDHEAD);
-//
+
 //    assertEquals(
 //        MR_BONKERS,
 //        mReader.get(mEntityId, request).getMostRecentValue(INFO, NAME).toString()
 //    );
-//
+
     mPutter.commit();
 //    assertEquals(
 //        BIRDHEAD,

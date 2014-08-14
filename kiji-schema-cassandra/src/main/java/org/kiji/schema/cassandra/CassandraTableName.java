@@ -300,26 +300,24 @@ public final class CassandraTableName {
   }
 
   /**
-   * Get the name of the keyspace (formatted for CQL) in C* for the Kiji instance specified in the
-   * URI.
+   * Get the Cassandra keyspace (formatted for CQL) for a Kiji instance.
    *
-   * @param instanceURI The name of the Kiji instance.
-   * @return The name of the C* keyspace.
+   * @param instanceURI The URI of the Kiji instance.
+   * @return The Cassandra keyspace of the instance.
    */
-  public static String getQuotedKeyspace(KijiURI instanceURI) {
-    return appendCassandraKeyspace(new StringBuilder("\""), instanceURI.getInstance())
-        .append("\"")
+  public static String getKeyspace(KijiURI instanceURI) {
+    return appendCassandraKeyspace(new StringBuilder().append('"'), instanceURI.getInstance())
+        .append('"')
         .toString();
   }
 
   /**
-   * Get the name of the keyspace (formatted for CQL) in C* for the Kiji instance specified in the
-   * URI.
+   * Get the name of the Cassandra keyspace for a Kiji instance.
    *
-   * @param instanceURI The name of the Kiji instance.
-   * @return The name of the C* keyspace.
+   * @param instanceURI The URI of the Kiji instance.
+   * @return The Cassandra keyspace.
    */
-  public static String getKeyspace(KijiURI instanceURI) {
+  public static String getUnquotedKeyspace(KijiURI instanceURI) {
     return appendCassandraKeyspace(new StringBuilder(), instanceURI.getInstance()).toString();
   }
 
@@ -336,11 +334,22 @@ public final class CassandraTableName {
   }
 
   /**
-   * Get the keyspace of this Cassandra table name.
+   * Get the Cassandra keyspace (formatted for CQL) of the table.
    *
-   * @return the keyspace of this Cassandra table name.
+   * @return the quoted keyspace of the Cassandra table.
    */
   public String getKeyspace() {
+    return appendCassandraKeyspace(new StringBuilder().append('"'), mInstance)
+        .append('"')
+        .toString();
+  }
+
+  /**
+   * Get the Cassandra keyspace for the table.
+   *
+   * @return the keyspace of the Cassandra table.
+   */
+  public String getUnquotedKeyspace() {
     return appendCassandraKeyspace(new StringBuilder(), mInstance).toString();
   }
 
@@ -349,7 +358,7 @@ public final class CassandraTableName {
    *
    * @return the table name of this Cassandra table name.
    */
-  public String getTable() {
+  public String getUnquotedTable() {
     return appendCassandraTableName(new StringBuilder()).toString();
   }
 
@@ -360,7 +369,7 @@ public final class CassandraTableName {
    *
    * @return the quoted table name of this Cassandra table name.
    */
-  public String getQuotedTable() {
+  public String getTable() {
     return appendCassandraTableName(new StringBuilder().append('"')).append('"').toString();
   }
 

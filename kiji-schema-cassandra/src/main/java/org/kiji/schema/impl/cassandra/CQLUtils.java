@@ -625,7 +625,7 @@ public final class CQLUtils {
     Select select =
         select()
             .all()
-            .from(table.getKeyspace(), table.getTable())
+            .from(table.getKeyspace(), table.getUnquotedTable())
             .where(eq(FAMILY_COL, column.getFamilyBuffer()))
             .limit(columnRequest.getMaxVersions());
 
@@ -661,7 +661,7 @@ public final class CQLUtils {
   ) {
     return select()
         .all()
-        .from(table.getKeyspace(), table.getTable())
+        .from(table.getKeyspace(), table.getUnquotedTable())
         .where(eq(LOCALITY_GROUP_COL, column.getLocalityGroup()))
         .and(eq(FAMILY_COL, column.getFamilyBuffer()))
         .limit(1);
@@ -734,7 +734,7 @@ public final class CQLUtils {
 
     final Select select =
         selectFrom
-            .from(table.getKeyspace(), table.getTable())
+            .from(table.getKeyspace(), table.getUnquotedTable())
             .where(eq(FAMILY_COL, column.getFamilyBuffer()))
             .limit(columnRequest.getMaxVersions())
             .allowFiltering();
@@ -796,7 +796,7 @@ public final class CQLUtils {
 
     final Select select =
         selectFrom
-            .from(table.getKeyspace(), table.getTable())
+            .from(table.getKeyspace(), table.getUnquotedTable())
             .where(eq(LOCALITY_GROUP_COL, column.getLocalityGroup()))
             .and(eq(FAMILY_COL, column.getFamilyBuffer()))
             .limit(columnRequest.getMaxVersions())
@@ -836,7 +836,7 @@ public final class CQLUtils {
     }
     return select
         .distinct()
-        .from(table.getKeyspace(), table.getTable());
+        .from(table.getKeyspace(), table.getUnquotedTable());
   }
 
   /**
@@ -857,7 +857,7 @@ public final class CQLUtils {
       final long amount
   ) {
     final Update.Where update =
-        update(tableName.getKeyspace(), tableName.getTable())
+        update(tableName.getKeyspace(), tableName.getUnquotedTable())
             .with(incr(VALUE_COL, amount))
             .where(eq(LOCALITY_GROUP_COL, column.getLocalityGroup()))
             .and(eq(FAMILY_COL, column.getFamilyBuffer()))
@@ -988,7 +988,7 @@ public final class CQLUtils {
   ) {
     final Delete delete = delete()
         .all()
-        .from(tableName.getKeyspace(), tableName.getTable());
+        .from(tableName.getKeyspace(), tableName.getUnquotedTable());
 
     for (Map.Entry<String, Object> component
         : getEntityIdColumnValues(layout, entityId).entrySet()) {
@@ -1061,7 +1061,7 @@ public final class CQLUtils {
   ) {
     final Delete delete = delete()
         .all()
-        .from(tableName.getKeyspace(), tableName.getTable());
+        .from(tableName.getKeyspace(), tableName.getUnquotedTable());
 
     for (Map.Entry<String, Object> component
         : getEntityIdColumnValues(layout, entityId).entrySet()) {

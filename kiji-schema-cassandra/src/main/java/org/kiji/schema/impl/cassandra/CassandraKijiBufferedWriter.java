@@ -674,19 +674,20 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
 
 
       for (CassandraTableName table : mBufferedStatements.keySet()) {
-        final List<Statement> statements = 
+        final List<Statement> statements = mBufferedStatements.removeAll(table);
 
+        if (statements.size() > 0) {
+          final Statement statement;
+          if (statements.size() == 1) {
+            statement = statements.get(0);
+          } else if (table.isCounter()) {
+            statement = new BatchStatement(Type.COUNTER).addAll(statements);
+          } else {
+            statement = new BatchStatement(Type.UNLOGGED).addAll(statements);
+          }
 
-
-        final BatchStatement batch;
-        if (table.isCounter()) {
-          batch = new BatchStatement(Type.UNLOGGED);
-        } else {
-          batch = new BatchStatement(Type.COUNTER);
+          futures.add(mTable.getAdmin().executeAsync(statement));
         }
-
-        batch.addAll(mBufferedStatements.removeAll(table));
-        mTable.getAdmin().executeAsync(batch);
       }
       mCurrentWriteBufferSize = 0L;
     }

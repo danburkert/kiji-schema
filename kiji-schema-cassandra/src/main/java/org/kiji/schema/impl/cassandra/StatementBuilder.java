@@ -3,12 +3,9 @@ package org.kiji.schema.impl.cassandra;
 import static com.datastax.driver.core.querybuilder.QueryBuilder.*;
 
 import static org.kiji.schema.impl.cassandra.CQLUtils.FAMILY_COL;
-import static org.kiji.schema.impl.cassandra.CQLUtils.LOCALITY_GROUP_COL;
 import static org.kiji.schema.impl.cassandra.CQLUtils.QUALIFIER_COL;
 import static org.kiji.schema.impl.cassandra.CQLUtils.RAW_KEY_COL;
-import static org.kiji.schema.impl.cassandra.CQLUtils.VALUE_COL;
 import static org.kiji.schema.impl.cassandra.CQLUtils.VERSION_COL;
-import static org.kiji.schema.impl.cassandra.CQLUtils.translateEntityIDComponentNameToColumnName;
 
 import java.util.List;
 import java.util.Map;
@@ -109,7 +106,7 @@ public class StatementBuilder {
     Select select =
         select()
             .all()
-            .from(table.getKeyspace(), table.getTable())
+            .from(table.getKeyspace(), table.getUnquotedTable())
             .where(eq(FAMILY_COL, column.getFamilyBuffer()))
             .limit(columnRequest.getMaxVersions());
 
