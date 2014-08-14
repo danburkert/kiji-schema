@@ -82,9 +82,6 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
   /** Layout consumer registration resource. */
   private final LayoutConsumer.Registration mLayoutConsumerRegistration;
 
-  /** Session used for talking to this Cassandra table. */
-  private final CassandraAdmin mAdmin;
-
   /** States of a buffered writer instance. */
   private static enum State {
     UNINITIALIZED,
@@ -221,7 +218,6 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
    */
   public CassandraKijiBufferedWriter(final CassandraKijiTable table) throws IOException {
     mTable = table;
-    mAdmin = mTable.getAdmin();
     mLayoutConsumerRegistration = mTable.registerLayoutConsumer(new InnerLayoutUpdater());
     Preconditions.checkState(
         mCapsule != null,
@@ -685,7 +681,7 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
         }
 
         batch.addAll(mBufferedStatements.removeAll(table));
-        mAdmin.executeAsync(batch);
+        mTable.getAdmin().executeAsync(batch);
       }
       mCurrentWriteBufferSize = 0L;
     }

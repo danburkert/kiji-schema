@@ -404,6 +404,15 @@ public final class CassandraTableName {
   }
 
   /**
+   * Gets the locality group ID of this Cassandra table.
+   *
+   * @return the locality group ID.
+   */
+  public ColumnId getLocalityGroupId() {
+    return mLocalityGroup;
+  }
+
+  /**
    * Returns whether this Cassandra table name is for a Kiji locality group.
    *
    * @return Whether this Cassandra table name is for a Kiji locality group.
