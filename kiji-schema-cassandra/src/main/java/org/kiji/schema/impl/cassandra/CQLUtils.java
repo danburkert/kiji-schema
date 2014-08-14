@@ -303,40 +303,62 @@ public final class CQLUtils {
   }
 
   /**
-   * Return the ordered list of cluster columns for the table layout.
+   * Get the ordered list of cluster columns originating from the entity ID. This is the set of
+   * 'scannable' entity ID components.
    *
-   * @param layout to return cluster columns for.
-   * @return the primary key columns for the layout.
+   * @param layout The layou of the table.
+   * @return the cluster columns of the table from the entity ID.
    */
-  public static List<String> getClusterColumns(KijiTableLayout layout) {
+  private static List<String> getEntityIdClusterColumns(KijiTableLayout layout) {
     RowKeyFormat2 keyFormat = (RowKeyFormat2) layout.getDesc().getKeysFormat();
-    List<String> columns;
     switch (keyFormat.getEncoding()) {
       case RAW: {
-        columns = Lists.newArrayList();
-        break;
+        return Lists.newArrayList();
       }
       case FORMATTED: {
         int size = keyFormat.getComponents().size();
         int start = keyFormat.getRangeScanStartIndex();
         if (start == size) {
-          columns = Lists.newArrayList();
+          return Lists.newArrayList();
         } else {
-          columns = transformToColumns(
+          return transformToColumns(
               keyFormat
                   .getComponents()
                   .subList(keyFormat.getRangeScanStartIndex(), keyFormat.getComponents().size()));
         }
-        break;
       }
       default:
         throw new IllegalArgumentException(
             String.format("Unknown row key encoding %s.", keyFormat.getEncoding()));
     }
-    columns.add(LOCALITY_GROUP_COL);
+  }
+
+
+  /**
+   * Return the ordered list of cluster columns for the table layout.
+   *
+   * @param layout to return cluster columns for.
+   * @return the primary key columns for the layout.
+   */
+  public static List<String> getLocalityGroupClusterColumns(KijiTableLayout layout) {
+    List<String> columns = getEntityIdClusterColumns(layout);
     columns.add(FAMILY_COL);
     columns.add(QUALIFIER_COL);
     columns.add(VERSION_COL);
+    return columns;
+  }
+
+  /**
+   * Return the ordered list of cluster columns for the table layout.
+   *
+   * @param layout to return cluster columns for.
+   * @return the primary key columns for the layout.
+   */
+  public static List<String> getCounterClusterColumns(KijiTableLayout layout) {
+    List<String> columns = getEntityIdClusterColumns(layout);
+    columns.add(LOCALITY_GROUP_COL);
+    columns.add(FAMILY_COL);
+    columns.add(QUALIFIER_COL);
     return columns;
   }
 
@@ -461,7 +483,7 @@ public final class CQLUtils {
     COMMA_JOINER.appendTo(sb, getPartitionKeyColumns(layout));
     sb.append(")");
 
-    List<String> clusterColumns = getClusterColumns(layout);
+    List<String> clusterColumns = getLocalityGroupClusterColumns(layout);
     if (clusterColumns.size() > 0) {
       sb.append(", ");
     }
@@ -509,7 +531,7 @@ public final class CQLUtils {
     COMMA_JOINER.appendTo(sb, getPartitionKeyColumns(layout));
     sb.append(")");
 
-    List<String> clusterColumns = getClusterColumns(layout);
+    List<String> clusterColumns = getCounterClusterColumns(layout);
     if (clusterColumns.size() > 0) {
       sb.append(", ");
     }
@@ -533,6 +555,16 @@ public final class CQLUtils {
    */
   public static String getCreateIndexStatement(CassandraTableName tableName, String columnName) {
     return String.format("CREATE INDEX ON %s (%s)", tableName, columnName);
+  }
+
+  /**
+   * Returns a CQL statement which drop a table.
+   *
+   * @param table The table to delete.
+   * @return A CQL statement to drop the provided table.
+   */
+  public static String getDropTableStatement(CassandraTableName table) {
+    return String.format("DROP TABLE IF EXISTS %s;", table);
   }
 
   /**
@@ -873,7 +905,7 @@ public final class CQLUtils {
         .value(VERSION_COL, version)
         .value(VALUE_COL, value);
 
-    if (ttl != null) {
+    if (ttl != null && ttl < 630720000) { // 630720000 is the maximum Cassandra TTL
       insert.using(ttl(ttl));
     }
 

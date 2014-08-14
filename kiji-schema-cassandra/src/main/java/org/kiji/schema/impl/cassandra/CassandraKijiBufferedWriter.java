@@ -672,7 +672,12 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
       Preconditions.checkState(mState == State.OPEN,
           "Can not flush BufferedWriter instance %s in state %s.", this, mState);
 
-      for (CassandraTableName table : mBufferedStatements.keys()) {
+
+      for (CassandraTableName table : mBufferedStatements.keySet()) {
+        final List<Statement> statements = 
+
+
+
         final BatchStatement batch;
         if (table.isCounter()) {
           batch = new BatchStatement(Type.UNLOGGED);

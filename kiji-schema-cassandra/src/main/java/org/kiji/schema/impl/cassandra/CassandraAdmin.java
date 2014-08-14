@@ -132,44 +132,11 @@ public abstract class CassandraAdmin implements Closeable {
    */
   public void createTable(CassandraTableName tableName, String createTableStatement) {
     // TODO: Keep track of all tables associated with this session
-    LOG.info("Creating table {} with statement {}.", tableName, createTableStatement);
+    LOG.debug("Creating table {} with statement {}.", tableName, createTableStatement);
     getSession().execute(createTableStatement);
 
     // Check that the table actually exists
     assert(tableExists(tableName));
-  }
-
-  // TODO: Add something for disabling this table.
-
-  /**
-   * Disable a table.
-   *
-   * @param tableName of the table to disable.
-   */
-  public void disableTable(CassandraTableName tableName) { }
-
-  // TODO: Just return true for now since we aren't disabling any Cassandra tables yet.
-
-  /**
-   * Check whether a table is enabled.
-   *
-   * @param tableName of the table to check.
-   * @return whether the table is enabled.
-   */
-  public boolean isTableEnabled(CassandraTableName tableName) {
-    return true;
-  }
-
-  /**
-   * Delete a Cassandra table.
-   *
-   * @param tableName of the table to delete.
-   */
-  public void deleteTable(CassandraTableName tableName) {
-    // TODO: Check first that the table actually exists?
-    String queryString = String.format("DROP TABLE IF EXISTS %s;", tableName);
-    LOG.info("Deleting table " + tableName);
-    getSession().execute(queryString);
   }
 
   /**
@@ -260,7 +227,7 @@ public abstract class CassandraAdmin implements Closeable {
     Preconditions.checkNotNull(getSession().getCluster().getMetadata().getKeyspace(keyspace));
     Collection<TableMetadata> tables =
         getSession().getCluster().getMetadata().getKeyspace(keyspace).getTables();
-    return (tables.isEmpty());
+    return tables.isEmpty();
   }
 
   /**

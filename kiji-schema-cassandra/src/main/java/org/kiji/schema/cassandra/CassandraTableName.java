@@ -284,16 +284,6 @@ public final class CassandraTableName {
         localityGroupID);
   }
 
-  public static CassandraTableName getLocalityGroupTableName(
-      final KijiURI tableURI,
-      final KijiColumnName column,
-      final KijiTableLayout layout
-  ) {
-    // Does not check if the column is fully qualified, and if so if it is a counter column
-    final ColumnId lgID = layout.getFamilyMap().get(column.getFamily()).getLocalityGroup().getId();
-    return getLocalityGroupTableName(tableURI, lgID);
-  }
-
   /**
    * Get a Cassandra table name.
    *
@@ -406,7 +396,7 @@ public final class CassandraTableName {
   /**
    * Gets the locality group ID of this Cassandra table.
    *
-   * @return the locality group ID.
+   * @return the
    */
   public ColumnId getLocalityGroupId() {
     return mLocalityGroup;

@@ -192,10 +192,13 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
     synchronized (mMonitor) {
       Preconditions.checkState(mState == State.OPEN,
           "Can not begin a transaction on an AtomicKijiPutter instance in state %s.", mState);
-      Preconditions.checkState(mStatements == null,
-          "There is already a transaction in progress on row: %s." +
-              " Call commit(), checkAndCommit(), or rollback() to clear the current transaction.",
-          mEntityId.toShellString());
+      if (mStatements != null) {
+        throw new IllegalStateException(
+            String.format(
+                "There is already a transaction in progress on row: %s. Call commit(),"
+                    + " checkAndCommit(), or rollback() to clear the current transaction.",
+                mEntityId.toShellString()));
+      }
 
       mEntityId = eid;
       mStatements = Lists.newArrayList();
@@ -224,10 +227,14 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
 
       Preconditions.checkState(mStatements.size() > 0, "No transactions to commit.");
 
-      BatchStatement batchStatement = new BatchStatement(BatchStatement.Type.LOGGED);
-      batchStatement.addAll(mStatements);
+      final Statement statement;
+      if (mStatements.size() > 1) {
+        statement = new BatchStatement(BatchStatement.Type.UNLOGGED).addAll(mStatements);
+      } else {
+        statement = mStatements.get(0);
+      }
 
-      ResultSet result = mTable.getAdmin().execute(batchStatement);
+      ResultSet result = mTable.getAdmin().execute(statement);
       LOG.debug("Results from batch commit: {}.", result);
 
       reset();

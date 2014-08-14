@@ -25,8 +25,10 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+import com.datastax.driver.core.ResultSetFuture;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.Lists;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.zookeeper.KeeperException;
@@ -38,18 +40,17 @@ import org.kiji.schema.Kiji;
 import org.kiji.schema.KijiAlreadyExistsException;
 import org.kiji.schema.KijiMetaTable;
 import org.kiji.schema.KijiNotInstalledException;
-import org.kiji.schema.KijiRowKeySplitter;
 import org.kiji.schema.KijiSchemaTable;
 import org.kiji.schema.KijiSystemTable;
 import org.kiji.schema.KijiTable;
 import org.kiji.schema.KijiURI;
-import org.kiji.schema.avro.RowKeyEncoding;
 import org.kiji.schema.avro.RowKeyFormat;
 import org.kiji.schema.avro.TableLayoutDesc;
 import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.impl.Versions;
 import org.kiji.schema.layout.InvalidLayoutException;
 import org.kiji.schema.layout.KijiTableLayout;
+import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout;
 import org.kiji.schema.layout.impl.InstanceMonitor;
 import org.kiji.schema.security.CassandraKijiSecurityManager;
 import org.kiji.schema.security.KijiSecurityException;
@@ -362,71 +363,7 @@ public final class CassandraKiji implements Kiji {
 
   /** {@inheritDoc} */
   @Override
-  public void createTable(TableLayoutDesc tableLayout)
-      throws IOException {
-    createTable(tableLayout, 1);
-  }
-
-  /** {@inheritDoc} */
-  @Deprecated
-  @Override
-  public void createTable(String tableName, KijiTableLayout tableLayout, int numRegions)
-      throws IOException {
-    if (!tableName.equals(tableLayout.getName())) {
-      throw new RuntimeException(String.format(
-          "Table name from layout descriptor '%s' does match table name '%s'.",
-          tableLayout.getName(), tableName));
-    }
-
-    createTable(tableLayout.getDesc(), numRegions);
-  }
-
-  /** {@inheritDoc} */
-  @Override
-  // TODO: Remove for C*, numRegions don't make sense
-  public void createTable(TableLayoutDesc tableLayout, int numRegions)
-      throws IOException {
-    Preconditions.checkArgument((numRegions >= 1), "numRegions must be positive: " + numRegions);
-    if (numRegions > 1) {
-      if (KijiTableLayout.getEncoding(tableLayout.getKeysFormat())
-          == RowKeyEncoding.RAW) {
-        throw new IllegalArgumentException(
-            "May not use numRegions > 1 if row key hashing is disabled in the layout");
-      }
-
-      createTable(tableLayout, KijiRowKeySplitter.get().getSplitKeys(numRegions,
-          KijiRowKeySplitter.getRowKeyResolution(tableLayout)));
-    } else {
-      createTable(tableLayout, null);
-    }
-  }
-
-  /** {@inheritDoc} */
-  @Deprecated
-  @Override
-  // TODO: Remove for C*, splitKeys don't make sense
-  public void createTable(String tableName, KijiTableLayout tableLayout, byte[][] splitKeys)
-      throws IOException {
-    if (getMetaTable().tableExists(tableName)) {
-      final KijiURI tableURI =
-          KijiURI.newBuilder(mURI).withTableName(tableName).build();
-      throw new KijiAlreadyExistsException(String.format(
-          "Kiji table '%s' already exists.", tableURI), tableURI);
-    }
-
-    if (!tableName.equals(tableLayout.getName())) {
-      throw new RuntimeException(String.format(
-          "Table name from layout descriptor '%s' does match table name '%s'.",
-          tableLayout.getName(), tableName));
-    }
-
-    createTable(tableLayout.getDesc(), splitKeys);
-  }
-
-  /** {@inheritDoc} */
-  @Override
-  // TODO: Remove for C*, splitKeys don't make sense
-  public void createTable(TableLayoutDesc tableLayout, byte[][] splitKeys) throws IOException {
+  public void createTable(final TableLayoutDesc tableLayout) throws IOException {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot create table in Kiji instance %s in state %s.", this, state);
@@ -448,6 +385,54 @@ public final class CassandraKiji implements Kiji {
     } else {
       createTableUnchecked(tableLayout);
     }
+  }
+
+  /** {@inheritDoc} */
+  @Deprecated
+  @Override
+  public void createTable(
+      final String tableName,
+      final KijiTableLayout tableLayout,
+      final int numRegions
+  ) throws IOException {
+    Preconditions.checkArgument(tableName.equals(tableLayout.getName()),
+        "Table name from layout descriptor '%s' does match table name '%s'.",
+        tableLayout.getName(), tableName);
+    createTable(tableLayout.getDesc(), numRegions);
+  }
+
+  /** {@inheritDoc} */
+  @Override
+  public void createTable(
+      final TableLayoutDesc tableLayout,
+      final int numRegions
+  ) throws IOException {
+    LOG.warn("Kiji Cassandra does not support creating tables with regions.");
+    createTable(tableLayout);
+  }
+
+  /** {@inheritDoc} */
+  @Deprecated
+  @Override
+  public void createTable(
+      final String tableName,
+      final KijiTableLayout tableLayout,
+      final byte[][] splitKeys
+  ) throws IOException {
+    Preconditions.checkArgument(tableName.equals(tableLayout.getName()),
+        "Table name from layout descriptor '%s' does match table name '%s'.",
+        tableLayout.getName(), tableName);
+
+    createTable(tableLayout.getDesc());
+  }
+
+  /** {@inheritDoc} */
+  @Override
+  public void createTable(TableLayoutDesc tableLayout, byte[][] splitKeys) throws IOException {
+    LOG.warn("Kiji Cassandra does not support creating tables with regions.");
+    createTable(tableLayout);
+
+
   }
 
   /** {@inheritDoc} */
@@ -571,22 +556,23 @@ public final class CassandraKiji implements Kiji {
         "Cannot delete table in Kiji instance %s in state %s.", this, state);
     // Delete from Cassandra.
     final KijiURI tableURI = KijiURI.newBuilder(mURI).withTableName(tableName).build();
-    final CassandraTableName mainTable = CassandraTableName.getKijiTableName(tableURI);
-    final CassandraTableName counterTable = CassandraTableName.getCounterTableName(tableURI);
-    CassandraAdmin admin = getCassandraAdmin();
 
-    admin.disableTable(mainTable);
-    admin.deleteTable(mainTable);
+    final KijiTableLayout layout = mMetaTable.getTableLayout(tableName);
+    final List<ResultSetFuture> futures =
+        Lists.newArrayListWithCapacity(layout.getLocalityGroups().size());
+    for (LocalityGroupLayout localityGroup : layout.getLocalityGroups()) {
+      final String delete =
+          CQLUtils.getDropTableStatement(
+              CassandraTableName.getLocalityGroupTableName(tableURI, localityGroup.getId()));
 
-    admin.disableTable(counterTable);
-    admin.deleteTable(counterTable);
+      futures.add(mAdmin.executeAsync(delete));
+    }
+    final String deleteCounter =
+        CQLUtils.getDropTableStatement(CassandraTableName.getCounterTableName(tableURI));
+    futures.add(mAdmin.executeAsync(deleteCounter));
 
-    // Delete from the meta table.
-    getMetaTable().deleteTable(tableName);
-
-    // If the table persists immediately after deletion attempt, then give up.
-    if (admin.tableExists(mainTable)) {
-      LOG.warn("C* table " + mainTable + " survives deletion attempt. Giving up...");
+    for (ResultSetFuture future : futures) {
+      future.getUninterruptibly();
     }
   }
 
@@ -703,14 +689,10 @@ public final class CassandraKiji implements Kiji {
    * without applying permissions.
    *
    * @param tableLayout The initial layout of the table (with unassigned column ids).
-   * @throws java.io.IOException on I/O error.
-   * @throws org.kiji.schema.KijiAlreadyExistsException if the table already exists.
+   * @throws IOException on I/O error.
+   * @throws KijiAlreadyExistsException if the table already exists.
    */
   private void createTableUnchecked(TableLayoutDesc tableLayout) throws IOException {
-
-    // For this first-cut attempt at creating a C* Kiji table, all of the code for going from a Kiji
-    // TableLayoutDesc to a C* table is in this method.  Later we'll refactor this!
-
     final KijiURI tableURI = KijiURI.newBuilder(mURI).withTableName(tableLayout.getName()).build();
 
     // This will validate the layout and may throw an InvalidLayoutException.
@@ -731,36 +713,50 @@ public final class CassandraKiji implements Kiji {
     if (mSystemVersion.compareTo(Versions.SYSTEM_2_0) >= 0) {
       // system-2.0 clients retrieve the table layout from ZooKeeper as a stream of notifications.
       // Invariant: ZooKeeper hold the most recent layout of the table.
-      LOG.debug("Writing initial table layout in ZooKeeper for table {}.", tableURI);
-      ZooKeeperUtils.setTableLayout(
-          mZKClient,
-          tableURI,
-          layout.getDesc().getLayoutId());
+      ZooKeeperUtils.setTableLayout(mZKClient, tableURI, layout.getDesc().getLayoutId());
     }
 
-    // Super-primitive right now.  Assume that max versions is always 1.
+    /*
+      We create a Cassandra table per Kiji locality group, plus one for all counters.
+      In order to speed up this process, we do as much of the creation in parallel.
+     */
 
-    // Create a C* table name for this Kiji table.
-    final CassandraTableName tableName = CassandraTableName.getKijiTableName(tableURI);
+    final String createCounter =
+        CQLUtils.getCreateCounterTableStatement(
+            CassandraTableName.getCounterTableName(tableURI),
+            layout);
 
-    // Create the table!
-    mAdmin.createTable(tableName, CQLUtils.getCreateLocalityGroupTableStatement(tableName, layout));
+    final ResultSetFuture counterFuture = mAdmin.executeAsync(createCounter);
 
-    // Add a secondary index on the locality group (needed for row scans - SCHEMA-846).
-    mAdmin.createIndex(tableName, CQLUtils.LOCALITY_GROUP_COL);
+    final List<CassandraTableName> tables =
+        Lists.newArrayListWithCapacity(tableLayout.getLocalityGroups().size());
 
-    // Add a secondary index on the version.
-    mAdmin.createIndex(tableName, CQLUtils.VERSION_COL);
+    for (LocalityGroupLayout localityGroup : layout.getLocalityGroups()) {
+      tables.add(CassandraTableName.getLocalityGroupTableName(tableURI, localityGroup.getId()));
+    }
 
-    // Also create a second table, which we can use for counters.
-    // Create a C* table name for this Kiji table.
-    final CassandraTableName counterTableName =
-        CassandraTableName.getCounterTableName(tableURI);
+    final List<ResultSetFuture> futures = Lists.newArrayListWithCapacity(tables.size());
 
-    String createCounterTableStatement =
-        CQLUtils.getCreateCounterTableStatement(counterTableName, layout);
+    for (CassandraTableName table : tables) {
+      final String create = CQLUtils.getCreateLocalityGroupTableStatement(table, layout);
+      futures.add(mAdmin.executeAsync(create));
+    }
 
-    // Create the table!
-    mAdmin.createTable(counterTableName, createCounterTableStatement);
+    for (ResultSetFuture future : futures) {
+      future.getUninterruptibly();
+    }
+
+    futures.clear();
+
+    for (CassandraTableName table : tables) {
+      final String createIndex = CQLUtils.getCreateIndexStatement(table, CQLUtils.VERSION_COL);
+      futures.add(mAdmin.executeAsync(createIndex));
+    }
+
+    for (ResultSetFuture future : futures) {
+      future.getUninterruptibly();
+    }
+
+    counterFuture.getUninterruptibly();
   }
 }

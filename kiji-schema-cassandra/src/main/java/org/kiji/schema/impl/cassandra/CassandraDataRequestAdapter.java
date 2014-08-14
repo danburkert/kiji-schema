@@ -223,10 +223,11 @@ public class CassandraDataRequestAdapter {
       for (CassandraTableName cassandraTableName : tableNames) {
         if (bIsScan) {
           Statement statement = CQLUtils.getColumnScanStatement(
-              admin,
               table.getLayout(),
               cassandraTableName,
               cassandraColumn,
+              mKijiDataRequest,
+              column,
               scannerOptions);
           if (pagingEnabled) {
             statement.setFetchSize(column.getPageSize());
@@ -235,14 +236,12 @@ public class CassandraDataRequestAdapter {
         } else {
           Statement statement =
               CQLUtils.getColumnGetStatement(
-                  admin,
                   table.getLayout(),
                   cassandraTableName,
                   entityId,
                   cassandraColumn,
-                  cassandraColumn.containsQualifier() ? minTimestamp : null,
-                  cassandraColumn.containsQualifier() ? maxTimestamp : null,
-                  cassandraColumn.containsQualifier() ? column.getMaxVersions() : null);
+                  mKijiDataRequest,
+                  column);
           if (pagingEnabled) {
             statement.setFetchSize(column.getPageSize());
           }
@@ -261,7 +260,7 @@ public class CassandraDataRequestAdapter {
       // TODO: do we need to scan the counter table as well?
       futures.add(
           admin.executeAsync(
-              CQLUtils.getEntityIDScanStatement(admin, table.getLayout(), nonCounterTableName)));
+              CQLUtils.getEntityIDScanStatement(table.getLayout(), nonCounterTableName)));
     }
 
     // Wait until all of the futures are done.
