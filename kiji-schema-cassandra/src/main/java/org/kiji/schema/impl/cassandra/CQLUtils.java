@@ -642,8 +642,7 @@ public final class CQLUtils {
     }
 
     select.setFetchSize(
-        columnRequest.getPageSize() == 0 ? Integer.MAX_VALUE : columnRequest.getPageSize()
-    );
+        columnRequest.getPageSize() == 0 ? Integer.MAX_VALUE : columnRequest.getPageSize());
 
     return select;
   }

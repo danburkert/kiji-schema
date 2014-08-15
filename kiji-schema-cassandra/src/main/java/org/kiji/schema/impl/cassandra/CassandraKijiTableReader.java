@@ -195,7 +195,7 @@ public final class CassandraKijiTableReader implements KijiTableReader {
   }
 
   /**
-   * Creates a new <code>CassandraKijiTableReader</code> instance that sends the read requests
+   * Creates a new {@code CassandraKijiTableReader} instance that sends the read requests
    * directly to Cassandra.
    *
    * @param table Kiji table from which to read.

@@ -21,15 +21,16 @@ package org.kiji.schema.impl.cassandra;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
-import java.util.Set;
 
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.ResultSetFuture;
 import com.datastax.driver.core.Statement;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ArrayListMultimap;
+import com.google.common.collect.ListMultimap;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,9 +38,15 @@ import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.EntityId;
 import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiDataRequest;
+import org.kiji.schema.KijiDataRequest.Column;
+import org.kiji.schema.KijiURI;
+import org.kiji.schema.avro.SchemaType;
 import org.kiji.schema.cassandra.CassandraColumnName;
 import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.layout.CassandraColumnNameTranslator;
+import org.kiji.schema.layout.KijiTableLayout;
+import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout;
+import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout.ColumnLayout;
 
 /**
  * Wraps a KijiDataRequest to expose methods that generate meaningful objects in Cassandra land.
@@ -48,6 +55,8 @@ import org.kiji.schema.layout.CassandraColumnNameTranslator;
 public class CassandraDataRequestAdapter {
   private static final Logger LOG = LoggerFactory.getLogger(CassandraDataRequestAdapter.class);
 
+  private final CassandraKijiTable mTable;
+
   /** The wrapped KijiDataRequest. */
   private final KijiDataRequest mKijiDataRequest;
 
@@ -55,17 +64,19 @@ public class CassandraDataRequestAdapter {
   private final CassandraColumnNameTranslator mColumnNameTranslator;
 
   /**
-
-  /**
    * Creates a new CassandraDataRequestAdapter for a given data request using a given
    * ColumnNameTranslator.
    *
+   * @param table The Cassandra Kiji table.
    * @param kijiDataRequest The data request to adapt for Cassandra.
    * @param translator The name translator for getting Cassandra column names.
    */
   public CassandraDataRequestAdapter(
-      KijiDataRequest kijiDataRequest,
-      CassandraColumnNameTranslator translator) {
+      final CassandraKijiTable table,
+      final KijiDataRequest kijiDataRequest,
+      final CassandraColumnNameTranslator translator
+  ) {
+    mTable = table;
     mKijiDataRequest = kijiDataRequest;
     mColumnNameTranslator = translator;
   }
@@ -79,8 +90,8 @@ public class CassandraDataRequestAdapter {
    * @throws java.io.IOException if there is a problem talking to Cassandra.
    */
   public List<ResultSet> doScan(
-      CassandraKijiTable table,
-      CassandraKijiScannerOptions kijiScannerOptions
+      final CassandraKijiTable table,
+      final CassandraKijiScannerOptions kijiScannerOptions
     ) throws IOException {
     return queryCassandraTables(table, null, false, kijiScannerOptions);
   }
@@ -95,8 +106,8 @@ public class CassandraDataRequestAdapter {
    * @throws java.io.IOException if there is a problem executing the get.
    */
   public List<ResultSet> doGet(
-      CassandraKijiTable table,
-      EntityId entityId
+      final CassandraKijiTable table,
+      final EntityId entityId
   ) throws IOException {
     return queryCassandraTables(table, entityId, false);
   }
@@ -111,8 +122,8 @@ public class CassandraDataRequestAdapter {
    * @throws java.io.IOException if there is a problem executing the get.
    */
   public List<ResultSet> doPagedGet(
-      CassandraKijiTable table,
-      EntityId entityId
+      final CassandraKijiTable table,
+      final EntityId entityId
   ) throws IOException {
     return queryCassandraTables(table, entityId, true);
   }
@@ -129,9 +140,10 @@ public class CassandraDataRequestAdapter {
    * @throws java.io.IOException if there is a problem executing the scan.
    */
   private List<ResultSet> queryCassandraTables(
-      CassandraKijiTable table,
-      EntityId entityId,
-      boolean pagingEnabled) throws IOException {
+      final CassandraKijiTable table,
+      final EntityId entityId,
+      final boolean pagingEnabled
+  ) throws IOException {
     return queryCassandraTables(table, entityId, pagingEnabled, null);
   }
 
@@ -155,7 +167,7 @@ public class CassandraDataRequestAdapter {
   ) throws IOException {
     // TODO: Or figure out how to combine multiple SELECT statements into a single RPC (IntraVert?).
     // TODO: Or just combine everything into a single SELECT statement!
-    LOG.info("---------- Translating KijiDataRequest into Cassandra SELECT statements. ----------");
+
     boolean bIsScan = (null == entityId);
     if (!bIsScan) {
       Preconditions.checkArgument(null == scannerOptions);
@@ -164,88 +176,54 @@ public class CassandraDataRequestAdapter {
     // Cannot do a scan with paging.
     Preconditions.checkArgument(!(pagingEnabled && bIsScan));
 
-    // Get the Cassandra table name for non-counter values.
-    final CassandraTableName nonCounterTableName =
-        CassandraTableName.getKijiTableName(table.getURI());
-
-    // Get the counter table name.
-    final CassandraTableName counterTableName =
-        CassandraTableName.getCounterTableName(table.getURI());
-
     // A single Kiji data request can result in many Cassandra queries, so we use asynchronous IO
-    // and keep a list of all of the futures that will contain results from Cassandra.
-    Set<ResultSetFuture> futures = Sets.newHashSet();
-
-    // Timestamp limits for queries.
-    long maxTimestamp = mKijiDataRequest.getMaxTimestamp();
-    long minTimestamp = mKijiDataRequest.getMinTimestamp();
-
-    // Use the C* admin to send queries to the C* cluster.
-    CassandraAdmin admin = table.getAdmin();
+    // and keep track of all of the futures that will contain results from Cassandra.
+    ListMultimap<CassandraTableName, ResultSetFuture> futures = ArrayListMultimap.create();
 
     // For now, to keep things simple, we have a separate request for each column, even if there
     // are multiple columns of interest in the same column family that we could potentially put
     // together into a single query.
-    for (KijiDataRequest.Column column : mKijiDataRequest.getColumns()) {
-      LOG.info("Processing data request for data request column " + column);
+    for (Column columnRequest : mKijiDataRequest.getColumns()) {
 
-      if (!pagingEnabled && column.isPagingEnabled()) {
+      if (!pagingEnabled && columnRequest.isPagingEnabled()) {
         // The user will have to use an explicit KijiPager to get this data.
-        LOG.info("...this column is paged, but this is not a KijiPager request, skipping...");
         continue;
       }
 
-      // Requests with paging enabled should come from only explicit KijiPagers, which should
-      // create custom data requests for only paged columns.
-      assert (!(pagingEnabled && !column.isPagingEnabled()));
+      // Translate the Kiji columnRequest name.
+      KijiColumnName column = columnRequest.getColumnName();
+      CassandraColumnName cassandraColumn = mColumnNameTranslator.toCassandraColumnName(column);
 
-      // Translate the Kiji column name.
-      KijiColumnName kijiColumn = new KijiColumnName(column.getName());
-      LOG.info("Kiji column name for the requested column is " + kijiColumn);
-      CassandraColumnName cassandraColumn =
-          mColumnNameTranslator.toCassandraColumnName(kijiColumn);
-
-      // TODO: Optimize these queries such that we need only one RPC per column family.
+      // TODO: Optimize these queries such that we need only one RPC per columnRequest family.
       // (Right now a data request that asks for "info:foo" and "info:bar" would trigger two
       // separate session.execute(statement) commands.
 
-      // Determine whether we need to read non-counter values and/or counter values.
-      List<CassandraTableName> tableNames = Lists.newArrayList();
+      final Collection<CassandraTableName> cassandraTables =
+          getColumnCassandraTables(table.getURI(), table.getLayout(), column);
 
-      if (maybeContainsNonCounterValues(table, kijiColumn)) {
-        tableNames.add(nonCounterTableName);
-      }
-
-      if (maybeContainsCounterValues(table, kijiColumn)) {
-        tableNames.add(counterTableName);
-      }
-
-      for (CassandraTableName cassandraTableName : tableNames) {
+      for (CassandraTableName cassandraTable : cassandraTables) {
         if (bIsScan) {
           Statement statement = CQLUtils.getColumnScanStatement(
               table.getLayout(),
-              cassandraTableName,
+              cassandraTable,
               cassandraColumn,
               mKijiDataRequest,
-              column,
+              columnRequest,
               scannerOptions);
           if (pagingEnabled) {
-            statement.setFetchSize(column.getPageSize());
+            statement.setFetchSize(columnRequest.getPageSize());
           }
-          futures.add(admin.executeAsync(statement));
+          futures.put(cassandraTable, table.getAdmin().executeAsync(statement));
         } else {
           Statement statement =
               CQLUtils.getColumnGetStatement(
                   table.getLayout(),
-                  cassandraTableName,
+                  cassandraTable,
                   entityId,
                   cassandraColumn,
                   mKijiDataRequest,
-                  column);
-          if (pagingEnabled) {
-            statement.setFetchSize(column.getPageSize());
-          }
-          futures.add(admin.executeAsync(statement));
+                  columnRequest);
+          futures.put(cassandraTable, table.getAdmin().executeAsync(statement));
         }
       }
     }
@@ -273,58 +251,65 @@ public class CassandraDataRequestAdapter {
   }
 
   /**
-   *  Check whether this column could specify non-counter values.  Return false iff this column
-   *  name refers to a fully-qualified column of type COUNTER or a map-type family of type COUNTER.
+   * Get the Cassandra table names which contain a Kiji column (fully-qualified or family).
    *
-   * @param table The table to check for counters.
-   * @param kijiColumnName The column to check for counters.
-   * @return whether this column could contain non-column values.
-   * @throws java.io.IOException if there is a problem reading the table.
+   * @param tableURI The URI of the table.
+   * @param layout The layout of the table.
+   * @param column The column to get the Cassandra table names for.
+   * @return The Cassandra table names for a Kiji column.
    */
-  private boolean maybeContainsNonCounterValues(
-      CassandraKijiTable table,
-      KijiColumnName kijiColumnName
-  ) throws IOException {
-    boolean isNonCounter = true;
-    try {
-      // Pick a table name depending on whether this column is a counter or not.
-      if (table
-          .getLayout()
-          .getCellSpec(kijiColumnName)
-          .isCounter()) {
-        isNonCounter = false;
-      }
-    } catch (IllegalArgumentException e) {
-      // There *could* be non-counter values here.
-    }
-    return isNonCounter;
-  }
+  private static Collection<CassandraTableName> getColumnCassandraTables(
+      final KijiURI tableURI,
+      final KijiTableLayout layout,
+      final KijiColumnName column
+  ) {
+    final FamilyLayout familyLayout = layout.getFamilyMap().get(column.getFamily());
+    Preconditions.checkArgument(familyLayout != null,
+        "Kiji table %s does not contain family '%s'.", tableURI, column.getFamily());
 
-  /**
-   *  Check whether this column could specify counter values.  Return false iff this column name
-   *  refers to a fully-qualified column that is not of type COUNTER or a map-type family not of
-   *  type COUNTER.
-   *
-   * @param table to check for counter values.
-   * @param kijiColumnName to check for counter values.
-   * @return whether the column *may* contain counter values.
-   * @throws java.io.IOException if there is a problem reading the table.
-   */
-  private boolean maybeContainsCounterValues(
-      CassandraKijiTable table,
-      KijiColumnName kijiColumnName
-  ) throws IOException {
-    boolean isCounter = false;
-    try {
-      // Pick a table name depending on whether this column is a counter or not.
-      isCounter = table
-          .getLayout()
-          .getCellSpec(kijiColumnName)
-          .isCounter();
-    } catch (IllegalArgumentException e) {
-      // There *could* be counters here.
-      isCounter = true;
+    boolean containsCounter = false;
+    boolean containsNonCounter = false;
+
+    if (column.isFullyQualified()) {
+      final ColumnLayout columnLayout = familyLayout.getColumnMap().get(column.getQualifier());
+      Preconditions.checkArgument(columnLayout != null,
+          "Kiji table %s does not contain column '%s' in family '%s'.",
+          tableURI, column.getQualifier(), column.getFamily());
+
+      if (columnLayout.getDesc().getColumnSchema().getType() == SchemaType.COUNTER) {
+        containsCounter = true;
+      } else {
+        containsNonCounter = true;
+      }
+    } else if (familyLayout.isMapType()) {
+      if (familyLayout.getDesc().getMapSchema().getType() == SchemaType.COUNTER) {
+        containsCounter = true;
+      } else {
+        containsNonCounter = true;
+      }
+    } else {
+      for (ColumnLayout columnLayout : familyLayout.getColumns()) {
+        if (columnLayout.getDesc().getColumnSchema().getType() == SchemaType.COUNTER) {
+          containsCounter = true;
+        } else {
+          containsNonCounter = true;
+        }
+        if (containsCounter && containsNonCounter) {
+          break;
+        }
+      }
     }
-    return isCounter;
+
+    final List<CassandraTableName> tables = Lists.newArrayListWithCapacity(2);
+    if (containsCounter) {
+      tables.add(CassandraTableName.getCounterTableName(tableURI));
+    }
+    if (containsNonCounter) {
+      tables.add(
+          CassandraTableName.getLocalityGroupTableName(
+              tableURI,
+              familyLayout.getLocalityGroup().getId()));
+    }
+    return tables;
   }
 }
