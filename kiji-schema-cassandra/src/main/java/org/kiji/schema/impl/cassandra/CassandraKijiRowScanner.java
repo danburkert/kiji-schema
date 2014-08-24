@@ -1,5 +1,5 @@
 /**
- * (c) Copyright 2012 WibiData, Inc.
+ * (c) Copyright 2014 WibiData, Inc.
  *
  * See the NOTICE file distributed with this work for additional
  * information regarding copyright ownership.
@@ -23,14 +23,17 @@ import java.io.IOException;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.datastax.driver.core.ResultSet;
+import com.datastax.driver.core.ResultSetFuture;
 import com.datastax.driver.core.Row;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ComparisonChain;
 import com.google.common.collect.Iterators;
+import com.google.common.collect.ListMultimap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.PeekingIterator;
 import com.google.common.collect.Sets;
@@ -45,6 +48,7 @@ import org.kiji.schema.KijiIOException;
 import org.kiji.schema.KijiRowData;
 import org.kiji.schema.KijiRowKeyComponents;
 import org.kiji.schema.KijiRowScanner;
+import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
 import org.kiji.schema.util.DebugResourceTracker;
@@ -94,14 +98,14 @@ public class CassandraKijiRowScanner implements KijiRowScanner {
    * @param table being scanned.
    * @param dataRequest of scan.
    * @param cellDecoderProvider of table being scanned.
-   * @param resultSets of scan.
+   * @param results of scan.
    * @throws java.io.IOException if there is a problem creating the row scanner.
    */
   public CassandraKijiRowScanner(
       CassandraKijiTable table,
       KijiDataRequest dataRequest,
       CellDecoderProvider cellDecoderProvider,
-      List<ResultSet> resultSets
+      ListMultimap<CassandraTableName, ResultSetFuture> results
     ) throws IOException {
 
     mDataRequest = dataRequest;
@@ -114,8 +118,8 @@ public class CassandraKijiRowScanner implements KijiRowScanner {
     // return Row objects in order of token and then EntityID, so to that Kiji entities have their
     // Row objects contiguously served by the iterator.
     List<Iterator<Row>> rowIterators = Lists.newArrayList();
-    for (ResultSet resultSet : resultSets) {
-      Iterator<Row> rowIterator = resultSet.iterator();
+    for (Map.Entry<CassandraTableName, ResultSetFuture> result : results.entries()) {
+      Iterator<Row> rowIterator = result.getValue().getUninterruptibly().iterator();
       rowIterators.add(Iterators.peekingIterator(rowIterator));
     }
 
@@ -242,4 +246,6 @@ public class CassandraKijiRowScanner implements KijiRowScanner {
           .result();
     }
   }
+
+  private static final class
 }

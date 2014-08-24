@@ -63,8 +63,9 @@ public abstract class CassandraColumnNameTranslator {
    * @return The Kiji column name.
    * @throws NoSuchColumnException If the column name cannot be found.
    */
-  public abstract KijiColumnName toKijiColumnName(CassandraColumnName cassandraColumnName)
-      throws NoSuchColumnException;
+  public abstract KijiColumnName toKijiColumnName(
+      final CassandraColumnName cassandraColumnName
+  ) throws NoSuchColumnException;
 
   /**
    * Translates a Kiji column name into a Cassandra column name.
@@ -73,6 +74,7 @@ public abstract class CassandraColumnNameTranslator {
    * @return The Cassandra column name.
    * @throws NoSuchColumnException If the column name cannot be found.
    */
-  public abstract CassandraColumnName toCassandraColumnName(KijiColumnName kijiColumnName)
-      throws NoSuchColumnException;
+  public abstract CassandraColumnName toCassandraColumnName(
+      final KijiColumnName kijiColumnName
+  ) throws NoSuchColumnException;
 }

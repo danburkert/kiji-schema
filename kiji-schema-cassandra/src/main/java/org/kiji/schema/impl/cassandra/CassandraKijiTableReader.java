@@ -20,16 +20,19 @@
 package org.kiji.schema.impl.cassandra;
 
 import java.io.IOException;
+import java.sql.ResultSet;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
-import com.datastax.driver.core.ResultSet;
+import com.datastax.driver.core.ResultSetFuture;
 import com.datastax.driver.core.Row;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ArrayListMultimap;
+import com.google.common.collect.ListMultimap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
@@ -49,6 +52,7 @@ import org.kiji.schema.KijiTableReaderBuilder;
 import org.kiji.schema.KijiTableReaderBuilder.OnDecoderCacheMiss;
 import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.SpecificCellDecoderFactory;
+import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.impl.BoundColumnReaderSpec;
 import org.kiji.schema.impl.LayoutConsumer;
 import org.kiji.schema.layout.CassandraColumnNameTranslator;
@@ -341,8 +345,10 @@ public final class CassandraKijiTableReader implements KijiTableReader {
 
   /** {@inheritDoc} */
   @Override
-  public KijiRowData get(EntityId entityId, KijiDataRequest dataRequest)
-      throws IOException {
+  public KijiRowData get(
+      final EntityId entityId,
+      final KijiDataRequest dataRequest
+  ) throws IOException {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot get row from KijiTableReader instance %s in state %s.", this, state);
@@ -355,53 +361,18 @@ public final class CassandraKijiTableReader implements KijiTableReader {
     CassandraDataRequestAdapter adapter =
         new CassandraDataRequestAdapter(dataRequest, capsule.getColumnNameTranslator());
 
-    List<ResultSet> results = adapter.doGet(mTable, entityId);
+    ListMultimap<CassandraTableName, ResultSetFuture> results = adapter.doGet(mTable, entityId);
 
-    Set<Row> allRows = Sets.newHashSet();
+    ListMultimap<CassandraTableName, Row> rows = ArrayListMultimap.create();
 
-    for (ResultSet res : results) {
-      for (Row row : res.all()) {
-        allRows.add(row);
-      }
+    for (Map.Entry<CassandraTableName, ResultSetFuture> result : results.entries()) {
+      rows.putAll(result.getKey(), result.getValue().getUninterruptibly().all());
     }
 
     // Now we create a KijiRowData from all of these results.
     // Parse the result.
     return new CassandraKijiRowData(
-        mTable, dataRequest, entityId, allRows, capsule.getCellDecoderProvider());
-  }
-
-  /**
-   * Useful utility method for other classes (e.g., in KijiMR) to put together raw Cassandra Row
-   * objects into a KijiRowData.
-   *
-   * TODO: Clean this up, possibly refactor.
-   *
-   * @param dataRequest The data request that specifies how to assemble the Row instances into
-   *                    KijiRowData.
-   * @param entityId The entity ID to use for this row.
-   * @param allRows The raw Rows to assemble into KijiRowData.
-   * @return A KijiRowData object formed form these raw Rows.
-   * @throws java.io.IOException if there is a problem talking to Cassandra.
-   */
-  public KijiRowData getRowDataFromCassandraRows(
-      KijiDataRequest dataRequest,
-      EntityId entityId,
-      Collection<Row> allRows
-    ) throws IOException {
-
-    // NOTE: THIS METHOD IS USED IN KIJI MR.  DON'T DELETE IT JUST BECAUSE IT IS NOT USED IN SCHEMA!
-
-    final ReaderLayoutCapsule capsule = mReaderLayoutCapsule;
-    // Make sure the request validates against the layout of the table.
-    final KijiTableLayout tableLayout = capsule.getLayout();
-    validateRequestAgainstLayout(dataRequest, tableLayout);
-
-    // TODO: Insert column-name translator here.
-
-    // Now we create a KijiRowData from all of these results.
-    return new CassandraKijiRowData(
-        mTable, dataRequest, entityId, allRows, capsule.getCellDecoderProvider());
+        mTable, dataRequest, entityId, rows, capsule.getCellDecoderProvider());
   }
 
   /** {@inheritDoc} */
@@ -464,7 +435,8 @@ public final class CassandraKijiTableReader implements KijiTableReader {
     CassandraDataRequestAdapter adapter =
         new CassandraDataRequestAdapter(dataRequest, capsule.getColumnNameTranslator());
 
-    List<ResultSet> results = adapter.doScan(mTable, kijiScannerOptions);
+    ListMultimap<CassandraTableName, ResultSetFuture> results =
+        adapter.doScan(mTable, kijiScannerOptions);
 
     // Now we create a KijiRowData from all of these results.
     // Parse the result.

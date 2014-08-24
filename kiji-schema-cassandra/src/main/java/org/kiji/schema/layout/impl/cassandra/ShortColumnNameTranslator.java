@@ -48,14 +48,15 @@ public final class ShortColumnNameTranslator extends CassandraColumnNameTranslat
    *
    * @param layout of the table to translate column names for.
    */
-  public ShortColumnNameTranslator(KijiTableLayout layout) {
+  public ShortColumnNameTranslator(final KijiTableLayout layout) {
     mLayout = layout;
   }
 
   /** {@inheritDoc} */
   @Override
-  public KijiColumnName toKijiColumnName(CassandraColumnName cassandraColumnName)
-      throws NoSuchColumnException {
+  public KijiColumnName toKijiColumnName(
+      final CassandraColumnName cassandraColumnName
+  ) throws NoSuchColumnException {
 
     final ColumnId localityGroupID = ColumnId.fromString(cassandraColumnName.getLocalityGroup());
     final LocalityGroupLayout localityGroup =
@@ -85,12 +86,14 @@ public final class ShortColumnNameTranslator extends CassandraColumnNameTranslat
             "No column with ID %s in family %s of table %s.",
             qualifierID.getId(), family.getName(), mLayout.getName()));
       }
-      kijiColumnName = new KijiColumnName(family.getName(), qualifier.getName());
+      kijiColumnName = KijiColumnName.create(family.getName(), qualifier.getName());
     } else {
       // Map type family.
       assert(family.isMapType());
       kijiColumnName =
-          new KijiColumnName(family.getName(), Bytes.toString(cassandraColumnName.getQualifier()));
+          KijiColumnName.create(
+              family.getName(),
+              Bytes.toString(cassandraColumnName.getQualifier()));
     }
     LOG.debug("Translated Kiji column {}.", kijiColumnName);
     return kijiColumnName;
@@ -98,8 +101,9 @@ public final class ShortColumnNameTranslator extends CassandraColumnNameTranslat
 
   /** {@inheritDoc} */
   @Override
-  public CassandraColumnName toCassandraColumnName(KijiColumnName kijiColumnName)
-      throws NoSuchColumnException {
+  public CassandraColumnName toCassandraColumnName(
+      final KijiColumnName kijiColumnName
+  ) throws NoSuchColumnException {
     final String familyName = kijiColumnName.getFamily();
     final String qualifierName = kijiColumnName.getQualifier();
 

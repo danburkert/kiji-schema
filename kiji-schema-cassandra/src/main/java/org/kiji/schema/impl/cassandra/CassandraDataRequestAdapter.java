@@ -20,17 +20,17 @@
 package org.kiji.schema.impl.cassandra;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 
-import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.ResultSetFuture;
 import com.datastax.driver.core.Statement;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.ListMultimap;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,8 +55,6 @@ import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout.C
 public class CassandraDataRequestAdapter {
   private static final Logger LOG = LoggerFactory.getLogger(CassandraDataRequestAdapter.class);
 
-  private final CassandraKijiTable mTable;
-
   /** The wrapped KijiDataRequest. */
   private final KijiDataRequest mKijiDataRequest;
 
@@ -67,16 +65,13 @@ public class CassandraDataRequestAdapter {
    * Creates a new CassandraDataRequestAdapter for a given data request using a given
    * ColumnNameTranslator.
    *
-   * @param table The Cassandra Kiji table.
    * @param kijiDataRequest The data request to adapt for Cassandra.
    * @param translator The name translator for getting Cassandra column names.
    */
   public CassandraDataRequestAdapter(
-      final CassandraKijiTable table,
       final KijiDataRequest kijiDataRequest,
       final CassandraColumnNameTranslator translator
   ) {
-    mTable = table;
     mKijiDataRequest = kijiDataRequest;
     mColumnNameTranslator = translator;
   }
@@ -89,7 +84,7 @@ public class CassandraDataRequestAdapter {
    * @return A list of `ResultSet`s from executing the scan.
    * @throws java.io.IOException if there is a problem talking to Cassandra.
    */
-  public List<ResultSet> doScan(
+  public ListMultimap<CassandraTableName, ResultSetFuture> doScan(
       final CassandraKijiTable table,
       final CassandraKijiScannerOptions kijiScannerOptions
     ) throws IOException {
@@ -105,7 +100,7 @@ public class CassandraDataRequestAdapter {
    * @return A list of `ResultSet`s from executing the get.
    * @throws java.io.IOException if there is a problem executing the get.
    */
-  public List<ResultSet> doGet(
+  public ListMultimap<CassandraTableName, ResultSetFuture> doGet(
       final CassandraKijiTable table,
       final EntityId entityId
   ) throws IOException {
@@ -121,7 +116,7 @@ public class CassandraDataRequestAdapter {
    * @return A list of `ResultSet`s from executing the get.
    * @throws java.io.IOException if there is a problem executing the get.
    */
-  public List<ResultSet> doPagedGet(
+  public ListMultimap<CassandraTableName, ResultSetFuture> doPagedGet(
       final CassandraKijiTable table,
       final EntityId entityId
   ) throws IOException {
@@ -139,7 +134,7 @@ public class CassandraDataRequestAdapter {
    * @return A list of results for the Cassandra query.
    * @throws java.io.IOException if there is a problem executing the scan.
    */
-  private List<ResultSet> queryCassandraTables(
+  private ListMultimap<CassandraTableName, ResultSetFuture> queryCassandraTables(
       final CassandraKijiTable table,
       final EntityId entityId,
       final boolean pagingEnabled
@@ -159,7 +154,7 @@ public class CassandraDataRequestAdapter {
    * @return A list of results for the Cassandra query.
    * @throws java.io.IOException if there is a problem executing the scan.
    */
-  private List<ResultSet> queryCassandraTables(
+  private ListMultimap<CassandraTableName, ResultSetFuture> queryCassandraTables(
       CassandraKijiTable table,
       EntityId entityId,
       boolean pagingEnabled,
@@ -180,26 +175,32 @@ public class CassandraDataRequestAdapter {
     // and keep track of all of the futures that will contain results from Cassandra.
     ListMultimap<CassandraTableName, ResultSetFuture> futures = ArrayListMultimap.create();
 
+    Set<CassandraTableName> pagedTables = Sets.newHashSet();
+    Set<CassandraTableName> nonPagedTables = Sets.newHashSet();
+
     // For now, to keep things simple, we have a separate request for each column, even if there
     // are multiple columns of interest in the same column family that we could potentially put
     // together into a single query.
     for (Column columnRequest : mKijiDataRequest.getColumns()) {
 
-      if (!pagingEnabled && columnRequest.isPagingEnabled()) {
-        // The user will have to use an explicit KijiPager to get this data.
-        continue;
-      }
-
       // Translate the Kiji columnRequest name.
       KijiColumnName column = columnRequest.getColumnName();
       CassandraColumnName cassandraColumn = mColumnNameTranslator.toCassandraColumnName(column);
 
+      final Collection<CassandraTableName> cassandraTables =
+          getColumnCassandraTables(table.getURI(), table.getLayout(), column);
+
+      if (!pagingEnabled && columnRequest.isPagingEnabled()) {
+        pagedTables.addAll(cassandraTables);
+        // The user will have to use an explicit KijiPager to get this data.
+        continue;
+      }
+
+      nonPagedTables.addAll(cassandraTables);
+
       // TODO: Optimize these queries such that we need only one RPC per columnRequest family.
       // (Right now a data request that asks for "info:foo" and "info:bar" would trigger two
       // separate session.execute(statement) commands.
-
-      final Collection<CassandraTableName> cassandraTables =
-          getColumnCassandraTables(table.getURI(), table.getLayout(), column);
 
       for (CassandraTableName cassandraTable : cassandraTables) {
         if (bIsScan) {
@@ -228,26 +229,21 @@ public class CassandraDataRequestAdapter {
       }
     }
 
-    if (bIsScan && futures.isEmpty()) {
-      // If this is a scan, you need to make sure that you execute at least one SELECT statement,
-      // just to get back every entity ID.  If you do not do so, then a user could
-      // create a scanner with a data request that has a single, paged column, and you would never
-      // execute a SELECT query below (because we wait to execute paged SELECT queries) and so you
+    if (bIsScan) {
+      // If this is a paged scan, you need to make sure that you execute at least one SELECT
+      // statement, just to get back every entity ID. If you do not do so, then a user could
+      // create a scanner with a data request that has entirely paged columns, and you would never
+      // execute a SELECT query (because we wait to execute paged SELECT queries) and so you
       // would never get an iterator back with any row keys at all!  Eek!
+      pagedTables.removeAll(nonPagedTables);
 
-      // TODO: do we need to scan the counter table as well?
-      futures.add(
-          admin.executeAsync(
-              CQLUtils.getEntityIDScanStatement(table.getLayout(), nonCounterTableName)));
+      for (CassandraTableName tableName : pagedTables) {
+        final Statement statement = CQLUtils.getEntityIDScanStatement(table.getLayout(), tableName);
+        futures.put(tableName, table.getAdmin().executeAsync(statement));
+      }
     }
 
-    // Wait until all of the futures are done.
-    List<ResultSet> results = new ArrayList<ResultSet>();
-
-    for (ResultSetFuture resultSetFuture: futures) {
-      results.add(resultSetFuture.getUninterruptibly());
-    }
-    return results;
+    return futures;
   }
 
   /**
