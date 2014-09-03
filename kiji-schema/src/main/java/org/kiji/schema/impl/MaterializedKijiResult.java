@@ -37,7 +37,6 @@ import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiDataRequest;
 import org.kiji.schema.KijiDataRequest.Column;
 import org.kiji.schema.KijiResult;
-import org.kiji.schema.impl.hbase.HBaseKijiResult;
 import org.kiji.schema.layout.KijiTableLayout;
 
 /**
@@ -154,7 +153,7 @@ public final class MaterializedKijiResult<T> implements KijiResult<T> {
   @SuppressWarnings("unchecked")
   @Override
   public <U extends T> KijiResult<U> narrowView(final KijiColumnName column) {
-    final KijiDataRequest narrowRequest = HBaseKijiResult.narrowRequest(column, mDataRequest);
+    final KijiDataRequest narrowRequest = DefaultKijiResult.narrowRequest(column, mDataRequest);
     if (narrowRequest.equals(mDataRequest)) {
       return (KijiResult<U>) this;
     }

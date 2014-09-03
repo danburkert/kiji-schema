@@ -36,8 +36,10 @@ public class RowDecoders {
   ) throws NoSuchColumnException {
     if (tableName.isCounter()) {
       if (column.isFullyQualified()) {
+
+
         // Fully qualified counter column
-        return new CounterColumnDec
+        return new CounterColumnDecoder()
 
       } else {
         // Family of counter columns
@@ -63,11 +65,8 @@ public class RowDecoders {
    *   from the specified group-type family, so do not use it over {@code Row}s from another
    *   family.
    * </p>
-   *
-   * <p>
-   *   This class is <em>not</em> threadsafe.
-   * </p>
    */
+  @NotThreadSafe
   private static final class MapFamilyDecoder<T> implements Function<Row, KijiCell<T>> {
     private final CassandraColumnName mFamilyColumn;
     private final KijiCellDecoder<T> mCellDecoder;
@@ -119,13 +118,17 @@ public class RowDecoders {
         } catch (NoSuchColumnException e) {
           mLastQualifier = null;
           mLastColumn = null;
+          // TODO(SCHEMA-962): Critical! Handle this. Will happen when reading a deleted column
           throw new IllegalArgumentException(e);
         }
       }
 
       try {
-        final DecodedCell<T> decodedCell = mCellDecoder.decodeCell(row.getValue());
-        return KijiCell.create(mLastColumn, row.getTimestamp(), decodedCell);
+        final DecodedCell<T> decodedCell =
+            mCellDecoder.decodeCell(
+                CassandraByteUtil.byteBuffertoBytes(
+                    row.getBytes(CQLUtils.VALUE_COL)));
+        return KijiCell.create(mLastColumn, row.getLong(CQLUtils.VERSION_COL), decodedCell);
       } catch (IOException e) {
         throw new KijiIOException(e);
       }
@@ -200,6 +203,7 @@ public class RowDecoders {
           mLastDecoder = null;
           mLastColumn = null;
           mLastQualifier = null;
+          // TODO(SCHEMA-962): Critical! Handle this. Will happen when reading a deleted column
           throw new IllegalArgumentException(e);
         }
       }
@@ -208,7 +212,8 @@ public class RowDecoders {
         final Long version = row.getLong(CQLUtils.VERSION_COL);
         final DecodedCell<T> decodedCell =
             mLastDecoder.decodeCell(
-                CassandraByteUtil.byteBuffertoBytes(row.getBytes(CQLUtils.VALUE_COL)));
+                CassandraByteUtil.byteBuffertoBytes(
+                    row.getBytes(CQLUtils.VALUE_COL)));
 
         return KijiCell.create(mLastColumn, version, decodedCell);
       } catch (IOException e) {
@@ -218,38 +223,50 @@ public class RowDecoders {
   }
 
   /**
-   * A function which will decode {@link Row}s from a qualified counter column.
+   * A function which will decode {@link Row}s from a qualified column.
    *
    * <p>
    *   The column may be from either a map-type or group-type family.
    * </p>
    *
    * <p>
-   *   This function may apply optimizations that make it only suitable to decode {@code Row}s
-   *   from the specified column, so do not use it over {@code Row}s from another column.
+   *   This function may apply optimizations that make it only suitable to decode {@code KeyValue}s
+   *   from the specified column, so do not use it over {@code KeyValue}s from another column.
    * </p>
+   *
+   * @param <T> type of value in the column.
    */
   @Immutable
-  private static final class QualifiedCounterDecoder implements Function<Row, KijiCell<Long>> {
+  private static final class QualifiedColumnDecoder<T> implements Function<Row, KijiCell<T>> {
+    private final KijiCellDecoder<T> mCellDecoder;
     private final KijiColumnName mColumnName;
 
     /**
      * Create a qualified column decoder for the provided column.
      *
      * @param columnName of the column.
+     * @param cellDecoder for the table.
      */
-    public QualifiedCounterDecoder(
-        final KijiColumnName columnName
+    public QualifiedColumnDecoder(
+        final KijiColumnName columnName,
+        final KijiCellDecoder<T> cellDecoder
     ) {
+      mCellDecoder = cellDecoder;
       mColumnName = columnName;
     }
 
     /** {@inheritDoc} */
     @Override
-    public KijiCell<Long> apply(final Row row) {
-      final DecodedCell<Long> decodedCell =
-          new DecodedCell<Long>(DecodedCell.NO_SCHEMA, row.getLong(CQLUtils.VALUE_COL));
-      return KijiCell.create(mColumnName, KConstants.CASSANDRA_COUNTER_TIMESTAMP, decodedCell);
+    public KijiCell<T> apply(final Row row) {
+      try {
+        final DecodedCell<T> decodedCell =
+            mCellDecoder.decodeCell(
+                CassandraByteUtil.byteBuffertoBytes(
+                    row.getBytes(CQLUtils.VALUE_COL)));
+        return KijiCell.create(mColumnName, row.getLong(CQLUtils.VERSION_COL), decodedCell);
+      } catch (IOException e) {
+        throw new KijiIOException(e);
+      }
     }
   }
 
@@ -299,7 +316,7 @@ public class RowDecoders {
             new DecodedCell<Long>(DecodedCell.NO_SCHEMA, row.getLong(CQLUtils.VALUE_COL));
         return KijiCell.create(column, KConstants.CASSANDRA_COUNTER_TIMESTAMP, decodedCell);
       } catch (NoSuchColumnException e) {
-        // TODO: this should be handled. This could happen in the case of a dropped column.
+        // TODO(SCHEMA-962): Critical! Handle this. Will happen when reading a deleted column
         throw new KijiIOException(e);
       }
     }
@@ -317,40 +334,27 @@ public class RowDecoders {
    *   {@code Row}s from the specified fully-qualified column, so do not apply it to {@code Row}s
    *   from another column.
    * </p>
-   *
-   * @param <T> type of value in the column.
    */
   @Immutable
-  private static final class CounterColumnDecoder<T> implements Function<Row, KijiCell<T>> {
-    private final KijiCellDecoder<T> mCellDecoder;
+  private static final class CounterColumnDecoder implements Function<Row, KijiCell<Long>> {
     private final KijiColumnName mColumnName;
 
     /**
      * Create a qualified column decoder for the provided column.
      *
      * @param columnName of the column.
-     * @param cellDecoder for the table.
      */
-    public CounterColumnDecoder(
-        final KijiColumnName columnName,
-        final KijiCellDecoder<T> cellDecoder
-    ) {
-      mCellDecoder = cellDecoder;
+    public CounterColumnDecoder(final KijiColumnName columnName) {
       mColumnName = columnName;
     }
 
     /** {@inheritDoc} */
     @Override
-    public KijiCell<T> apply(final Row row) {
-      try {
-        final DecodedCell<T> decodedCell =
-            mCellDecoder.decodeCell(
-                CassandraByteUtil.byteBuffertoBytes(
-                    row.getBytes(CQLUtils.VALUE_COL)));
-        return KijiCell.create(mColumnName, row.getLong(CQLUtils.VERSION_COL), decodedCell);
-      } catch (IOException e) {
-        throw new KijiIOException(e);
-      }
+    public KijiCell<Long> apply(final Row row) {
+      final DecodedCell<Long> decodedCell =
+          new DecodedCell<Long>(DecodedCell.NO_SCHEMA, row.getLong(CQLUtils.VALUE_COL));
+
+      return KijiCell.create(mColumnName, KConstants.CASSANDRA_COUNTER_TIMESTAMP,decodedCell);
     }
   }
 
