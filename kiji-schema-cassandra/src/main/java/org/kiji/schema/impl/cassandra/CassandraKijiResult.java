@@ -1,24 +1,14 @@
 package org.kiji.schema.impl.cassandra;
 
 import java.io.IOException;
-import java.util.Collection;
-import java.util.Iterator;
-
-import com.google.common.collect.Iterables;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.EntityId;
-import org.kiji.schema.KijiCell;
-import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiDataRequest;
 import org.kiji.schema.KijiDataRequest.Column;
 import org.kiji.schema.KijiDataRequestBuilder;
 import org.kiji.schema.KijiResult;
-import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.impl.EmptyKijiResult;
-import org.kiji.schema.impl.hbase.HBaseKijiResult;
 import org.kiji.schema.layout.CassandraColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
