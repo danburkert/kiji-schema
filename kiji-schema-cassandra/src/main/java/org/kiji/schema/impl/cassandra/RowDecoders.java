@@ -36,25 +36,29 @@ public class RowDecoders {
   ) throws NoSuchColumnException {
     if (tableName.isCounter()) {
       if (column.isFullyQualified()) {
-
-
         // Fully qualified counter column
-        return new CounterColumnDecoder()
-
+        return new CounterColumnDecoder<T>(column);
       } else {
-        // Family of counter columns
-
+        // Counter family
+        return new CounterFamilyDecoder<T>(translator.toCassandraColumnName(column), translator);
       }
-
     } else {
-      if (layout.getFamilyMap().get(column.getFamily()).isMapType()) {
+      if (column.isFullyQualified()) {
+        return new QualifiedColumnDecoder<T>(column, decoderProvider.<T>getDecoder(column));
+      } else if (layout.getFamilyMap().get(column.getFamily()).isMapType()) {
         // Map-type family
+        return new MapFamilyDecoder<T>(
+            translator.toCassandraColumnName(column),
+            translator,
+            decoderProvider.<T>getDecoder(column));
       } else {
         // Group-type family
+        return new MapFamilyDecoder<T>(
+            translator.toCassandraColumnName(column),
+            translator,
+            decoderProvider.<T>getDecoder(column));
       }
     }
-
-    throw new RuntimeException();
   }
 
   /**
@@ -278,9 +282,11 @@ public class RowDecoders {
    *   from the specified group-type family, so do not use it over {@code Row}s from another
    *   family.
    * </p>
+   *
+   * @param <T> generic type of KijiCell.  Must always be {@link Long}.
    */
   @Immutable
-  private static final class CounterFamilyDecoder implements Function<Row, KijiCell<Long>> {
+  private static final class CounterFamilyDecoder<T> implements Function<Row, KijiCell<T>> {
     private final CassandraColumnNameTranslator mColumnTranslator;
     private final CassandraColumnName mFamilyColumn;
 
@@ -301,7 +307,7 @@ public class RowDecoders {
 
     /** {@inheritDoc} */
     @Override
-    public KijiCell<Long> apply(final Row row) {
+    public KijiCell<T> apply(final Row row) {
       // TODO: We know that all of the KijiCell's decoded from this function always have the same
       // Kiji family, so we should not decode it. Currently the CassandraColumnNameTranslator does
       // not support this.
@@ -312,8 +318,9 @@ public class RowDecoders {
                     mFamilyColumn.getLocalityGroup(),
                     mFamilyColumn.getFamily(),
                     CassandraByteUtil.byteBuffertoBytes(row.getBytes(CQLUtils.QUALIFIER_COL))));
-        final DecodedCell<Long> decodedCell =
-            new DecodedCell<Long>(DecodedCell.NO_SCHEMA, row.getLong(CQLUtils.VALUE_COL));
+        @SuppressWarnings("unchecked")
+        final DecodedCell<T> decodedCell =
+            new DecodedCell(DecodedCell.NO_SCHEMA, row.getLong(CQLUtils.VALUE_COL));
         return KijiCell.create(column, KConstants.CASSANDRA_COUNTER_TIMESTAMP, decodedCell);
       } catch (NoSuchColumnException e) {
         // TODO(SCHEMA-962): Critical! Handle this. Will happen when reading a deleted column
@@ -334,9 +341,11 @@ public class RowDecoders {
    *   {@code Row}s from the specified fully-qualified column, so do not apply it to {@code Row}s
    *   from another column.
    * </p>
+   *
+   * @param <T> generic type of KijiCell.  Must always be {@link Long}.
    */
   @Immutable
-  private static final class CounterColumnDecoder implements Function<Row, KijiCell<Long>> {
+  private static final class CounterColumnDecoder<T> implements Function<Row, KijiCell<T>> {
     private final KijiColumnName mColumnName;
 
     /**
@@ -350,11 +359,15 @@ public class RowDecoders {
 
     /** {@inheritDoc} */
     @Override
-    public KijiCell<Long> apply(final Row row) {
-      final DecodedCell<Long> decodedCell =
-          new DecodedCell<Long>(DecodedCell.NO_SCHEMA, row.getLong(CQLUtils.VALUE_COL));
+    public KijiCell<T> apply(final Row row) {
+      @SuppressWarnings("unchecked")
+      final DecodedCell<T> decodedCell =
+          new DecodedCell(DecodedCell.NO_SCHEMA, row.getLong(CQLUtils.VALUE_COL));
 
-      return KijiCell.create(mColumnName, KConstants.CASSANDRA_COUNTER_TIMESTAMP,decodedCell);
+      return KijiCell.create(
+          mColumnName,
+          KConstants.CASSANDRA_COUNTER_TIMESTAMP,
+          decodedCell);
     }
   }
 
