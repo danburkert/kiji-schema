@@ -2,12 +2,16 @@ package org.kiji.schema.impl.cassandra;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.List;
 
 import javax.annotation.concurrent.Immutable;
 import javax.annotation.concurrent.NotThreadSafe;
+import javax.annotation.concurrent.ThreadSafe;
 
+import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
 import com.google.common.base.Function;
+import com.google.common.collect.Lists;
 
 import org.kiji.schema.DecodedCell;
 import org.kiji.schema.KConstants;
@@ -27,39 +31,77 @@ import org.kiji.schema.layout.impl.CellDecoderProvider;
  */
 public class RowDecoders {
 
-  public static <T> Function<Row, KijiCell<T>> getDecoderFunction(
+  /**
+   * Get a new decoder function for a Cassandra {@link Row}.
+   *
+   * @param tableName The Cassandra table of the Row.
+   * @param column The Kiji column of the Row.
+   * @param layout The table layout of the Kiji table.
+   * @param translator A column name translator for the table.
+   * @param decoderProvider A cell decoder provider for the table.
+   * @param <T> The value type in the column.
+   * @return A decoded cell.
+   */
+  public static <T> Function<Row, KijiCell<T>> getRowDecoderFunction(
       final CassandraTableName tableName,
       final KijiColumnName column,
       final KijiTableLayout layout,
       final CassandraColumnNameTranslator translator,
       final CellDecoderProvider decoderProvider
-  ) throws NoSuchColumnException {
-    if (tableName.isCounter()) {
-      if (column.isFullyQualified()) {
-        // Fully qualified counter column
-        return new CounterColumnDecoder<T>(column);
+  ) {
+    try {
+      if (tableName.isCounter()) {
+        if (column.isFullyQualified()) {
+          // Fully qualified counter column
+          return new CounterColumnDecoder<T>(column);
+        } else {
+          // Counter family
+          return new CounterFamilyDecoder<T>(translator.toCassandraColumnName(column), translator);
+        }
       } else {
-        // Counter family
-        return new CounterFamilyDecoder<T>(translator.toCassandraColumnName(column), translator);
+        if (column.isFullyQualified()) {
+          return new QualifiedColumnDecoder<T>(column, decoderProvider.<T>getDecoder(column));
+        } else if (layout.getFamilyMap().get(column.getFamily()).isMapType()) {
+          // Map-type family
+          return new MapFamilyDecoder<T>(
+              translator.toCassandraColumnName(column),
+              translator,
+              decoderProvider.<T>getDecoder(column));
+        } else {
+          // Group-type family
+          return new MapFamilyDecoder<T>(
+              translator.toCassandraColumnName(column),
+              translator,
+              decoderProvider.<T>getDecoder(column));
+        }
       }
-    } else {
-      if (column.isFullyQualified()) {
-        return new QualifiedColumnDecoder<T>(column, decoderProvider.<T>getDecoder(column));
-      } else if (layout.getFamilyMap().get(column.getFamily()).isMapType()) {
-        // Map-type family
-        return new MapFamilyDecoder<T>(
-            translator.toCassandraColumnName(column),
-            translator,
-            decoderProvider.<T>getDecoder(column));
-      } else {
-        // Group-type family
-        return new MapFamilyDecoder<T>(
-            translator.toCassandraColumnName(column),
-            translator,
-            decoderProvider.<T>getDecoder(column));
-      }
+    } catch (NoSuchColumnException e) {
+      throw new IllegalStateException(String.format("Column %s does not exist in Kiji table %s.",
+          column, layout.getName()));
     }
   }
+
+  /**
+   * Get a new decoder function for a Cassandra {@link ResultSet}.
+   *
+   * @param tableName The Cassandra table of the ResultSet.
+   * @param column The Kiji column of the ResultSet.
+   * @param layout The table layout of the Kiji table.
+   * @param translator A column name translator for the table.
+   * @param decoderProvider A cell decoder provider for the table.
+   * @param <T> The value type in the column.
+   * @return A decoded list of cells.
+   */
+  public static <T> Function<ResultSet, List<KijiCell<T>>> getResultSetDecoderFunction(
+      final CassandraTableName tableName,
+      final KijiColumnName column,
+      final KijiTableLayout layout,
+      final CassandraColumnNameTranslator translator,
+      final CellDecoderProvider decoderProvider
+  ) {
+    return new ResultSetDecoder<T>(tableName, column, layout, translator, decoderProvider);
+  }
+
 
   /**
    * A function which will decode {@link Row}s from a map-type column.
@@ -368,6 +410,54 @@ public class RowDecoders {
           mColumnName,
           KConstants.CASSANDRA_COUNTER_TIMESTAMP,
           decodedCell);
+    }
+  }
+
+  /**
+   * A function which will decode a Cassandra {@link ResultSet} from a column.
+   *
+   * @param <T> type of value in the column.
+   */
+  @ThreadSafe
+  private static final class ResultSetDecoder<T> implements Function<ResultSet, List<KijiCell<T>>> {
+
+    final CassandraTableName mTableName;
+    final KijiColumnName mColumn;
+    final KijiTableLayout mLayout;
+    final CassandraColumnNameTranslator mTranslator;
+    final CellDecoderProvider mDecoderProvider;
+
+    /**
+     * Get a new decoder function for a Cassandra {@link Row}.
+     *  @param tableName The Cassandra table of the Row.
+     * @param column The Kiji column of the Row.
+     * @param layout The table layout of the Kiji table.
+     * @param translator A column name translator for the table.
+     * @param decoderProvider A cell decoder provider for the table.
+     */
+    public ResultSetDecoder(
+        final CassandraTableName tableName,
+        final KijiColumnName column,
+        final KijiTableLayout layout,
+        final CassandraColumnNameTranslator translator,
+        final CellDecoderProvider decoderProvider) {
+      mTableName = tableName;
+      mColumn = column;
+      mLayout = layout;
+      mTranslator = translator;
+      mDecoderProvider = decoderProvider;
+  }
+
+    @Override
+    public List<KijiCell<T>> apply(final ResultSet resultSet) {
+      final Function<Row, KijiCell<T>> rowDecoder = getRowDecoderFunction(
+          mTableName,
+          mColumn,
+          mLayout,
+          mTranslator,
+          mDecoderProvider);
+
+      return Lists.transform(resultSet.all(), rowDecoder);
     }
   }
 

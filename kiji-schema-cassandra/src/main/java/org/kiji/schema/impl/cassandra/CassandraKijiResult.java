@@ -9,6 +9,7 @@ import org.kiji.schema.KijiDataRequest.Column;
 import org.kiji.schema.KijiDataRequestBuilder;
 import org.kiji.schema.KijiResult;
 import org.kiji.schema.impl.EmptyKijiResult;
+import org.kiji.schema.impl.MaterializedKijiResult;
 import org.kiji.schema.layout.CassandraColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
@@ -70,16 +71,17 @@ public class CassandraKijiResult {
       return new EmptyKijiResult<T>(entityId, dataRequest);
     }
 
-    final CassandraMaterializedKijiResult<T> materializedKijiResult;
+    final MaterializedKijiResult<T> materializedKijiResult;
     if (!unpagedRequest.isEmpty()) {
       materializedKijiResult =
           CassandraMaterializedKijiResult.create(
+              table.getURI(),
               entityId,
               unpagedRequest,
-              unpagedRawResult,
               layout,
               columnTranslator,
-              requestDecoderProvider);
+              requestDecoderProvider,
+              table.getAdmin());
     } else {
       materializedKijiResult = null;
     }

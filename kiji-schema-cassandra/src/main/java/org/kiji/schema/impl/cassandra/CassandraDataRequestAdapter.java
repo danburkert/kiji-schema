@@ -254,7 +254,7 @@ public class CassandraDataRequestAdapter {
    * @param column The column to get the Cassandra table names for.
    * @return The Cassandra table names for a Kiji column.
    */
-  private static Collection<CassandraTableName> getColumnCassandraTables(
+  public static Collection<CassandraTableName> getColumnCassandraTables(
       final KijiURI tableURI,
       final KijiTableLayout layout,
       final KijiColumnName column
