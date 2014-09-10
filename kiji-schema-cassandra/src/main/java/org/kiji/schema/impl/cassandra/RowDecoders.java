@@ -2,7 +2,7 @@ package org.kiji.schema.impl.cassandra;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.List;
+import java.util.Iterator;
 
 import javax.annotation.concurrent.Immutable;
 import javax.annotation.concurrent.NotThreadSafe;
@@ -11,7 +11,7 @@ import javax.annotation.concurrent.ThreadSafe;
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
 import com.google.common.base.Function;
-import com.google.common.collect.Lists;
+import com.google.common.collect.Iterators;
 
 import org.kiji.schema.DecodedCell;
 import org.kiji.schema.KConstants;
@@ -92,7 +92,7 @@ public class RowDecoders {
    * @param <T> The value type in the column.
    * @return A decoded list of cells.
    */
-  public static <T> Function<ResultSet, List<KijiCell<T>>> getResultSetDecoderFunction(
+  public static <T> Function<ResultSet, Iterator<KijiCell<T>>> getResultSetDecoderFunction(
       final CassandraTableName tableName,
       final KijiColumnName column,
       final KijiTableLayout layout,
@@ -419,7 +419,8 @@ public class RowDecoders {
    * @param <T> type of value in the column.
    */
   @ThreadSafe
-  private static final class ResultSetDecoder<T> implements Function<ResultSet, List<KijiCell<T>>> {
+  private static final class ResultSetDecoder<T>
+      implements Function<ResultSet, Iterator<KijiCell<T>>> {
 
     final CassandraTableName mTableName;
     final KijiColumnName mColumn;
@@ -449,7 +450,7 @@ public class RowDecoders {
   }
 
     @Override
-    public List<KijiCell<T>> apply(final ResultSet resultSet) {
+    public Iterator<KijiCell<T>> apply(final ResultSet resultSet) {
       final Function<Row, KijiCell<T>> rowDecoder = getRowDecoderFunction(
           mTableName,
           mColumn,
@@ -457,7 +458,7 @@ public class RowDecoders {
           mTranslator,
           mDecoderProvider);
 
-      return Lists.transform(resultSet.all(), rowDecoder);
+      return Iterators.transform(resultSet.iterator(), rowDecoder);
     }
   }
 
