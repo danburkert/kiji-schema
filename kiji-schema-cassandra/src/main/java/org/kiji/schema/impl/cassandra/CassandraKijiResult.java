@@ -19,6 +19,7 @@ import com.google.common.util.concurrent.Uninterruptibles;
 
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.EntityId;
+import org.kiji.schema.InternalKijiError;
 import org.kiji.schema.KijiCell;
 import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiDataRequest;
@@ -26,6 +27,7 @@ import org.kiji.schema.KijiDataRequest.Column;
 import org.kiji.schema.KijiDataRequestBuilder;
 import org.kiji.schema.KijiResult;
 import org.kiji.schema.KijiURI;
+import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.cassandra.CassandraColumnName;
 import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.impl.DefaultKijiResult;
@@ -110,7 +112,7 @@ public class CassandraKijiResult {
     final CassandraPagedKijiResult<T> pagedKijiResult;
     if (!pagedRequest.isEmpty()) {
       pagedKijiResult =
-          CassandraPagedKijiResult.create(
+          new CassandraPagedKijiResult<T>(
               entityId,
               pagedRequest,
               table,
@@ -132,13 +134,16 @@ public class CassandraKijiResult {
 
 
   /**
-   * @param entityId
-   * @param dataRequest
-   * @param layout
-   * @param translator
-   * @param decoderProvider
-   * @param admin
-   * @return
+   * Query Cassandra for a Kiji qualified-column or column-family in a Kiji row. The result is a
+   * future containing an iterator over the result cells.
+   *
+   * @param entityId The entity ID of the row in the Kiji table.
+   * @param dataRequest The data request defining the request options.
+   * @param layout The table's layout.
+   * @param translator A column name translator for the table.
+   * @param decoderProvider A decoder provider for the table.
+   * @param admin The Cassandra connection to use for querying.
+   * @return A future containing an iterator of cells in the column.
    */
   public static <T> ListenableFuture<Iterator<KijiCell<T>>> getColumn(
       final KijiURI tableURI,
@@ -151,7 +156,12 @@ public class CassandraKijiResult {
       final CassandraAdmin admin
   ) {
     final KijiColumnName column = columnRequest.getColumnName();
-    final CassandraColumnName cassandraColumn = translator.toCassandraColumnName(column);
+    final CassandraColumnName cassandraColumn;
+    try {
+      cassandraColumn = translator.toCassandraColumnName(column);
+    } catch (NoSuchColumnException e) {
+      throw new InternalKijiError(e);
+    }
 
     final Collection<CassandraTableName> cassandraTables =
         CassandraDataRequestAdapter.getColumnCassandraTables(tableURI, layout, column);

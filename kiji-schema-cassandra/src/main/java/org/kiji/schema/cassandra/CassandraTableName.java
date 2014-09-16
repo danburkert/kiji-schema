@@ -25,9 +25,7 @@ import com.google.common.base.Preconditions;
 
 import org.kiji.annotations.ApiAudience;
 import org.kiji.annotations.ApiStability;
-import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiURI;
-import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.ColumnId;
 
 /**
@@ -54,15 +52,13 @@ import org.kiji.schema.layout.impl.ColumnId;
  *     KijiInstance: the name of kiji instance managing this table.
  *   </li>
  *   <li>
- *     Type: the type of table (system, schema, meta, locality group, counter).
+ *     Type: the type of table (system, schema, meta, user).
  *   </li>
  *   <li>
- *     Name: if the table is a locality group or counter table ("lg" or "c", respectively), then the
- *     Kiji table's name is the fourth component.
+ *     Name: if the table is a user table ("u"), then the Kiji table's name is the fourth component.
  *   </li>
  *   <li>
- *     Name: if the table is a locality group ("lg"), then the locality group ID is the fifth
- *     component.
+ *     Name: if the table is a user table ("v"), then the locality group ID is the fifth component.
  *   </li>
  * </ol>
  *
@@ -76,18 +72,15 @@ import org.kiji.schema.layout.impl.ColumnId;
  * kiji_default.schema_hash
  * kiji_default.schema_id
  * kiji_default.system
- * kiji_default.lg_foo_BB
- * kiji_default.lg_foo_BC
- * kiji_default.c_foo
- * kiji_default.t_bar_BB
- * kiji_default.c_bar
+ * kiji_default.u_foo_BB
+ * kiji_default.u_foo_BC
+ * kiji_default.u_bar_BB
  * kiji_experimental.meta
  * kiji_experimental.schema
  * kiji_experimental.schema_hash
  * kiji_experimental.schema_id
  * kiji_experimental.system
- * kiji_experimental.t_baz_BB
- * kiji_experimental.c_baz
+ * kiji_experimental.u_baz_BB
  * </pre>
  *
  * <p>
@@ -129,8 +122,7 @@ public final class CassandraTableName {
     SCHEMA_ID("schema_id"),
     SCHEMA_COUNTER("schema_counter"),
     SYSTEM("system"),
-    LOCALITY_GROUP("lg"),
-    COUNTER_GROUP("c");
+    LOCALITY_GROUP("lg");
 
     private final String mName;
 
@@ -184,11 +176,11 @@ public final class CassandraTableName {
     Preconditions.checkNotNull(type);
     Preconditions.checkNotNull(instance);
     Preconditions.checkArgument(
-        (type != TableType.LOCALITY_GROUP && type != TableType.COUNTER_GROUP) || table != null,
-        "Table name must be defined for a user Kiji table.");
+        (type != TableType.LOCALITY_GROUP) || table != null,
+        "Table name must be defined for a Kiji locality group table.");
     Preconditions.checkArgument(
         type != TableType.LOCALITY_GROUP || localityGroup != null,
-        "Locality group ID must be defined for a locality group table.");
+        "Locality group ID must be defined for a Kiji locality group table.");
 
     mType = type;
     mInstance = instance;
@@ -197,7 +189,7 @@ public final class CassandraTableName {
   }
 
   /**
-   * Gets a new instance of a Kiji-managed Cassandra table that holds the Kiji meta table.
+   * Get the Cassandra table name of a Kiji meta able.
    *
    * @param kijiURI The name of the Kiji instance.
    * @return The name of the Cassandra table used to store the Kiji meta table.
@@ -207,18 +199,17 @@ public final class CassandraTableName {
   }
 
   /**
-   * Gets a new instance of a Kiji-managed Cassandra table that holds the Kiji user-defined
-   * key-value pairs.
+   * Get the Cassandra table name of a Kiji meta key-value table.
    *
    * @param kijiURI The name of the Kiji instance.
-   * @return The name of the Cassandra table used to store the Kiji meta table.
+   * @return The name of the Cassandra table used to store the Kiji meta key-value table.
    */
   public static CassandraTableName getMetaKeyValueTableName(KijiURI kijiURI) {
     return new CassandraTableName(TableType.META_KEY_VALUE, kijiURI.getInstance());
   }
 
   /**
-   * Gets a new instance of a Kiji-managed Cassandra table that holds the Kiji schema hash table.
+   * Get the Cassandra table name of a Kiji schema hash table.
    *
    * @param kijiURI The name of the Kiji instance.
    * @return The name of the Cassandra table used to store the Kiji schema hash table.
@@ -228,7 +219,7 @@ public final class CassandraTableName {
   }
 
   /**
-   * Gets a new instance of a Kiji-managed Cassandra table that holds the Kiji schema IDs table.
+   * Get the Cassandra table name of a Kiji schema ID table.
    *
    * @param kijiURI The name of the Kiji instance.
    * @return The name of the Cassandra table used to store the Kiji schema IDs table.
@@ -238,8 +229,7 @@ public final class CassandraTableName {
   }
 
   /**
-   * Gets a new instance of a Kiji-managed Cassandra table that holds the Kiji schema IDs counter
-   * table.
+   * Get the Cassandra table name of a Kiji schema counter table.
    *
    * @param kijiURI The name of the Kiji instance.
    * @return The name of the Cassandra table used to store the Kiji schema IDs counter table.
@@ -249,7 +239,7 @@ public final class CassandraTableName {
   }
 
   /**
-   * Gets a new instance of a Kiji-managed Cassandra table that holds the Kiji system table.
+   * Get the Cassandra table name of a Kiji system table.
    *
    * @param kijiURI The name of the Kiji instance.
    * @return The name of the Cassandra table used to store the Kiji system table.
@@ -259,20 +249,11 @@ public final class CassandraTableName {
   }
 
   /**
-   * Gets a new instance of a Kiji-managed Cassandra table that holds counters for a user-space
-   * Kiji table.
+   * Get a Cassandra table name for a Kiji table locality group.
    *
    * @param tableURI The name of the Kiji table.
    * @return The name of the Cassandra table used to store the user-space Kiji table.
    */
-  public static CassandraTableName getCounterTableName(KijiURI tableURI) {
-    return new CassandraTableName(
-        TableType.COUNTER_GROUP,
-        tableURI.getInstance(),
-        tableURI.getTable(),
-        null);
-  }
-
   public static CassandraTableName getLocalityGroupTableName(
       final KijiURI tableURI,
       final ColumnId localityGroupID
@@ -282,21 +263,6 @@ public final class CassandraTableName {
         tableURI.getInstance(),
         tableURI.getTable(),
         localityGroupID);
-  }
-
-  /**
-   * Get a Cassandra table name.
-   *
-   * @param tableURI of user Kiji table.
-   * @return the Cassandra table name corresponding to the Kiji table.
-   */
-  @Deprecated
-  public static CassandraTableName getKijiTableName(KijiURI tableURI) {
-    return new CassandraTableName(
-        TableType.LOCALITY_GROUP,
-        tableURI.getInstance(),
-        tableURI.getTable(),
-        null);
   }
 
   /**
@@ -409,24 +375,6 @@ public final class CassandraTableName {
    */
   public ColumnId getLocalityGroupId() {
     return mLocalityGroup;
-  }
-
-  /**
-   * Returns whether this Cassandra table name is for a Kiji locality group.
-   *
-   * @return Whether this Cassandra table name is for a Kiji locality group.
-   */
-  public boolean isLocalityGroup() {
-    return mType == TableType.LOCALITY_GROUP;
-  }
-
-  /**
-   * Returns whether this Cassandra table name is for Kiji counters.
-   *
-   * @return Whether this Cassandra table name is for a Kiji counters.
-   */
-  public boolean isCounter() {
-    return mType == TableType.COUNTER_GROUP;
   }
 
   /**
