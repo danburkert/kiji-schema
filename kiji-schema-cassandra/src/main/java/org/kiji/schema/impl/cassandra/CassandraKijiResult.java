@@ -1,25 +1,24 @@
 package org.kiji.schema.impl.cassandra;
 
 import java.io.IOException;
-import java.util.Collection;
 import java.util.Iterator;
-import java.util.List;
 import java.util.concurrent.ExecutionException;
 
+import javax.annotation.Nullable;
+
 import com.datastax.driver.core.ResultSet;
+import com.datastax.driver.core.Row;
 import com.datastax.driver.core.Statement;
 import com.datastax.driver.core.exceptions.DriverException;
 import com.datastax.driver.core.exceptions.DriverInternalError;
 import com.google.common.base.Function;
 import com.google.common.collect.Iterators;
-import com.google.common.collect.Lists;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.Uninterruptibles;
 
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.EntityId;
-import org.kiji.schema.InternalKijiError;
 import org.kiji.schema.KijiCell;
 import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiDataRequest;
@@ -36,6 +35,7 @@ import org.kiji.schema.impl.MaterializedKijiResult;
 import org.kiji.schema.layout.CassandraColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
+import org.kiji.schema.layout.impl.ColumnId;
 
 /**
  * A utility class which can create a {@link KijiResult} view on a Cassandra Kiji table.
@@ -76,7 +76,7 @@ public class CassandraKijiResult {
         dataRequest.getMaxTimestamp());
     pagedRequestBuilder.withTimeRange(dataRequest.getMinTimestamp(), dataRequest.getMaxTimestamp());
 
-    for (Column columnRequest : dataRequest.getColumns()) {
+    for (final Column columnRequest : dataRequest.getColumns()) {
       if (columnRequest.isPagingEnabled()) {
         pagedRequestBuilder.newColumnsDef(columnRequest);
       } else {
@@ -132,7 +132,6 @@ public class CassandraKijiResult {
     }
   }
 
-
   /**
    * Query Cassandra for a Kiji qualified-column or column-family in a Kiji row. The result is a
    * future containing an iterator over the result cells.
@@ -160,49 +159,44 @@ public class CassandraKijiResult {
     try {
       cassandraColumn = translator.toCassandraColumnName(column);
     } catch (NoSuchColumnException e) {
-      throw new InternalKijiError(e);
+      throw new IllegalArgumentException(
+          String.format("No such column '%s' in table %s.", column, tableURI));
     }
 
-    final Collection<CassandraTableName> cassandraTables =
-        CassandraDataRequestAdapter.getColumnCassandraTables(tableURI, layout, column);
+    final ColumnId localityGroupId =
+        layout.getFamilyMap().get(column.getFamily()).getLocalityGroup().getId();
+    final CassandraTableName table =
+        CassandraTableName.getLocalityGroupTableName(tableURI, localityGroupId);
 
-    final List<ListenableFuture<Iterator<KijiCell<T>>>> results =
-        Lists.newArrayListWithCapacity(cassandraTables.size());
+    final Statement statement =
+        CQLUtils.getColumnGetStatement(
+            layout,
+            table,
+            entityId,
+            cassandraColumn,
+            dataRequest,
+            columnRequest);
 
-    for (final CassandraTableName cassandraTable : cassandraTables) {
-      final Statement statement =
-          CQLUtils.getColumnGetStatement(
-              layout,
-              cassandraTable,
-              entityId,
-              cassandraColumn,
-              dataRequest,
-              columnRequest);
-
-      final Function<ResultSet, Iterator<KijiCell<T>>> resultSetDecoder =
-          RowDecoders.getResultSetDecoderFunction(
-              cassandraTable,
-              column,
-              layout,
-              translator,
-              decoderProvider);
-
-      final ListenableFuture<Iterator<KijiCell<T>>> result =
-          Futures.transform(admin.executeAsync(statement), resultSetDecoder);
-
-      results.add(result);
-    }
+    final Function<Row, KijiCell<T>> rowDecoder =
+        RowDecoders.getRowDecoderFunction(column, layout, translator, decoderProvider);
 
     return Futures.transform(
-        Futures.allAsList(results),
-        new Function<List<Iterator<KijiCell<T>>>, Iterator<KijiCell<T>>>() {
+        admin.executeAsync(statement),
+        new Function<ResultSet, Iterator<KijiCell<T>>>() {
           @Override
-          public Iterator<KijiCell<T>> apply(final List<Iterator<KijiCell<T>>> results) {
-            return Iterators.concat(results.iterator());
+          public Iterator<KijiCell<T>> apply(final ResultSet resultSet) {
+            return Iterators.transform(resultSet.iterator(), rowDecoder);
           }
         });
   }
 
+  /**
+   * Unwrap a Cassandra listenable future.
+   *
+   * @param future The future to unwrap.
+   * @param <T> The value type of the future.
+   * @return The future's value.
+   */
   public static <T> T unwrapFuture(final ListenableFuture<T> future) {
     // See DefaultResultSetFuture#getUninterruptibly
     try {

@@ -1,5 +1,5 @@
 /**
- * (c) Copyright 2014 WibiData, Inc.
+USER * (c) Copyright 2014 WibiData, Inc.
  *
  * See the NOTICE file distributed with this work for additional
  * information regarding copyright ownership.
@@ -263,6 +263,15 @@ public final class CassandraTableName {
         tableURI.getInstance(),
         tableURI.getTable(),
         localityGroupID);
+  }
+
+  /**
+   * Returns true if this table name is for a Kiji locality group.
+   *
+   * @return If this table name is for a Kiji locality group.
+   */
+  public boolean isLocalityGroup() {
+    return mType == TableType.LOCALITY_GROUP;
   }
 
   /**

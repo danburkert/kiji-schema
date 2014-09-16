@@ -350,7 +350,7 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
           CassandraByteUtil.bytesToByteBuffer(
               mCapsule.getCellEncoderProvider().getEncoder(family, qualifier).encode(value));
 
-      final Statement put = CQLUtils.getLocalityGroupInsert(
+      final Statement put = CQLUtils.getLocalityGroupInsertStatement(
           mCapsule.getLayout(),
           mTableName,
           mEntityId,

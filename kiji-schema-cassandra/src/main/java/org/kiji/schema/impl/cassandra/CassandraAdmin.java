@@ -200,7 +200,7 @@ public abstract class CassandraAdmin implements Closeable {
             + " columnfamily_name='%s' AND column_name='%s' ALLOW FILTERING",
         tableName.getKeyspace(),
         tableName.getUnquotedTable(),
-        CQLUtils.LOCALITY_GROUP_COL);
+        CQLUtils.QUALIFIER_COL);
     LOG.debug(query);
     ResultSet resultSet = execute(query);
     List<Row> rows = resultSet.all();

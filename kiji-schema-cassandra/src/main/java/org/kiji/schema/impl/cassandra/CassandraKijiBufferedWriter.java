@@ -45,7 +45,6 @@ import org.kiji.schema.EntityId;
 import org.kiji.schema.KijiBufferedWriter;
 import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiURI;
-import org.kiji.schema.avro.SchemaType;
 import org.kiji.schema.cassandra.CassandraColumnName;
 import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
@@ -279,11 +278,6 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
                 qualifier, family, tableURI));
       }
 
-      if (columnLayout.getDesc().getColumnSchema().getType() == SchemaType.COUNTER) {
-        throw new UnsupportedOperationException(
-            "Cassandra Kiji does not support puts to counter columns.");
-      }
-
       final CassandraTableName table =
           CassandraTableName.getLocalityGroupTableName(
               tableURI,
@@ -308,7 +302,7 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
           CassandraByteUtil.bytesToByteBuffer(
               mCapsule.getCellEncoderProvider().getEncoder(family, qualifier).encode(value));
 
-      final Statement put = CQLUtils.getLocalityGroupInsert(
+      final Statement put = CQLUtils.getLocalityGroupInsertStatement(
           mCapsule.getLayout(),
           table,
           entityId,
@@ -342,49 +336,7 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
       final KijiColumnName column,
       final long amount
   ) throws IOException {
-    final KijiURI tableURI = mTable.getURI();
-    synchronized (mMonitor) {
-      Preconditions.checkState(mState == State.OPEN,
-          "Cannot write to BufferedWriter instance in state %s.", mState);
-      final KijiTableLayout layout = mCapsule.getLayout();
-
-      final FamilyLayout familyLayout = layout.getFamilyMap().get(column.getFamily());
-      if (familyLayout == null) {
-        throw new IllegalArgumentException(
-            String.format("Unknown family '%s' in table %s.", column.getFamily(), tableURI));
-      }
-
-      final ColumnLayout columnLayout = familyLayout.getColumnMap().get(column.getQualifier());
-      if (columnLayout == null) {
-        throw new IllegalArgumentException(
-            String.format("Unknown qualifier '%s' in family '%s' of table %s.",
-                column.getQualifier(), column.getFamily(), tableURI));
-      }
-
-      if (columnLayout.getDesc().getColumnSchema().getType() != SchemaType.COUNTER) {
-        throw new IllegalArgumentException(
-            String.format("Column '%s' of table %s is not a counter.",
-                column, tableURI));
-      }
-
-      final CassandraTableName table = CassandraTableName.getCounterTableName(tableURI);
-
-      final CassandraColumnName cassandraColumn =
-          mCapsule.getColumnNameTranslator().toCassandraColumnName(column);
-
-      final Statement put = CQLUtils.getCounterIncrement(
-          layout,
-          table,
-          entityId,
-          cassandraColumn,
-          amount);
-
-      mBufferedStatements.put(table, put);
-      mCurrentWriteBufferSize += 1;
-      if (mCurrentWriteBufferSize > mMaxWriteBufferSize) {
-        flush();
-      }
-    }
+    throw new UnsupportedOperationException("Cassandra Kiji does not support counter columns.");
   }
 
   // -----------------------------------------------------------------------------------------------
@@ -403,18 +355,11 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
             CassandraTableName.getLocalityGroupTableName(tableURI.getURI(), localityGroupId);
 
         final Statement delete =
-            CQLUtils.getLocalityGroupDelete(layout, table, entityId);
+            CQLUtils.getLocalityGroupDeleteStatement(layout, table, entityId);
 
         mBufferedStatements.put(table, delete);
         mCurrentWriteBufferSize += 1;
       }
-
-      final CassandraTableName counterTable =
-          CassandraTableName.getCounterTableName(tableURI.getURI());
-      mBufferedStatements.put(
-          counterTable,
-          CQLUtils.getCounterDelete(layout, counterTable, entityId));
-      mCurrentWriteBufferSize += 1;
 
       if (mCurrentWriteBufferSize > mMaxWriteBufferSize) {
         flush();
@@ -442,47 +387,15 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
             String.format("Unknown family '%s' in table %s.", family, tableURI));
       }
 
-      boolean containsCounter = false;
-      boolean containsNonCounter = false;
+      final CassandraTableName table =
+          CassandraTableName.getLocalityGroupTableName(
+              tableURI,
+              familyLayout.getLocalityGroup().getId());
 
-      for (ColumnLayout columnLayout : familyLayout.getColumns()) {
-        if (columnLayout.getDesc().getColumnSchema().getType() == SchemaType.COUNTER) {
-          containsCounter = true;
-        } else {
-          containsNonCounter = true;
-        }
-        if (containsCounter && containsNonCounter) {
-          break;
-        }
-      }
-
-      if (containsCounter) {
-        final CassandraTableName counterTable =
-            CassandraTableName.getCounterTableName(mTable.getURI());
-
-        final CassandraColumnName column =
-            mCapsule
-                .getColumnNameTranslator()
-                .toCassandraColumnName(KijiColumnName.create(family, null));
-
-        final Statement delete =
-            CQLUtils.getCounterDeleteColumn(layout, counterTable, entityId, column);
-
-        mBufferedStatements.put(counterTable, delete);
-        mCurrentWriteBufferSize += 1;
-      }
-
-      if (containsNonCounter) {
-        final CassandraTableName localityGroupTable =
-            CassandraTableName.getLocalityGroupTableName(
-                tableURI,
-                familyLayout.getLocalityGroup().getId());
-
-        final Statement delete =
-            CQLUtils.getLocalityGroupDelete(layout, localityGroupTable, entityId);
-        mBufferedStatements.put(localityGroupTable, delete);
-        mCurrentWriteBufferSize += 1;
-      }
+      final Statement delete =
+          CQLUtils.getLocalityGroupDeleteStatement(layout, table, entityId);
+      mBufferedStatements.put(table, delete);
+      mCurrentWriteBufferSize += 1;
 
       if (mCurrentWriteBufferSize > mMaxWriteBufferSize) {
         flush();
@@ -524,30 +437,19 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
                 qualifier, family, tableURI));
       }
 
-      if (columnLayout.getDesc().getColumnSchema().getType() == SchemaType.COUNTER) {
-        final CassandraTableName counterTable =
-            CassandraTableName.getCounterTableName(mTable.getURI());
+      final CassandraColumnName column =
+          mCapsule
+              .getColumnNameTranslator()
+              .toCassandraColumnName(KijiColumnName.create(family, null));
 
-        final CassandraColumnName column =
-            mCapsule
-                .getColumnNameTranslator()
-                .toCassandraColumnName(KijiColumnName.create(family, null));
+      final CassandraTableName table =
+          CassandraTableName.getLocalityGroupTableName(
+              tableURI,
+              familyLayout.getLocalityGroup().getId());
 
-        final Statement delete =
-            CQLUtils.getCounterDeleteColumn(layout, counterTable, entityId, column);
-
-        mBufferedStatements.put(counterTable, delete);
-      } else {
-        final CassandraTableName localityGroupTable =
-            CassandraTableName.getLocalityGroupTableName(
-                tableURI,
-                familyLayout.getLocalityGroup().getId());
-
-        final Statement delete =
-            CQLUtils.getLocalityGroupDelete(layout, localityGroupTable, entityId);
-        mBufferedStatements.put(localityGroupTable, delete);
-
-      }
+      final Statement delete =
+          CQLUtils.getLocalityGroupDeleteColumnStatement(layout, table, entityId, column);
+      mBufferedStatements.put(table, delete);
 
       mCurrentWriteBufferSize += 1;
       if (mCurrentWriteBufferSize > mMaxWriteBufferSize) {
@@ -610,29 +512,19 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
               .getColumnNameTranslator()
               .toCassandraColumnName(KijiColumnName.create(family, null));
 
-      if (columnLayout.getDesc().getColumnSchema().getType() == SchemaType.COUNTER) {
-        final CassandraTableName counterTable =
-            CassandraTableName.getCounterTableName(mTable.getURI());
+      final CassandraTableName table =
+          CassandraTableName.getLocalityGroupTableName(
+              tableURI,
+              familyLayout.getLocalityGroup().getId());
 
-        final Statement delete =
-            CQLUtils.getCounterDeleteColumn(layout, counterTable, entityId, column);
-
-        mBufferedStatements.put(counterTable, delete);
-      } else {
-        final CassandraTableName localityGroupTable =
-            CassandraTableName.getLocalityGroupTableName(
-                tableURI,
-                familyLayout.getLocalityGroup().getId());
-
-        final Statement delete =
-            CQLUtils.getLocalityGroupDeleteCell(
-                layout,
-                localityGroupTable,
-                entityId,
-                column,
-                timestamp);
-        mBufferedStatements.put(localityGroupTable, delete);
-      }
+      final Statement delete =
+          CQLUtils.getLocalityGroupDeleteCellStatement(
+              layout,
+              table,
+              entityId,
+              column,
+              timestamp);
+      mBufferedStatements.put(table, delete);
 
       mCurrentWriteBufferSize += 1;
       if (mCurrentWriteBufferSize > mMaxWriteBufferSize) {
@@ -672,16 +564,13 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
       Preconditions.checkState(mState == State.OPEN,
           "Can not flush BufferedWriter instance %s in state %s.", this, mState);
 
-
-      for (CassandraTableName table : mBufferedStatements.keySet()) {
+      for (final CassandraTableName table : mBufferedStatements.keySet()) {
         final List<Statement> statements = mBufferedStatements.removeAll(table);
 
         if (statements.size() > 0) {
           final Statement statement;
           if (statements.size() == 1) {
             statement = statements.get(0);
-          } else if (table.isCounter()) {
-            statement = new BatchStatement(Type.COUNTER).addAll(statements);
           } else {
             statement = new BatchStatement(Type.UNLOGGED).addAll(statements);
           }

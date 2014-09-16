@@ -53,7 +53,6 @@ import org.kiji.schema.KijiTable;
 import org.kiji.schema.KijiTableReader;
 import org.kiji.schema.KijiTableWriter;
 import org.kiji.schema.NoSuchColumnException;
-import org.kiji.schema.impl.cassandra.CassandraKijiRowData;
 import org.kiji.schema.layout.KijiTableLayouts;
 
 public class TestCassandraKijiRowData {
@@ -280,7 +279,6 @@ public class TestCassandraKijiRowData {
 
     // We didn't request any data, so the map should be null.
     final KijiRowData input = mReader.get(mEntityId, dataRequest);
-    assertTrue(((CassandraKijiRowData)input).getMap().isEmpty());
   }
 
   @Test

@@ -26,10 +26,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
-import com.datastax.driver.core.ResultSetFuture;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
-import com.google.common.collect.ListMultimap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
@@ -50,7 +48,6 @@ import org.kiji.schema.KijiTableReaderBuilder;
 import org.kiji.schema.KijiTableReaderBuilder.OnDecoderCacheMiss;
 import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.SpecificCellDecoderFactory;
-import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.impl.BoundColumnReaderSpec;
 import org.kiji.schema.impl.KijiResultRowData;
 import org.kiji.schema.impl.LayoutConsumer;
@@ -319,7 +316,7 @@ public final class CassandraKijiTableReader implements KijiTableReader {
         : alternatives.entries()) {
       final KijiColumnName column = altsEntry.getKey();
       if (!layoutColumns.contains(column)
-          && !layoutColumns.contains(new KijiColumnName(column.getFamily()))) {
+          && !layoutColumns.contains(KijiColumnName.create(column.getFamily()))) {
         throw new NoSuchColumnException(String.format(
             "KijiTableLayout: %s does not contain column: %s", layout, column));
       } else {
@@ -428,16 +425,8 @@ public final class CassandraKijiTableReader implements KijiTableReader {
     final KijiTableLayout tableLayout = capsule.getLayout();
     validateRequestAgainstLayout(dataRequest, tableLayout);
 
-    CassandraDataRequestAdapter adapter =
-        new CassandraDataRequestAdapter(dataRequest, capsule.getColumnNameTranslator());
-
-    ListMultimap<CassandraTableName, ResultSetFuture> results =
-        adapter.doScan(mTable, kijiScannerOptions);
-
-    // Now we create a KijiRowData from all of these results.
-    // Parse the result.
-    return new CassandraKijiRowScanner(
-        mTable, dataRequest, capsule.getCellDecoderProvider(), results);
+    // Now we create a KijiRowData from all of these results. Parse the result.
+    throw new UnsupportedOperationException("Not implemented.");
   }
 
   /** {@inheritDoc} */
