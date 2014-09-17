@@ -271,13 +271,6 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
             String.format("Unknown family '%s' in table %s.", family, tableURI));
       }
 
-      final ColumnLayout columnLayout = familyLayout.getColumnMap().get(qualifier);
-      if (columnLayout == null) {
-        throw new IllegalArgumentException(
-            String.format("Unknown qualifier '%s' in family '%s' of table %s.",
-                qualifier, family, tableURI));
-      }
-
       final CassandraTableName table =
           CassandraTableName.getLocalityGroupTableName(
               tableURI,
@@ -317,26 +310,6 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
         flush();
       }
     }
-  }
-
-  // -----------------------------------------------------------------------------------------------
-  // Increment
-  // -----------------------------------------------------------------------------------------------
-
-  /**
-   * Increment a counter column by the specified amount
-   *
-   * @param entityId The entity id of the row containing the counter to increment.
-   * @param column The column containing the counter to increment.
-   * @param amount The amount to increment the column by.
-   * @throws IOException on unrecoverable IO error.
-   */
-  public void increment(
-      final EntityId entityId,
-      final KijiColumnName column,
-      final long amount
-  ) throws IOException {
-    throw new UnsupportedOperationException("Cassandra Kiji does not support counter columns.");
   }
 
   // -----------------------------------------------------------------------------------------------
@@ -510,7 +483,7 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
       final CassandraColumnName column =
           mCapsule
               .getColumnNameTranslator()
-              .toCassandraColumnName(KijiColumnName.create(family, null));
+              .toCassandraColumnName(KijiColumnName.create(family, qualifier));
 
       final CassandraTableName table =
           CassandraTableName.getLocalityGroupTableName(
@@ -541,7 +514,7 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
     synchronized (mMonitor) {
       Preconditions.checkState(mState == State.OPEN,
           "Can not set buffer size of BufferedWriter %s in state %s.", this, mState);
-      Preconditions.checkArgument(bufferSize > 0,
+      Preconditions.checkArgument(bufferSize >= 0,
           "Buffer size cannot be negative, got %s.", bufferSize);
       mMaxWriteBufferSize = bufferSize;
       if (mCurrentWriteBufferSize > mMaxWriteBufferSize) {

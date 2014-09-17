@@ -20,11 +20,11 @@
 package org.kiji.schema.impl.cassandra;
 
 import java.io.IOException;
-import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 
+import javax.annotation.Nullable;
 import javax.annotation.concurrent.NotThreadSafe;
 
 import com.datastax.driver.core.ResultSet;
@@ -38,20 +38,13 @@ import com.google.common.collect.Sets;
 import com.google.common.collect.UnmodifiableIterator;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
-import org.apache.commons.collections.comparators.ComparableComparator;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.mortbay.io.RuntimeIOException;
 
-import org.kiji.schema.EntityId;
-import org.kiji.schema.EntityIdFactory;
-import org.kiji.schema.KijiCell;
-import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiDataRequest;
 import org.kiji.schema.KijiDataRequest.Column;
 import org.kiji.schema.KijiResult;
 import org.kiji.schema.KijiResultScanner;
 import org.kiji.schema.KijiURI;
-import org.kiji.schema.cassandra.CassandraColumnName;
 import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.impl.cassandra.RowDecoders.TokenRowKeyComponents;
 import org.kiji.schema.impl.cassandra.RowDecoders.TokenRowKeyComponentsComparator;
@@ -68,8 +61,7 @@ import org.kiji.schema.layout.impl.ColumnId;
  * @param <T> type of {@code KijiCell} value returned by scanned {@code KijiResult}s.
  */
 public class CassandraKijiResultScanner<T> implements KijiResultScanner<T> {
-  private static final Logger LOG = LoggerFactory.getLogger(CassandraKijiResultScanner.class);
-
+  private final Iterator<KijiResult<T>> mIterator;
 
  /*
   * ## Implementation Notes
@@ -131,56 +123,98 @@ public class CassandraKijiResultScanner<T> implements KijiResultScanner<T> {
       rowKeyStreams.add(CassandraKijiResult.unwrapFuture(future));
     }
 
-    Iterators.mergeSorted(rowKeyStreams, TokenRowKeyComponentsComparator.INSTANCE);
+    final Iterator<TokenRowKeyComponents> rowkeys =
+        new DeduplicatingIterator<TokenRowKeyComponents>(
+            Iterators.mergeSorted(rowKeyStreams, TokenRowKeyComponentsComparator.INSTANCE));
 
-
+    mIterator = Iterators.transform(
+        rowkeys,
+        new Function<TokenRowKeyComponents, KijiResult<T>>() {
+          @Override
+          public KijiResult<T> apply(final TokenRowKeyComponents rowkey) {
+            try {
+              return CassandraKijiResult.create(
+                  rowkey.getComponents().getEntityIdForTable(table),
+                  request,
+                  table,
+                  layout,
+                  translator,
+                  decoderProvider);
+            } catch (IOException e) {
+              throw new RuntimeIOException(e);
+            }
+          }
+        });
   }
 
 
   @Override
   public void close() throws IOException {
-
   }
 
   @Override
   public boolean hasNext() {
-    return false;
+    return mIterator.hasNext();
   }
 
   @Override
   public KijiResult<T> next() {
-    return null;
+    return mIterator.next();
   }
 
   @Override
   public void remove() {
+    throw new UnsupportedOperationException();
   }
 
+  /**
+   * Wraps an existing iterator and removes consecutive duplicate elements.
+   *
+   * TODO: replace this with the version from kiji-commons
+   *
+   * @param iterator The iterator to deduplicate.
+   * @param <T> The value type of the iterator.
+   * @return An iterator which lazily deduplicates elements.
+   */
+  public static <T> Iterator<T> deduplicatingIterator(final Iterator<T> iterator) {
+    return new DeduplicatingIterator<T>(iterator);
+  }
+
+  /**
+   * A deduplicating iterator which removes consecutive duplicate elements from another iterator.
+   *
+   * TODO: replace this with the version from kiji-commons
+   *
+   * @param <T> The value type of elements in the iterator.
+   */
   @NotThreadSafe
   private static final class DeduplicatingIterator<T> extends UnmodifiableIterator<T> {
+    private final PeekingIterator<T> mIterator;
 
-    private final PeekingIterator<T> mItr;
-    private final
-
-    private DeduplicatingIterator(final Iterator<T> itr, final Comparator<T> comparator) {
-      mItr = Iterators.peekingIterator(itr);
-      mComp =
+    /**
+     * Create an iterator which will remove consecutive duplicate elements in an iterator.
+     *
+     * @param iterator The iterator to deduplicate.
+     */
+    private DeduplicatingIterator(final Iterator<T> iterator) {
+      mIterator = Iterators.peekingIterator(iterator);
     }
 
+    /** {@inheritDoc} */
     @Override
     public boolean hasNext() {
-      return mItr.hasNext();
+      return mIterator.hasNext();
     }
 
+    /** {@inheritDoc} */
     @Override
     public T next() {
-      final T next = mItr.next();
-      while (mItr.hasNext() && next.equals(mItr.peek())) {
-        mItr.next();
+      final T next = mIterator.next();
+
+      while (mIterator.hasNext() && next.equals(mIterator.peek())) {
+        mIterator.next();
       }
-      assert !mItr.hasNext() || comparator.compare(ret, mItr.peek()) < 0 : "iterator is not sorted: " + ret + " > " + mItr.peek();
       return next;
     }
   }
-
 }

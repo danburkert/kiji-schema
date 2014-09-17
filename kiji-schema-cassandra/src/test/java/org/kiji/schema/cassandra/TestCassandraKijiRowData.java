@@ -310,22 +310,22 @@ public class TestCassandraKijiRowData {
 
     assertTrue(cells.hasNext());
     final KijiCell<?> cell0 = cells.next();
-    assertEquals("Wrong first cell!", KEY0, cell0.getQualifier());
+    assertEquals("Wrong first cell!", KEY0, cell0.getColumn().getQualifier());
 
     assertTrue(cells.hasNext());
     final KijiCell<?> cell1 = cells.next();
-    assertEquals("Wrong second cell!", KEY1, cell1.getQualifier());
+    assertEquals("Wrong second cell!", KEY1, cell1.getColumn().getQualifier());
 
     assertTrue(cells.hasNext());
     final KijiCell<?> cell2 = cells.next();
-    assertEquals("Wrong third cell!", KEY2, cell2.getQualifier());
+    assertEquals("Wrong third cell!", KEY2, cell2.getColumn().getQualifier());
     assertFalse(cells.hasNext());
 
     final Iterator<KijiCell<Integer>> cellsKey1 = row1.iterator("map", "key1");
     assertTrue(cellsKey1.hasNext());
 
     final KijiCell<Integer> key1Cell = cellsKey1.next();
-    assertEquals("key1", key1Cell.getQualifier());
+    assertEquals("key1", key1Cell.getColumn().getQualifier());
     assertEquals(1L, key1Cell.getTimestamp());
     assertEquals((Integer) 1, key1Cell.getData());
     assertFalse(cellsKey1.hasNext());

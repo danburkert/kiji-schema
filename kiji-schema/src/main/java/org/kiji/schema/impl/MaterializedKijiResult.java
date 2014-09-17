@@ -28,6 +28,7 @@ import java.util.SortedMap;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSortedMap;
 import com.google.common.collect.Iterables;
+import com.google.common.collect.Iterators;
 import com.google.common.collect.Lists;
 
 import org.kiji.annotations.ApiAudience;
@@ -66,23 +67,6 @@ public final class MaterializedKijiResult<T> implements KijiResult<T> {
     mEntityId = entityId;
     mDataRequest = dataRequest;
     mColumns = columns;
-  }
-  /**
-   * Create a new materialized {@code KijiResult} backed by the provided {@code KijiCell}s.
-   * (Only use when serializing)
-   * @param entityId The entity ID of the row containing this result.
-   * @param dataRequest The Kiji data request which defines the columns in this result.
-   * @param columns The materialized results. The cells must be in the order guaranteed by
-   *     {@code KijiResult}.
-   * @param <T> The type of {@code KijiCell} values in the view.
-   * @return A new materialized {@code KijiResult} backed by {@code KijiCell}s.
-   */
-  public static <T> MaterializedKijiResult<T> create(
-      final EntityId entityId,
-      final KijiDataRequest dataRequest,
-      final SortedMap<KijiColumnName, List<KijiCell<T>>> columns
-  ) {
-    return new MaterializedKijiResult<T>(entityId, dataRequest, columns);
   }
 
   /**
@@ -146,7 +130,7 @@ public final class MaterializedKijiResult<T> implements KijiResult<T> {
   /** {@inheritDoc} */
   @Override
   public Iterator<KijiCell<T>> iterator() {
-    return Iterables.concat(mColumns.values()).iterator();
+    return Iterators.unmodifiableIterator(Iterables.concat(mColumns.values()).iterator());
   }
 
   /** {@inheritDoc} */

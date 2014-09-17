@@ -336,7 +336,7 @@ public final class CassandraKiji implements Kiji {
 
   /** {@inheritDoc} */
   @Override
-  public KijiTable openTable(String tableName) throws IOException {
+  public CassandraKijiTable openTable(String tableName) throws IOException {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot open table in Kiji instance %s in state %s.", this, state);
@@ -567,9 +567,9 @@ public final class CassandraKiji implements Kiji {
 
       futures.add(mAdmin.executeAsync(delete));
     }
-    final String deleteCounter =
-        CQLUtils.getDropTableStatement(CassandraTableName.getCounterTableName(tableURI));
-    futures.add(mAdmin.executeAsync(deleteCounter));
+
+    // Delete from the meta table
+    getMetaTable().deleteTable(tableName);
 
     for (ResultSetFuture future : futures) {
       future.getUninterruptibly();
@@ -683,7 +683,6 @@ public final class CassandraKiji implements Kiji {
     return mZKClient;
   }
 
-
   /**
    * Creates a Kiji table in a Cassandra instance, without checking for validation compatibility and
    * without applying permissions.
@@ -716,18 +715,6 @@ public final class CassandraKiji implements Kiji {
       ZooKeeperUtils.setTableLayout(mZKClient, tableURI, layout.getDesc().getLayoutId());
     }
 
-    /*
-      We create a Cassandra table per Kiji locality group, plus one for all counters.
-      In order to speed up this process, we do as much of the creation in parallel.
-     */
-
-    final String createCounter =
-        CQLUtils.getCreateCounterTableStatement(
-            CassandraTableName.getCounterTableName(tableURI),
-            layout);
-
-    final ResultSetFuture counterFuture = mAdmin.executeAsync(createCounter);
-
     final List<CassandraTableName> tables =
         Lists.newArrayListWithCapacity(tableLayout.getLocalityGroups().size());
 
@@ -745,18 +732,5 @@ public final class CassandraKiji implements Kiji {
     for (ResultSetFuture future : futures) {
       future.getUninterruptibly();
     }
-
-    futures.clear();
-
-    for (CassandraTableName table : tables) {
-      final String createIndex = CQLUtils.getCreateIndexStatement(table, CQLUtils.VERSION_COL);
-      futures.add(mAdmin.executeAsync(createIndex));
-    }
-
-    for (ResultSetFuture future : futures) {
-      future.getUninterruptibly();
-    }
-
-    counterFuture.getUninterruptibly();
   }
 }

@@ -3,6 +3,7 @@ package org.kiji.schema.impl.cassandra;
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.SortedMap;
 
 import com.google.common.base.Function;
@@ -49,7 +50,7 @@ public class CassandraMaterializedKijiResult {
       final CassandraAdmin admin
   ) throws IOException {
 
-    SortedMap<KijiColumnName, ListenableFuture<Iterator<KijiCell<T>>>> results =
+    SortedMap<KijiColumnName, ListenableFuture<Iterator<KijiCell<T>>>> resultFutures =
         Maps.newTreeMap();
 
     for (final Column columnRequest : dataRequest.getColumns()) {
@@ -58,7 +59,7 @@ public class CassandraMaterializedKijiResult {
           "CassandraMaterializedKijiResult can not be created with a paged data request: %s.",
           dataRequest);
 
-      results.put(
+      resultFutures.put(
           columnRequest.getColumnName(),
           CassandraKijiResult.<T>getColumn(
               tableURI,
@@ -71,18 +72,15 @@ public class CassandraMaterializedKijiResult {
               admin));
     }
 
-    final SortedMap<KijiColumnName, List<KijiCell<T>>> columns = Maps.transformValues(
-        results,
-        new Function<ListenableFuture<Iterator<KijiCell<T>>>, List<KijiCell<T>>>() {
-          @Override
-          public List<KijiCell<T>> apply(final ListenableFuture<Iterator<KijiCell<T>>> future) {
-            return ImmutableList.copyOf(CassandraKijiResult.unwrapFuture(future));
-          }
-        });
+    SortedMap<KijiColumnName, List<KijiCell<T>>> results = Maps.newTreeMap();
+    for (Map.Entry<KijiColumnName, ListenableFuture<Iterator<KijiCell<T>>>> entry
+        : resultFutures.entrySet()) {
 
-    return MaterializedKijiResult.create(
-        entityId,
-        dataRequest,
-        columns);
+      results.put(
+          entry.getKey(),
+          ImmutableList.copyOf(CassandraKijiResult.unwrapFuture(entry.getValue())));
+    }
+
+    return MaterializedKijiResult.create(entityId, dataRequest, layout, results);
   }
 }

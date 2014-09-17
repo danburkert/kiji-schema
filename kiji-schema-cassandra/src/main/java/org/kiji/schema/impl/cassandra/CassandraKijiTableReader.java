@@ -50,6 +50,7 @@ import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.SpecificCellDecoderFactory;
 import org.kiji.schema.impl.BoundColumnReaderSpec;
 import org.kiji.schema.impl.KijiResultRowData;
+import org.kiji.schema.impl.KijiResultRowScanner;
 import org.kiji.schema.impl.LayoutConsumer;
 import org.kiji.schema.layout.CassandraColumnNameTranslator;
 import org.kiji.schema.layout.CellSpec;
@@ -345,6 +346,33 @@ public final class CassandraKijiTableReader implements KijiTableReader {
       final EntityId entityId,
       final KijiDataRequest dataRequest
   ) throws IOException {
+
+    return new KijiResultRowData(
+        mReaderLayoutCapsule.getLayout(),
+        getResult(entityId, dataRequest));
+  }
+
+  /**
+   * Get a KijiResult for the given EntityId and data request.
+   *
+   * <p>
+   *   This method allows the caller to specify a type-bound on the values of the {@code KijiCell}s
+   *   of the returned {@code KijiResult}. The caller should be careful to only specify an
+   *   appropriate type. If the type is too specific (or wrong), a runtime
+   *   {@link java.lang.ClassCastException} will be thrown when the returned {@code KijiResult} is
+   *   used. See the 'Type Safety' section of {@link KijiResult}'s documentation for more details.
+   * </p>
+   *
+   * @param entityId EntityId of the row from which to get data.
+   * @param dataRequest Specification of the data to get from the given row.
+   * @param <T> type {@code KijiCell} value returned by the {@code KijiResult}.
+   * @return a new KijiResult for the given EntityId and data request.
+   * @throws IOException in case of an error getting the data.
+   */
+  public <T> KijiResult<T> getResult(
+      final EntityId entityId,
+      final KijiDataRequest dataRequest
+  ) throws IOException {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot get row from KijiTableReader instance %s in state %s.", this, state);
@@ -354,17 +382,15 @@ public final class CassandraKijiTableReader implements KijiTableReader {
     final KijiTableLayout tableLayout = capsule.getLayout();
     validateRequestAgainstLayout(dataRequest, tableLayout);
 
-    final KijiResult<Object> result =
-        CassandraKijiResult.create(
-            entityId,
-            dataRequest,
-            mTable,
-            tableLayout,
-            capsule.getColumnNameTranslator(),
-            capsule.getCellDecoderProvider());
-
-    return new KijiResultRowData(tableLayout, result);
+    return CassandraKijiResult.create(
+        entityId,
+        dataRequest,
+        mTable,
+        tableLayout,
+        capsule.getColumnNameTranslator(),
+        capsule.getCellDecoderProvider());
   }
+
 
   /** {@inheritDoc} */
   @Override
@@ -406,14 +432,40 @@ public final class CassandraKijiTableReader implements KijiTableReader {
   /**
    * Returns a new RowScanner configured with Cassandra-specific scanner options.
    *
-   * @param dataRequest for the scan.
+   * @param request for the scan.
    * @param kijiScannerOptions Cassandra-specific scan options.
    * @return A new row scanner.
    * @throws IOException if there is a problem creating the row scanner.
    */
   public KijiRowScanner getScannerWithOptions(
-      final KijiDataRequest dataRequest,
+      final KijiDataRequest request,
       final CassandraKijiScannerOptions kijiScannerOptions
+  ) throws IOException {
+    return new KijiResultRowScanner(
+        mReaderLayoutCapsule.getLayout(),
+        getKijiResultScanner(request, kijiScannerOptions));
+  }
+
+  /**
+   * Get a KijiResultScanner for the given data request and scan options.
+   *
+   * <p>
+   *   This method allows the caller to specify a type-bound on the values of the {@code KijiCell}s
+   *   of the returned {@code KijiResult}s. The caller should be careful to only specify an
+   *   appropriate type. If the type is too specific (or wrong), a runtime
+   *   {@link java.lang.ClassCastException} will be thrown when the returned {@code KijiResult} is
+   *   used. See the 'Type Safety' section of {@code KijiResult}'s documentation for more details.
+   * </p>
+   *
+   * @param request Data request defining the data to retrieve from each row.
+   * @param scannerOptions Options to control the operation of the scanner.
+   * @param <T> type {@code KijiCell} value returned by the {@code KijiResult}.
+   * @return A new KijiResultScanner.
+   * @throws IOException in case of an error creating the scanner.
+   */
+  public <T> CassandraKijiResultScanner<T> getKijiResultScanner(
+      final KijiDataRequest request,
+      final CassandraKijiScannerOptions scannerOptions
   ) throws IOException {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
@@ -422,11 +474,15 @@ public final class CassandraKijiTableReader implements KijiTableReader {
     final ReaderLayoutCapsule capsule = mReaderLayoutCapsule;
 
     // Make sure the request validates against the layout of the table.
-    final KijiTableLayout tableLayout = capsule.getLayout();
-    validateRequestAgainstLayout(dataRequest, tableLayout);
+    final KijiTableLayout layout = capsule.getLayout();
+    validateRequestAgainstLayout(request, layout);
 
-    // Now we create a KijiRowData from all of these results. Parse the result.
-    throw new UnsupportedOperationException("Not implemented.");
+    return new CassandraKijiResultScanner<T>(
+        request,
+        mTable,
+        layout,
+        capsule.getCellDecoderProvider(),
+        capsule.getColumnNameTranslator());
   }
 
   /** {@inheritDoc} */

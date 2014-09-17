@@ -353,6 +353,7 @@ public class TestCassandraReadAndWrite {
     assertFalse(allData.get(david).containsColumn(pets, rabbit));
     assertFalse(allData.get(david).containsColumn(pets, fish));
   }
+
   /**
    * Test corner cases for a row scanner.  The row scanner may have to issue multiple discrete
    * queries for a single `KijiDataRequest`.  Each query will return an iterator over Cassandra

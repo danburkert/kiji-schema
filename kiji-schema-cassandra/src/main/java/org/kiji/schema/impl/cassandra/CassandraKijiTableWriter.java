@@ -20,26 +20,17 @@
 package org.kiji.schema.impl.cassandra;
 
 import java.io.IOException;
-import java.util.List;
 
 import javax.annotation.concurrent.ThreadSafe;
 
-import com.datastax.driver.core.ResultSet;
-import com.datastax.driver.core.Row;
 import com.google.common.base.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.kiji.annotations.ApiAudience;
-import org.kiji.schema.DecodedCell;
 import org.kiji.schema.EntityId;
-import org.kiji.schema.InternalKijiError;
-import org.kiji.schema.KConstants;
 import org.kiji.schema.KijiCell;
-import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiTableWriter;
-import org.kiji.schema.cassandra.CassandraColumnName;
-import org.kiji.schema.cassandra.CassandraTableName;
 
 /**
  * Makes modifications to a Kiji table by sending requests directly to Cassandra from the local
@@ -67,7 +58,7 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     mBufferedWriter = table.getWriterFactory().openBufferedWriter();
 
     // Flush immediately
-    mBufferedWriter.setBufferSize(1);
+    mBufferedWriter.setBufferSize(0);
 
     // Retain the table only when everything succeeds.
     mTable.retain();
@@ -93,7 +84,7 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
       final long timestamp,
       final T value
   ) throws IOException {
-    mBufferedWriter.put(entityId, family, qualifier, value);
+    mBufferedWriter.put(entityId, family, qualifier, timestamp, value);
   }
 
   // ----------------------------------------------------------------------------------------------
@@ -107,34 +98,7 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
       final String qualifier,
       final long amount
   ) throws IOException {
-    final KijiColumnName column = KijiColumnName.create(family, qualifier);
-    // the increment call to the buffered writer will ensure that this writer is still 'open'
-    mBufferedWriter.increment(entityId, column, amount);
-
-    final CassandraTableName table = CassandraTableName.getCounterTableName(mTable.getURI());
-
-    final CassandraColumnName cassandraColumn =
-        mTable.getColumnNameTranslator().toCassandraColumnName(column);
-
-    final ResultSet result =
-        mTable.getAdmin().execute(CQLUtils.getCounterGet(table, cassandraColumn));
-
-    List<Row> readCounterResults = result.all();
-
-    long value;
-    if (readCounterResults.isEmpty()) {
-      value = 0; // Uninitialized counter, effectively a counter at 0.
-      // This really should not happen, but there may be a small window between the increment and
-      // retrieving the value where someone else may have deleted the counter
-    } else if (1 == readCounterResults.size()) {
-      value = readCounterResults.get(0).getLong(CQLUtils.VALUE_COL);
-    } else {
-      throw new InternalKijiError("Encountered multiple values for a counter!");
-    }
-
-    final DecodedCell<Long> counter =
-        new DecodedCell<Long>(null, value);
-    return KijiCell.create(column, KConstants.CASSANDRA_COUNTER_TIMESTAMP, counter);
+    throw new UnsupportedOperationException("Cassandra Kiji does not support counter columns.");
   }
 
   // ----------------------------------------------------------------------------------------------

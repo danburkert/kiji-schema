@@ -3,18 +3,14 @@ package org.kiji.schema.impl.cassandra;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Comparator;
-import java.util.Iterator;
 import java.util.List;
 
 import javax.annotation.concurrent.Immutable;
 import javax.annotation.concurrent.NotThreadSafe;
-import javax.annotation.concurrent.ThreadSafe;
 
-import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
 import com.google.common.base.Function;
 import com.google.common.base.Objects;
-import com.google.common.collect.Iterators;
 
 import org.kiji.schema.DecodedCell;
 import org.kiji.schema.KijiCell;
@@ -310,15 +306,15 @@ public class RowDecoders {
    */
   @Immutable
   public static class TokenRowKeyComponents {
-    private final int mToken;
+    private final long mToken;
     private final KijiRowKeyComponents mComponents;
 
-    public TokenRowKeyComponents(final int token, final KijiRowKeyComponents components) {
+    public TokenRowKeyComponents(final long token, final KijiRowKeyComponents components) {
       mToken = token;
       mComponents = components;
     }
 
-    public int getToken() {
+    public long getToken() {
       return mToken;
     }
 
@@ -362,9 +358,9 @@ public class RowDecoders {
         final TokenRowKeyComponents a,
         final TokenRowKeyComponents b
     ) {
-      final int tokenCompare = a.getToken() - b.getToken();
+      final long tokenCompare = a.getToken() - b.getToken();
       if (tokenCompare != 0) {
-        return tokenCompare;
+        return (int) tokenCompare;
       } else {
         return a.getComponents().compareTo(b.getComponents());
       }
@@ -435,7 +431,7 @@ public class RowDecoders {
       }
 
       return new TokenRowKeyComponents(
-          row.getInt(mTokenColumn),
+          row.getLong(mTokenColumn),
           KijiRowKeyComponents.fromComponents(components));
     }
   }

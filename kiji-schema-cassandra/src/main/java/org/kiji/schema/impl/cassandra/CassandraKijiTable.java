@@ -230,22 +230,9 @@ public final class CassandraKijiTable implements KijiTable {
     return mLayoutMonitor.getLayout();
   }
 
-  /**
-   * Get the column name translator for the current layout of this table. Do not cache this object.
-   *
-   * If you need both the table layout and a column name translator within a single short lived
-   * operation, you should get the layout and use it to create a column name translator to ensure
-   * consistency.
-   *
-   * @return the column name translator for the current layout of this table.
-   */
-  public CassandraColumnNameTranslator getColumnNameTranslator() {
-    return CassandraColumnNameTranslator.from(getLayout());
-  }
-
   /** {@inheritDoc} */
   @Override
-  public KijiTableReader openTableReader() {
+  public CassandraKijiTableReader openTableReader() {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot open a table reader on a KijiTable in state %s.", state);

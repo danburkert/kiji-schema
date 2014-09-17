@@ -197,7 +197,7 @@ public final class CQLUtils {
           "Number of entity ID components (%s) must match the number of entity ID values (%s).",
             components, values);
         for (int i = 0; i < components.size(); i++) {
-          columnValues.put(components.get(i).getName(), values.get(i));
+          columnValues.put(translateEntityIDComponentNameToColumnName(components.get(i).getName()), values.get(i));
         }
         break;
       }
@@ -457,7 +457,7 @@ public final class CQLUtils {
     final Select select =
         select()
             .all()
-            .from(table.getKeyspace(), table.getUnquotedTable())
+            .from(table.getKeyspace(), table.getTable())
             .where(eq(FAMILY_COL, column.getFamilyBuffer()))
             .limit(columnRequest.getMaxVersions());
 
@@ -470,7 +470,7 @@ public final class CQLUtils {
     }
 
     if (dataRequest.getMinTimestamp() != 0L) {
-      select.where(gte(VERSION_COL, dataRequest.getMaxTimestamp()));
+      select.where(gte(VERSION_COL, dataRequest.getMinTimestamp()));
     }
 
     select.setFetchSize(
@@ -503,7 +503,7 @@ public final class CQLUtils {
     }
     return select
         .distinct()
-        .from(table.getKeyspace(), table.getUnquotedTable());
+        .from(table.getKeyspace(), table.getTable());
   }
 
   /**
@@ -623,7 +623,7 @@ public final class CQLUtils {
   ) {
     final Delete delete = delete()
         .all()
-        .from(tableName.getKeyspace(), tableName.getUnquotedTable());
+        .from(tableName.getKeyspace(), tableName.getTable());
 
     for (Map.Entry<String, Object> component
         : getEntityIdColumnValues(layout, entityId).entrySet()) {
