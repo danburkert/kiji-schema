@@ -53,8 +53,8 @@
     <module>cdh42mr1-bridge</module>
     <module>cdh5-bridge</module>
 
-    <module>kiji-schema</module>
     <module>kiji-schema-cassandra</module>
+    <module>kiji-schema</module>
     <module>profiling</module>
     <module>kiji-schema-extras</module>
     <module>kiji-schema-archetype</module>

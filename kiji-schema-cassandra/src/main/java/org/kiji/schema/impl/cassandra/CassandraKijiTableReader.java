@@ -479,6 +479,7 @@ public final class CassandraKijiTableReader implements KijiTableReader {
 
     return new CassandraKijiResultScanner<T>(
         request,
+        scannerOptions,
         mTable,
         layout,
         capsule.getCellDecoderProvider(),

@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.SortedMap;
 
 import com.google.common.collect.ImmutableList;
@@ -76,7 +77,7 @@ public final class MaterializedKijiResult<T> implements KijiResult<T> {
    * @param dataRequest The Kiji data request which defines the columns in this result.
    * @param layout The Kiji table layout of the table.
    * @param columns The materialized results. The cells must be in the order guaranteed by
-   *     {@code KijiResult}.
+   *     {@code KijiResult}. Must be mutable, and should not be modified after passing in.
    * @param <T> The type of {@code KijiCell} values in the view.
    * @return A new materialized {@code KijiResult} backed by {@code KijiCell}s.
    */
@@ -102,17 +103,13 @@ public final class MaterializedKijiResult<T> implements KijiResult<T> {
       return new MaterializedKijiResult<T>(entityId, dataRequest, columns);
     }
 
-    final ImmutableSortedMap.Builder<KijiColumnName, List<KijiCell<T>>> sortedColumns =
-        ImmutableSortedMap.naturalOrder();
-    sortedColumns.putAll(columns);
-
     for (KijiColumnName groupFamily : groupFamilies) {
       final List<KijiCell<T>> sortedColumn = columns.get(groupFamily);
       Collections.sort(sortedColumn, KijiCell.getKeyComparator());
-      sortedColumns.put(groupFamily, sortedColumn);
+      columns.put(groupFamily, sortedColumn);
     }
 
-    return new MaterializedKijiResult<T>(entityId, dataRequest, sortedColumns.build());
+    return new MaterializedKijiResult<T>(entityId, dataRequest, columns);
   }
 
   /** {@inheritDoc} */

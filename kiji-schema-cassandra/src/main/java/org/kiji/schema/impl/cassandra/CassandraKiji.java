@@ -42,7 +42,6 @@ import org.kiji.schema.KijiMetaTable;
 import org.kiji.schema.KijiNotInstalledException;
 import org.kiji.schema.KijiSchemaTable;
 import org.kiji.schema.KijiSystemTable;
-import org.kiji.schema.KijiTable;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.avro.RowKeyFormat;
 import org.kiji.schema.avro.TableLayoutDesc;
@@ -693,6 +692,7 @@ public final class CassandraKiji implements Kiji {
    */
   private void createTableUnchecked(TableLayoutDesc tableLayout) throws IOException {
     final KijiURI tableURI = KijiURI.newBuilder(mURI).withTableName(tableLayout.getName()).build();
+    CassandraTableLayoutUpdater.validateCassandraTableLayout(tableLayout);
 
     // This will validate the layout and may throw an InvalidLayoutException.
     final KijiTableLayout layout = KijiTableLayout.newLayout(tableLayout);

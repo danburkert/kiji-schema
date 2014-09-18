@@ -4,18 +4,20 @@ import java.io.IOException;
 import java.util.Iterator;
 import java.util.concurrent.ExecutionException;
 
-import javax.annotation.Nullable;
-
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
 import com.datastax.driver.core.Statement;
 import com.datastax.driver.core.exceptions.DriverException;
 import com.datastax.driver.core.exceptions.DriverInternalError;
 import com.google.common.base.Function;
+import com.google.common.base.Preconditions;
+import com.google.common.base.Predicates;
 import com.google.common.collect.Iterators;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.Uninterruptibles;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.EntityId;
@@ -42,6 +44,7 @@ import org.kiji.schema.layout.impl.ColumnId;
  */
 @ApiAudience.Private
 public class CassandraKijiResult {
+  private static final Logger LOG = LoggerFactory.getLogger(CassandraKijiResult.class);
 
   /**
    * Constructor for non-instantiable helper class.
@@ -77,6 +80,11 @@ public class CassandraKijiResult {
     pagedRequestBuilder.withTimeRange(dataRequest.getMinTimestamp(), dataRequest.getMaxTimestamp());
 
     for (final Column columnRequest : dataRequest.getColumns()) {
+      if (columnRequest.getFilter() != null) {
+        throw new UnsupportedOperationException(
+            String.format("Cassandra Kiji does not support filters on column requests: %s.",
+                columnRequest));
+      }
       if (columnRequest.isPagingEnabled()) {
         pagedRequestBuilder.newColumnsDef(columnRequest);
       } else {
@@ -168,26 +176,73 @@ public class CassandraKijiResult {
     final CassandraTableName table =
         CassandraTableName.getLocalityGroupTableName(tableURI, localityGroupId);
 
-    final Statement statement =
-        CQLUtils.getColumnGetStatement(
-            layout,
-            table,
-            entityId,
-            cassandraColumn,
-            dataRequest,
-            columnRequest);
+    if (column.isFullyQualified()) {
 
-    final Function<Row, KijiCell<T>> rowDecoder =
-        RowDecoders.getRowDecoderFunction(column, layout, translator, decoderProvider);
+      final Statement statement =
+          CQLUtils.getQualifiedColumnGetStatement(
+              layout,
+              table,
+              entityId,
+              cassandraColumn,
+              dataRequest,
+              columnRequest);
 
-    return Futures.transform(
-        admin.executeAsync(statement),
-        new Function<ResultSet, Iterator<KijiCell<T>>>() {
-          @Override
-          public Iterator<KijiCell<T>> apply(final ResultSet resultSet) {
-            return Iterators.transform(resultSet.iterator(), rowDecoder);
-          }
-        });
+      final Function<Row, KijiCell<T>> rowDecoder =
+          RowDecoders.getQualifiedColumnDecoderFunction(
+              column,
+              decoderProvider);
+
+      return Futures.transform(
+          admin.executeAsync(statement),
+          new Function<ResultSet, Iterator<KijiCell<T>>>() {
+            @Override
+            public Iterator<KijiCell<T>> apply(final ResultSet resultSet) {
+              return Iterators.transform(resultSet.iterator(), rowDecoder);
+            }
+          });
+    } else {
+
+      if (columnRequest.getMaxVersions() != 0) {
+        LOG.warn("Cassandra Kiji can not efficiently get a column family with max versions" +
+                " (column family: {}, max version: {}). Filtering versions on the client.",
+            column, columnRequest.getMaxVersions());
+      }
+
+      if (dataRequest.getMaxTimestamp() != Long.MAX_VALUE
+          || dataRequest.getMinTimestamp() != Long.MIN_VALUE) {
+        LOG.warn("Cassandra Kiji can not efficiently restrict a timestamp on a column family: "
+                + " (column family: {}, data request: {}). Filtering timestamps on the client.",
+            column, dataRequest);
+      }
+
+      final Statement statement =
+          CQLUtils.getColumnFamilyGetStatement(
+              layout,
+              table,
+              entityId,
+              cassandraColumn,
+              columnRequest);
+
+      final Function<Row, KijiCell<T>> rowDecoder =
+          RowDecoders.getColumnFamilyDecoderFunction(
+              column,
+              columnRequest,
+              dataRequest,
+              layout,
+              translator,
+              decoderProvider);
+
+      return Futures.transform(
+          admin.executeAsync(statement),
+          new Function<ResultSet, Iterator<KijiCell<T>>>() {
+            @Override
+            public Iterator<KijiCell<T>> apply(final ResultSet resultSet) {
+              return Iterators.filter(
+                  Iterators.transform(resultSet.iterator(), rowDecoder),
+                  Predicates.notNull());
+            }
+          });
+    }
   }
 
   /**

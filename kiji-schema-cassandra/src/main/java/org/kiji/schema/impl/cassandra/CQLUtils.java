@@ -36,6 +36,7 @@ import com.datastax.driver.core.Statement;
 import com.datastax.driver.core.querybuilder.Delete;
 import com.datastax.driver.core.querybuilder.Insert;
 import com.datastax.driver.core.querybuilder.Select;
+import com.datastax.driver.core.querybuilder.Select.Where;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
@@ -259,23 +260,6 @@ public final class CQLUtils {
   }
 
   /**
-   * Return the ordered list of columns in the Kiji entity ID for the table layout.
-   *
-   * @param layout to return entity ID columns for
-   * @return the entity ID columns of the table.
-   */
-  public static List<String> getEntityIDColumns(KijiTableLayout layout) {
-    RowKeyFormat2 keyFormat = (RowKeyFormat2) layout.getDesc().getKeysFormat();
-    switch (keyFormat.getEncoding()) {
-      case RAW: return Lists.newArrayList(RAW_KEY_COL);
-      case FORMATTED: return transformToColumns(keyFormat.getComponents());
-      default:
-        throw new IllegalArgumentException(
-            String.format("Unknown row key encoding %s.", keyFormat.getEncoding()));
-    }
-  }
-
-  /**
    * Get the ordered list of cluster columns originating from the entity ID. This is the set of
    * 'scannable' entity ID components.
    *
@@ -444,7 +428,7 @@ public final class CQLUtils {
    * @param columnRequest The column request defining the get.
    * @return a statement which will get the column.
    */
-  public static Statement getColumnGetStatement(
+  public static Statement getQualifiedColumnGetStatement(
       KijiTableLayout layout,
       CassandraTableName table,
       EntityId entityId,
@@ -459,11 +443,8 @@ public final class CQLUtils {
             .all()
             .from(table.getKeyspace(), table.getTable())
             .where(eq(FAMILY_COL, column.getFamilyBuffer()))
+            .and(eq(QUALIFIER_COL, column.getQualifierBuffer()))
             .limit(columnRequest.getMaxVersions());
-
-    if (column.containsQualifier()) {
-      select.where(eq(QUALIFIER_COL, column.getQualifierBuffer()));
-    }
 
     if (dataRequest.getMaxTimestamp() != Long.MAX_VALUE) {
       select.where(lt(VERSION_COL, dataRequest.getMaxTimestamp()));
@@ -485,6 +466,45 @@ public final class CQLUtils {
   }
 
   /**
+   * Create a CQL statement for selecting a column family from a row of a Cassandra Kiji table. The
+   * main way this differs from getting a qualified column, is that we cannot set a row limit when
+   * querying for whole families.
+   *
+   * @param layout The layout of the table.
+   * @param table The name of the table.
+   * @param entityId The entity id of row to get.
+   * @param column The name of the column to get.
+   * @param columnRequest The column request defining the get.
+   * @return a statement which will get the column.
+   */
+  public static Statement getColumnFamilyGetStatement(
+      KijiTableLayout layout,
+      CassandraTableName table,
+      EntityId entityId,
+      CassandraColumnName column,
+      Column columnRequest
+  ) {
+    Preconditions.checkArgument(column.containsFamily());
+
+    final Where select =
+        select()
+            .all()
+            .from(table.getKeyspace(), table.getTable())
+            .where(eq(FAMILY_COL, column.getFamilyBuffer()));
+
+    select.setFetchSize(
+        columnRequest.getPageSize() == 0 ? Integer.MAX_VALUE : columnRequest.getPageSize());
+
+    for (final Map.Entry<String, Object> component
+        : getEntityIdColumnValues(layout, entityId).entrySet()) {
+      select.and(eq(component.getKey(), component.getValue()));
+    }
+
+    return select;
+  }
+
+
+  /**
    * Create a CQL statement for selecting the columns which makeup the Entity ID from a Cassandra
    * Kiji Table.
    *
@@ -494,16 +514,42 @@ public final class CQLUtils {
    */
   public static Statement getEntityIDScanStatement(
       final KijiTableLayout layout,
-      final CassandraTableName table
+      final CassandraTableName table,
+      final CassandraKijiScannerOptions options
   ) {
-    final Select.Selection select = select();
-    select.column(getTokenColumn(layout));
-    for (String column : getEntityIDColumns(layout)) {
-      select.column(column);
+    final String tokenColumn = getTokenColumn(layout);
+    final Select.Selection selection = select();
+    selection.column(tokenColumn);
+
+    for (final String column : getPartitionKeyColumns(layout)) {
+      selection.column(column);
     }
-    return select
-        .distinct()
-        .from(table.getKeyspace(), table.getTable());
+
+    boolean useDistinct = true;
+    for (final String column : getEntityIdClusterColumns(layout)) {
+      selection.column(column);
+      useDistinct = false;
+    }
+
+    if (useDistinct) {
+      // We can optimize and use a DISTINCT clause because all entity ID columns are in the
+      // partition key
+      selection.distinct();
+    }
+
+    final Select select = selection.from(table.getKeyspace(), table.getTable());
+
+    if (options.hasStartToken()) {
+      select.where(gte(tokenColumn, options.getStartToken()));
+    }
+
+    if (options.hasStopToken()) {
+      select.where(lt(tokenColumn, options.getStopToken()));
+    }
+
+    select.setFetchSize(250); // Retrieve 250 rowkeys at a time
+
+    return select;
   }
 
   /**

@@ -145,7 +145,8 @@ public class TestCassandraKijiResult extends CassandraKijiClientTest {
 
     final TableBuilder tableBuilder =
         new InstanceBuilder(getKiji())
-            .withTable(KijiTableLayouts.getLayout("org/kiji/schema/layout/all-types-schema.json"));
+            .withTable(KijiTableLayouts
+                    .getLayout("org/kiji/schema/layout/all-types-no-counters-schema.json"));
 
     final RowBuilder rowBuilder = tableBuilder.withRow(ROW);
 
@@ -679,33 +680,6 @@ public class TestCassandraKijiResult extends CassandraKijiClientTest {
             Iterables.concat(column3Entries, column4Entries));
       } finally {
         view.close();
-      }
-    }
-  }
-
-  @Test
-  public void testGetWithFilters() throws Exception {
-    final KijiColumnName column1 = PRIMITIVE_STRING;
-    final KijiColumnName column2 = STRING_MAP_1;
-
-    for (int pageSize : ImmutableList.of(0, 1, 2, 10)) {
-      { // single column | CRF
-        final KijiDataRequest request = KijiDataRequest
-            .builder()
-            .addColumns(
-                ColumnsDef.create()
-                    .withPageSize(pageSize)
-                    .withFilter(
-                        new KijiColumnRangeFilter(
-                            STRING_MAP_1.getQualifier(), true,
-                            STRING_MAP_2.getQualifier(), false))
-                    .withMaxVersions(10)
-                    .add(column2.getFamily(), null))
-            .build();
-
-        final Iterable<? extends Entry<Long, ?>> column1Entries = ROW_DATA.get(column2).entrySet();
-
-        testViewGet(request, column1Entries);
       }
     }
   }

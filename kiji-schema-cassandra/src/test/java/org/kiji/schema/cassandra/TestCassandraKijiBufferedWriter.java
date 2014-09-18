@@ -69,7 +69,7 @@ public class TestCassandraKijiBufferedWriter {
   public static void initShared() throws Exception {
     CLIENT_TEST_DELEGATE.setupKijiTest();
     Kiji kiji = CLIENT_TEST_DELEGATE.getKiji();
-    kiji.createTable(KijiTableLayouts.getLayout(KijiTableLayouts.COUNTER_TEST));
+    kiji.createTable(KijiTableLayouts.getLayout(KijiTableLayouts.USER_TABLE_FORMATTED_EID));
     mTable = kiji.openTable("user");
   }
 
@@ -138,19 +138,6 @@ public class TestCassandraKijiBufferedWriter {
     final String actual2 =
         mReader.get(mEntityId, request).getValue("info", "name", 123L).toString();
     assertEquals("baz", actual2);
-  }
-
-  @Test
-  public void testSetCounter() throws Exception {
-    final KijiDataRequest request = KijiDataRequest.create("info", "visits");
-
-    // Cannot set a counter from a Cassandra buffered writer.
-    try {
-      mBufferedWriter.put(mEntityId, "info", "visits", 5L);
-      fail("Exception should have occurred.");
-    } catch (UnsupportedOperationException e) {
-      assertNotNull(e);
-    }
   }
 
   @Test

@@ -9,6 +9,7 @@ import java.util.SortedMap;
 import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.util.concurrent.ListenableFuture;
 
@@ -78,7 +79,7 @@ public class CassandraMaterializedKijiResult {
 
       results.put(
           entry.getKey(),
-          ImmutableList.copyOf(CassandraKijiResult.unwrapFuture(entry.getValue())));
+          Lists.newArrayList(CassandraKijiResult.unwrapFuture(entry.getValue())));
     }
 
     return MaterializedKijiResult.create(entityId, dataRequest, layout, results);
