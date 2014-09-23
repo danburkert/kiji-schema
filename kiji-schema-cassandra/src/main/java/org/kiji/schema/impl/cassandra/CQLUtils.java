@@ -36,7 +36,6 @@ import com.datastax.driver.core.Statement;
 import com.datastax.driver.core.querybuilder.Delete;
 import com.datastax.driver.core.querybuilder.Insert;
 import com.datastax.driver.core.querybuilder.Select;
-import com.datastax.driver.core.querybuilder.Select.Where;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
@@ -45,8 +44,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.kiji.schema.EntityId;
-import org.kiji.schema.KijiDataRequest;
-import org.kiji.schema.KijiDataRequest.Column;
 import org.kiji.schema.avro.ComponentType;
 import org.kiji.schema.avro.RowKeyComponent;
 import org.kiji.schema.avro.RowKeyFormat2;
@@ -143,7 +140,7 @@ public final class CQLUtils {
   public static final String VERSION_COL = "version";     // Only used for locality group tables
   public static final String VALUE_COL = "value";
 
-  private static final String BYTES_TYPE = "blob";
+  public static final String BYTES_TYPE = "blob";
   private static final String STRING_TYPE = "varchar";
   private static final String INT_TYPE = "int";
   private static final String LONG_TYPE = "bigint";
@@ -248,7 +245,7 @@ public final class CQLUtils {
    * @param type of entity id component to get CQL type for.
    * @return the CQL type of the provided ComponentType.
    */
-  private static String getCQLType(ComponentType type) {
+  public static String getCQLType(ComponentType type) {
     switch (type) {
       case INTEGER: return INT_TYPE;
       case LONG: return LONG_TYPE;
@@ -424,92 +421,7 @@ public final class CQLUtils {
   }
 
   /**
-   * Create a CQL statement for selecting a column from a row of a Cassandra Kiji table.
-   *
-   * @param layout The layout of the table.
-   * @param table The name of the table.
-   * @param entityId The entity id of row to get.
-   * @param column The name of the column to get.
-   * @param dataRequest The data request defining the get.
-   * @param columnRequest The column request defining the get.
-   * @return a statement which will get the column.
-   */
-  public static Statement getQualifiedColumnGetStatement(
-      KijiTableLayout layout,
-      CassandraTableName table,
-      EntityId entityId,
-      CassandraColumnName column,
-      KijiDataRequest dataRequest,
-      Column columnRequest
-  ) {
-    Preconditions.checkArgument(column.containsQualifier());
-    final Select select =
-        select()
-            .all()
-            .from(table.getKeyspace(), table.getTable())
-            .where(eq(FAMILY_COL, column.getFamilyBuffer()))
-            .and(eq(QUALIFIER_COL, column.getQualifierBuffer()))
-            .limit(columnRequest.getMaxVersions());
-
-    if (dataRequest.getMaxTimestamp() != Long.MAX_VALUE) {
-      select.where(lt(VERSION_COL, dataRequest.getMaxTimestamp()));
-    }
-
-    if (dataRequest.getMinTimestamp() != 0L) {
-      select.where(gte(VERSION_COL, dataRequest.getMinTimestamp()));
-    }
-
-    select.setFetchSize(
-        columnRequest.getPageSize() == 0 ? Integer.MAX_VALUE : columnRequest.getPageSize());
-
-    for (final Map.Entry<String, Object> component
-        : getEntityIdColumnValues(layout, entityId).entrySet()) {
-      select.where(eq(component.getKey(), component.getValue()));
-    }
-
-    return select;
-  }
-
-  /**
-   * Create a CQL statement for selecting a column family from a row of a Cassandra Kiji table. The
-   * main way this differs from getting a qualified column, is that we cannot set a row limit when
-   * querying for whole families.
-   *
-   * @param layout The layout of the table.
-   * @param table The name of the table.
-   * @param entityId The entity id of row to get.
-   * @param column The name of the column to get.
-   * @param columnRequest The column request defining the get.
-   * @return a statement which will get the column.
-   */
-  public static Statement getColumnFamilyGetStatement(
-      KijiTableLayout layout,
-      CassandraTableName table,
-      EntityId entityId,
-      CassandraColumnName column,
-      Column columnRequest
-  ) {
-    Preconditions.checkArgument(!column.containsQualifier());
-    final Where select =
-        select()
-            .all()
-            .from(table.getKeyspace(), table.getTable())
-            .where(eq(FAMILY_COL, column.getFamilyBuffer()));
-
-    select.setFetchSize(
-        columnRequest.getPageSize() == 0 ? Integer.MAX_VALUE : columnRequest.getPageSize());
-
-    for (final Map.Entry<String, Object> component
-        : getEntityIdColumnValues(layout, entityId).entrySet()) {
-      select.and(eq(component.getKey(), component.getValue()));
-    }
-
-    return select;
-  }
-
-
-  /**
-   * Create a CQL statement for selecting the columns that make up the Entity ID from a Cassandra
+   * Create a CQL statement for selecting the columns which makeup the Entity ID from a Cassandra
    * Kiji Table.
    *
    * @param layout The table layout.
