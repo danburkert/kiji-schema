@@ -145,9 +145,9 @@ public final class CQLUtils {
   private static final String INT_TYPE = "int";
   private static final String LONG_TYPE = "bigint";
 
-  private static final Joiner COMMA_JOINER = Joiner.on(", ");
+  public static final Joiner COMMA_JOINER = Joiner.on(", ");
 
-  private static final int ENTITY_ID_BATCH_SIZE = 250;
+  public static final int ENTITY_ID_BATCH_SIZE = 250;
 
   /**
    * Private constructor for utility class.

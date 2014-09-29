@@ -27,7 +27,6 @@ import static com.datastax.driver.core.querybuilder.QueryBuilder.select;
 
 import java.nio.ByteBuffer;
 import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 import com.datastax.driver.core.PreparedStatement;
@@ -35,6 +34,7 @@ import com.datastax.driver.core.RegularStatement;
 import com.datastax.driver.core.Session;
 import com.datastax.driver.core.Statement;
 import com.datastax.driver.core.querybuilder.Select;
+import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
@@ -84,10 +84,14 @@ public class CQLStatementCache {
 
   private final RowKeyFormat2 mRowKeyFormat;
 
-  /**
-   * List of Cassandra Entity ID column names in the same order as the Entity ID components.
-   */
-  private final ImmutableList<String> mEntityIDColumns;
+  /** Cassandra primary key columns belonging to the Kiji Entity ID. */
+  private final List<String> mEntityIDColumns;
+
+  /** Cassandra partition key columns. */
+  private final List<String> mPartitionKeyColumns;
+
+  /** Cassandra clustering columns belonging to the Kiji Entity ID. */
+  private final List<String> mEntityIDClusteringColumns;
 
   private final Session mSession;
 
@@ -148,6 +152,12 @@ public class CQLStatementCache {
         throw new IllegalArgumentException(
             String.format("Unknown row key encoding %s.", mRowKeyFormat.getEncoding()));
     }
+
+    mPartitionKeyColumns =
+        mEntityIDColumns.subList(0, rowKeyFormat.getRangeScanStartIndex());
+
+    mEntityIDClusteringColumns =
+        mEntityIDColumns.subList(rowKeyFormat.getRangeScanStartIndex(),  mEntityIDColumns.size());
   }
 
   /**
@@ -331,7 +341,7 @@ public class CQLStatementCache {
     /** {@inheritDoc} */
     @Override
     public int hashCode() {
-      return Objects.hash(
+      return Objects.hashCode(
           GetStatementKey.class,
           mTable,
           mIsQualifiedGet,
@@ -349,29 +359,57 @@ public class CQLStatementCache {
         return false;
       }
       final GetStatementKey other = (GetStatementKey) obj;
-      return Objects.equals(mTable, other.mTable)
-          && Objects.equals(mIsQualifiedGet, other.mIsQualifiedGet)
-          && Objects.equals(mHasMaxTimestamp, other.mHasMaxTimestamp)
-          && Objects.equals(mHashMinTimestamp, other.mHashMinTimestamp);
+      return Objects.equal(mTable, other.mTable)
+          && Objects.equal(mIsQualifiedGet, other.mIsQualifiedGet)
+          && Objects.equal(mHasMaxTimestamp, other.mHasMaxTimestamp)
+          && Objects.equal(mHashMinTimestamp, other.mHashMinTimestamp);
     }
   }
 
-/*************************************************************************************************
- * Scan Entity ID's Statement
- ************************************************************************************************/
+  /*************************************************************************************************
+   * Entity ID Scan Statement
+   ************************************************************************************************/
 
-public Statement createEntityIDScanStatement(
-    final CassandraTableName tableName,
-    final CassandraKijiScannerOptions options
-) {
+  public Statement createEntityIDScanStatement(
+      final CassandraTableName tableName,
+      final CassandraKijiScannerOptions options
+  ) {
 
+    // Retrieve the prepared statement from the cache
 
-}
+    // We can only use the 'DISTINCT' optimization if all entity ID components are part of the
+    // partition key. CQL does not allow DISTINCT over non partition-key columns.
+    final boolean useDistinct = mEntityIDClusteringColumns.isEmpty();
+
+    final EntityIDScanKey key =
+        new EntityIDScanKey(
+            tableName,
+            options.hasStartToken(),
+            options.hasStopToken(),
+            useDistinct);
+    final PreparedStatement statement = mCache.getUnchecked(key);
+
+    // Bind the parameters to the prepared statement
+
+    // slots are for the min/max token
+    final List<Object> values = Lists.newArrayListWithCapacity(2);
+
+    if (options.hasStartToken()) {
+      values.add(options.getStartToken());
+    }
+
+    if (options.hasStopToken()) {
+      values.add(options.getStopToken());
+    }
+
+    return statement.bind(values.toArray()).setFetchSize(CQLUtils.ENTITY_ID_BATCH_SIZE);
+  }
 
   private final class EntityIDScanKey implements StatementKey {
     private final CassandraTableName mTable;
     private final boolean mHasStartToken;
     private final boolean mHasStopToken;
+    private final boolean mUseDistinct;
 
     /**
      * Create a new entity ID scan statement key.
@@ -383,32 +421,68 @@ public Statement createEntityIDScanStatement(
     private EntityIDScanKey(
         final CassandraTableName table,
         final boolean hasStartToken,
-        final boolean hasStopToken
+        final boolean hasStopToken,
+        final boolean useDistinct
     ) {
       mTable = table;
       mHasStartToken = hasStartToken;
       mHasStopToken = hasStopToken;
+      mUseDistinct = useDistinct;
     }
 
+    /** {@inheritDoc} */
     @Override
     public RegularStatement createUnpreparedStatement() {
-      return null;
+      final String tokenColumn =
+          String.format("token(%s)", CQLUtils.COMMA_JOINER.join(mPartitionKeyColumns));
+
+      final Select.Selection selection = select();
+      selection.column(tokenColumn);
+
+      for (final String column : mEntityIDColumns) {
+        selection.column(column);
+      }
+
+      if (mUseDistinct) {
+        selection.distinct();
+      }
+
+      final Select select = selection.from(mTable.getKeyspace(), mTable.getTable());
+
+      if (mHasStartToken) {
+        select.where(gte(tokenColumn, bindMarker()));
+      }
+
+      if (mHasStopToken) {
+        select.where(lt(tokenColumn, bindMarker()));
+      }
+
+      return select;
     }
 
+    /** {@inheritDoc} */
     @Override
     public String toString() {
       return Objects.toStringHelper(this)
           .add("mTable", mTable)
           .add("mHasStartToken", mHasStartToken)
           .add("mHasStopToken", mHasStopToken)
+          .add("mUseDistinct", mHasStopToken)
           .toString();
     }
 
+    /** {@inheritDoc} */
     @Override
     public int hashCode() {
-      return Objects.hash(EntityIDScanKey.class, mTable, mHasStartToken, mHasStopToken);
+      return Objects.hashCode(
+          EntityIDScanKey.class,
+          mTable,
+          mHasStartToken,
+          mHasStopToken,
+          mUseDistinct);
     }
 
+    /** {@inheritDoc} */
     @Override
     public boolean equals(final Object obj) {
       if (this == obj) {
@@ -418,10 +492,10 @@ public Statement createEntityIDScanStatement(
         return false;
       }
       final EntityIDScanKey other = (EntityIDScanKey) obj;
-      return Objects.equals(this.mTable, other.mTable) && Objects.equals(
-          this.mHasStartToken,
-          other.mHasStartToken) && Objects.equals(this.mHasStopToken, other.mHasStopToken);
+      return Objects.equal(this.mTable, other.mTable)
+          && Objects.equal(this.mHasStartToken, other.mHasStartToken)
+          && Objects.equal(this.mHasStopToken, other.mHasStopToken)
+          && Objects.equal(this.mUseDistinct, other.mUseDistinct);
     }
   }
-
 }
