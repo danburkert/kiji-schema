@@ -23,8 +23,6 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Date;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -32,11 +30,14 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import com.datastax.driver.core.PreparedStatement;
 import com.datastax.driver.core.ResultSet;
+import com.datastax.driver.core.ResultSetFuture;
 import com.datastax.driver.core.Row;
 import com.datastax.driver.core.exceptions.InvalidTypeException;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
 import org.apache.avro.AvroRuntimeException;
 import org.apache.avro.Schema;
 import org.apache.avro.io.DatumReader;
@@ -130,10 +131,10 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
   private final Lock mZKLock;
 
   /** Maps schema MD5 hashes to schema entries. */
-  private final Map<BytesKey, SchemaEntry> mSchemaHashMap = new HashMap<BytesKey, SchemaEntry>();
+  private final Map<BytesKey, SchemaEntry> mSchemaHashMap = Maps.newHashMap();
 
   /** Maps schema IDs to schema entries. */
-  private final Map<Long, SchemaEntry> mSchemaIdMap = new HashMap<Long, SchemaEntry>();
+  private final Map<Long, SchemaEntry> mSchemaIdMap = Maps.newHashMap();
 
   /** Schema hash cache. */
   private final SchemaHashCache mHashCache = new SchemaHashCache();
@@ -149,7 +150,7 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
   }
 
   /** Tracks the state of this SchemaTable instance. */
-  private AtomicReference<State> mState = new AtomicReference<State>(State.UNINITIALIZED);
+  private AtomicReference<State> mState = new AtomicReference<>(State.UNINITIALIZED);
 
   /** Avro decoder factory. */
   private static final DecoderFactory DECODER_FACTORY = DecoderFactory.get();
@@ -159,11 +160,11 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
 
   /** Avro reader for a schema entry. */
   private static final DatumReader<SchemaTableEntry> SCHEMA_ENTRY_READER =
-      new SpecificDatumReader<SchemaTableEntry>(SchemaTableEntry.SCHEMA$);
+      new SpecificDatumReader<>(SchemaTableEntry.SCHEMA$);
 
   /** Avro writer for a schema entry. */
   private static final DatumWriter<SchemaTableEntry> SCHEMA_ENTRY_WRITER =
-      new SpecificDatumWriter<SchemaTableEntry>(SchemaTableEntry.SCHEMA$);
+      new SpecificDatumWriter<>(SchemaTableEntry.SCHEMA$);
 
   /** Prepared statement for reading from the hash table. */
   private PreparedStatement mPreparedStatementReadHashTable = null;
@@ -420,7 +421,7 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
    */
   private void storeInTable(final SchemaTableEntry avroEntry)
       throws IOException {
-    storeInTable(avroEntry, HConstants.LATEST_TIMESTAMP, true);
+    storeInTable(avroEntry, HConstants.LATEST_TIMESTAMP);
   }
 
   /**
@@ -430,11 +431,9 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
    *
    * @param avroEntry Schema entry to write.
    * @param timestamp Write entries with this timestamp.
-   * @param flush Whether to flush tables synchronously.
    * @throws java.io.IOException on I/O error.
    */
-  private void storeInTable(final SchemaTableEntry avroEntry, long timestamp, boolean flush)
-      throws IOException {
+  private void storeInTable(final SchemaTableEntry avroEntry, long timestamp) throws IOException {
     final byte[] entryBytes = encodeSchemaEntry(avroEntry);
 
     // TODO: Obviate this comment by doing all of this in batch.
@@ -450,20 +449,13 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
     );
     Preconditions.checkNotNull(resultSet);
 
-    // TODO: Anything here to flush the table or verify that this worked?
-    //if (flush) { mSchemaIdTable.flushCommits(); }
-
-    final ResultSet hashResultSet =
-        mAdmin.execute(
+    final ResultSetFuture hashResultSet =
+        mAdmin.executeAsync(
             mPreparedStatementWriteHashTable.bind(
                 ByteBuffer.wrap(avroEntry.getHash().bytes()),
                 new Date(timestamp),
-                ByteBuffer.wrap(entryBytes))
-        );
-    Preconditions.checkNotNull(hashResultSet);
-
-    // TODO: Anything here to flush the table or verify that this worked?
-    //if (flush) { mSchemaHashTable.flushCommits(); }
+                ByteBuffer.wrap(entryBytes)));
+    hashResultSet.getUninterruptibly();
   }
 
   /**
@@ -768,11 +760,8 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
     installIdTable(admin, CassandraTableName.getSchemaIdTableName(kijiURI));
     installCounterTable(admin, CassandraTableName.getSchemaCounterTableName(kijiURI));
 
-    final CassandraSchemaTable schemaTable = new CassandraSchemaTable(admin, kijiURI);
-    try {
+    try (final CassandraSchemaTable schemaTable = new CassandraSchemaTable(admin, kijiURI)) {
       schemaTable.registerPrimitiveSchemas();
-    } finally {
-      schemaTable.close();
     }
   }
 
@@ -828,7 +817,7 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
         LOG.error("Schema hash table is inconsistent");
       }
 
-      final Set<SchemaEntry> mergedEntries = new HashSet<SchemaEntry>(hashTableEntries);
+      final Set<SchemaEntry> mergedEntries = Sets.newHashSet(hashTableEntries);
       mergedEntries.addAll(idTableEntries);
       if (!checkConsistency(mergedEntries)) {
         LOG.error("Merged schema hash and ID tables are inconsistent");
@@ -856,7 +845,7 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
       /** Entries from the schema ID table. */
       final Set<SchemaEntry> idTableEntries = loadSchemaIdTable();
 
-      final Set<SchemaEntry> mergedEntries = new HashSet<SchemaEntry>(hashTableEntries);
+      final Set<SchemaEntry> mergedEntries = Sets.newHashSet(hashTableEntries);
       mergedEntries.addAll(idTableEntries);
       if (!checkConsistency(mergedEntries)) {
         LOG.error("Merged schema hash and ID tables are inconsistent");
@@ -864,7 +853,7 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
 
       final List<SchemaTableEntry> avroBackupEntries = backup.getEntries();
       final Set<SchemaEntry> schemaTableEntries =
-          new HashSet<SchemaEntry>(avroBackupEntries.size());
+          Sets.newHashSetWithExpectedSize(avroBackupEntries.size());
       for (SchemaTableEntry avroEntry : avroBackupEntries) {
         schemaTableEntries.add(fromAvroEntry(avroEntry));
       }
@@ -904,8 +893,8 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
    * @return whether the entries are consistent.
    */
   private static boolean checkConsistency(Set<SchemaEntry> entries) {
-    final Map<Long, SchemaEntry> idMap = new HashMap<Long, SchemaEntry>(entries.size());
-    final Map<BytesKey, SchemaEntry> hashMap = new HashMap<BytesKey, SchemaEntry>(entries.size());
+    final Map<Long, SchemaEntry> idMap = Maps.newHashMapWithExpectedSize(entries.size());
+    final Map<BytesKey, SchemaEntry> hashMap = Maps.newHashMapWithExpectedSize(entries.size());
     boolean isConsistent = true;
 
     for (SchemaEntry entry : entries) {
@@ -996,7 +985,7 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
    */
   private Set<SchemaEntry> loadSchemaHashTable() throws IOException {
     LOG.info("Loading entries from schema hash table.");
-    final Set<SchemaEntry> entries = new HashSet<SchemaEntry>();
+    final Set<SchemaEntry> entries = Sets.newHashSet();
     int hashTableRowCounter = 0;
 
     // Fetch all of the schemas from the schema hash table (all versions)
@@ -1035,13 +1024,9 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
               rowKey, entry
           );
         }
-      } catch (IOException ioe) {
+      } catch (IOException | AvroRuntimeException e) {
         LOG.error("Unable to decode schema hash table entry for row {}, timestamp {}: {}.",
-            rowKey, timestamp, ioe);
-      } catch (AvroRuntimeException are) {
-        LOG.error(
-            "Unable to decode schema hash table entry for row {}, timestamp {}: {}.",
-            rowKey, timestamp, are);
+            rowKey, timestamp, e);
       }
     }
     LOG.info("Schema hash table has {} rows and {} entries.", hashTableRowCounter, entries.size());
@@ -1057,7 +1042,7 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
   private Set<SchemaEntry> loadSchemaIdTable() throws IOException {
     LOG.info("Loading entries from schema ID table.");
     int idTableRowCounter = 0;
-    final Set<SchemaEntry> entries = new HashSet<SchemaEntry>();
+    final Set<SchemaEntry> entries = Sets.newHashSet();
 
     // Fetch all of the schemas from the schema ID table (all versions)
     final String queryText = String.format("SELECT * FROM %s;", mSchemaIdTable);
@@ -1095,12 +1080,9 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
               "Inconsistent schema ID table: ID encoded in row key {} does not match entry: {}.",
               schemaId, entry);
         }
-      } catch (IOException ioe) {
+      } catch (IOException | AvroRuntimeException e) {
         LOG.error("Unable to decode schema ID table entry for row {}, timestamp {}: {}.",
-            rowKey, timestamp, ioe);
-      } catch (AvroRuntimeException are) {
-        LOG.error("Unable to decode schema ID table entry for row {}, timestamp {}: {}.",
-            rowKey, timestamp, are);
+            rowKey, timestamp, e);
       }
     }
     LOG.info("Schema ID table has {} rows and {} entries.", idTableRowCounter, entries.size());
