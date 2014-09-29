@@ -293,14 +293,14 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
           ByteBuffer.wrap(
               mCapsule.getCellEncoderProvider().getEncoder(family, qualifier).encode(value));
 
-      final Statement put = CQLUtils.getInsertStatement(
-          mCapsule.getLayout(),
-          table,
-          entityId,
-          cassandraColumn,
-          version,
-          valueBuffer,
-          ttl);
+      final Statement put =
+          mTable.getStatementCache().createInsertStatment(
+              table,
+              entityId,
+              cassandraColumn,
+              version,
+              valueBuffer,
+              ttl);
 
       mBufferedStatements.put(table, put);
       mCurrentWriteBufferSize += 1;

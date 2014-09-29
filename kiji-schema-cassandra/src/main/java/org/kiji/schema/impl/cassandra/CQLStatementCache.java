@@ -23,8 +23,10 @@ import static com.datastax.driver.core.querybuilder.QueryBuilder.bindMarker;
 import static com.datastax.driver.core.querybuilder.QueryBuilder.delete;
 import static com.datastax.driver.core.querybuilder.QueryBuilder.eq;
 import static com.datastax.driver.core.querybuilder.QueryBuilder.gte;
+import static com.datastax.driver.core.querybuilder.QueryBuilder.insertInto;
 import static com.datastax.driver.core.querybuilder.QueryBuilder.lt;
 import static com.datastax.driver.core.querybuilder.QueryBuilder.select;
+import static com.datastax.driver.core.querybuilder.QueryBuilder.ttl;
 
 import java.nio.ByteBuffer;
 import java.util.List;
@@ -35,6 +37,7 @@ import com.datastax.driver.core.RegularStatement;
 import com.datastax.driver.core.Session;
 import com.datastax.driver.core.Statement;
 import com.datastax.driver.core.querybuilder.Delete;
+import com.datastax.driver.core.querybuilder.Insert;
 import com.datastax.driver.core.querybuilder.Select;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
@@ -333,10 +336,10 @@ public class CQLStatementCache {
     @Override
     public String toString() {
       return com.google.common.base.Objects.toStringHelper(this)
-          .add("mTable", mTable)
-          .add("mIsQualifiedGet", mIsQualifiedGet)
-          .add("mHasMaxTimestamp", mHasMaxTimestamp)
-          .add("mHashMinTimestamp", mHashMinTimestamp)
+          .add("table", mTable)
+          .add("isQualifiedGet", mIsQualifiedGet)
+          .add("hasMaxTimestamp", mHasMaxTimestamp)
+          .add("hashMinTimestamp", mHashMinTimestamp)
           .toString();
     }
 
@@ -344,7 +347,7 @@ public class CQLStatementCache {
     @Override
     public int hashCode() {
       return Objects.hashCode(
-          GetStatementKey.class,
+          this.getClass(),
           mTable,
           mIsQualifiedGet,
           mHasMaxTimestamp,
@@ -391,8 +394,8 @@ public class CQLStatementCache {
     // partition key. CQL does not allow DISTINCT over non partition-key columns.
     final boolean useDistinct = mEntityIDClusteringColumns.isEmpty();
 
-    final EntityIDScanKey key =
-        new EntityIDScanKey(
+    final EntityIDScanStatementKey key =
+        new EntityIDScanStatementKey(
             table,
             options.hasStartToken(),
             options.hasStopToken(),
@@ -419,7 +422,7 @@ public class CQLStatementCache {
    * A statement cache key containing all of the information necessary to create an entity ID scan
    * statement.
    */
-  private final class EntityIDScanKey implements StatementKey {
+  private final class EntityIDScanStatementKey implements StatementKey {
     private final CassandraTableName mTable;
     private final boolean mHasStartToken;
     private final boolean mHasStopToken;
@@ -433,7 +436,7 @@ public class CQLStatementCache {
      * @param hasStopToken Whether the scan contains a stop token.
      * @param useDistinct Whether the scan can use the 'DISTINCT' clause optimization.
      */
-    private EntityIDScanKey(
+    private EntityIDScanStatementKey(
         final CassandraTableName table,
         final boolean hasStartToken,
         final boolean hasStopToken,
@@ -479,10 +482,10 @@ public class CQLStatementCache {
     @Override
     public String toString() {
       return Objects.toStringHelper(this)
-          .add("mTable", mTable)
-          .add("mHasStartToken", mHasStartToken)
-          .add("mHasStopToken", mHasStopToken)
-          .add("mUseDistinct", mHasStopToken)
+          .add("table", mTable)
+          .add("hasStartToken", mHasStartToken)
+          .add("hasStopToken", mHasStopToken)
+          .add("useDistinct", mHasStopToken)
           .toString();
     }
 
@@ -490,7 +493,7 @@ public class CQLStatementCache {
     @Override
     public int hashCode() {
       return Objects.hashCode(
-          EntityIDScanKey.class,
+          this.getClass(),
           mTable,
           mHasStartToken,
           mHasStopToken,
@@ -506,11 +509,131 @@ public class CQLStatementCache {
       if (obj == null || getClass() != obj.getClass()) {
         return false;
       }
-      final EntityIDScanKey other = (EntityIDScanKey) obj;
+      final EntityIDScanStatementKey other = (EntityIDScanStatementKey) obj;
       return Objects.equal(this.mTable, other.mTable)
           && Objects.equal(this.mHasStartToken, other.mHasStartToken)
           && Objects.equal(this.mHasStopToken, other.mHasStopToken)
           && Objects.equal(this.mUseDistinct, other.mUseDistinct);
+    }
+  }
+
+  /*************************************************************************************************
+   * Insert Statement
+   ************************************************************************************************/
+
+  /**
+   * Create a CQL statement that executes a Kiji put.
+   *
+   * @param table The name of the Cassandra table to insert the cell into.
+   * @param entityID The entity ID of the row to insert.
+   * @param column The column of the cell to insert.
+   * @param version The version of the cell to insert.
+   * @param value The value to be written to the cell.
+   * @param ttl The TTL of the inserted cell, or null if forever.
+   * @return a Statement which will insert the cell.
+   */
+  public Statement createInsertStatment(
+      final CassandraTableName table,
+      final EntityId entityID,
+      final CassandraColumnName column,
+      final Long version,
+      final ByteBuffer value,
+      final Integer ttl
+  ) {
+    // Retrieve the prepared statement from the cache
+    final boolean hasTTL = ttl != null && ttl < 630720000; // 630720000 is the maximum Cassandra TTL
+
+    final InsertStatementKey key = new InsertStatementKey(table, hasTTL);
+    final PreparedStatement statement = mCache.getUnchecked(key);
+
+    // Bind the parameters to the prepared statement
+
+    // The extra 5 slots are for the family, qualifier, version, value, and TTL
+    final List<Object> values = Lists.newArrayListWithCapacity(mEntityIDColumns.size() + 5);
+
+    values.addAll(getEntityIDComponents(entityID));
+    values.add(column.getFamilyBuffer());
+    values.add(column.getQualifierBuffer());
+    values.add(version);
+    values.add(value);
+
+    if (hasTTL) {
+      values.add(ttl);
+    }
+
+    return statement.bind(values.toArray());
+  }
+
+  /**
+   * A statement cache key containing all of the information necessary to create an insert
+   * statement.
+   */
+  private final class InsertStatementKey implements StatementKey {
+    private final CassandraTableName mTable;
+    private final boolean mHasTTL;
+
+    /**
+     * Create a new insert statement key.
+     *
+     * @param table The table that the cell will be inserted into.
+     * @param hasTTL Whether the inserted cell has a TTL.
+     */
+    public InsertStatementKey(final CassandraTableName table, final boolean hasTTL) {
+      mTable = table;
+      mHasTTL = hasTTL;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public RegularStatement createUnpreparedStatement() {
+
+      final Insert insert = insertInto(mTable.getKeyspace(), mTable.getTable());
+
+      for (final String column : mEntityIDColumns) {
+        insert.value(column, bindMarker());
+
+      }
+
+      insert
+          .value(CQLUtils.FAMILY_COL, bindMarker())
+          .value(CQLUtils.QUALIFIER_COL, bindMarker())
+          .value(CQLUtils.VERSION_COL, bindMarker())
+          .value(CQLUtils.VALUE_COL, bindMarker());
+
+      if (mHasTTL) {
+        insert.using(ttl(bindMarker()));
+      }
+
+      return insert;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public String toString() {
+      return Objects.toStringHelper(this)
+          .add("table", mTable)
+          .add("hasTTL", mHasTTL)
+          .toString();
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public int hashCode() {
+      return Objects.hashCode(this.getClass(), mTable, mHasTTL);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public boolean equals(final Object obj) {
+      if (this == obj) {
+        return true;
+      }
+      if (obj == null || getClass() != obj.getClass()) {
+        return false;
+      }
+      final InsertStatementKey other = (InsertStatementKey) obj;
+      return Objects.equal(this.mTable, other.mTable)
+          && Objects.equal(this.mHasTTL, other.mHasTTL);
     }
   }
 
@@ -524,7 +647,7 @@ public class CQLStatementCache {
    * @param table The name of the Cassandra table.
    * @param entityID The entity ID of the row to delete.
    * @param column The column to delete.
-   * @param version of cell.
+   * @param version The version of the cell.
    * @return A CQL statement to delete a cell.
    */
   public Statement createCellDeleteStatement(
@@ -587,7 +710,8 @@ public class CQLStatementCache {
     final boolean hasQualifier = hasFamily && column.containsQualifier();
     final boolean hasVersion = hasQualifier && version != null;
 
-    final DeleteKey key = new DeleteKey(table, hasFamily, hasQualifier, hasVersion);
+    final DeleteStatementKey key =
+        new DeleteStatementKey(table, hasFamily, hasQualifier, hasVersion);
     final PreparedStatement statement = mCache.getUnchecked(key);
 
     // Bind the parameters to the prepared statement
@@ -612,7 +736,7 @@ public class CQLStatementCache {
   /**
    * A statement cache key containing all of the information necessary to create a delete statement.
    */
-  private final class DeleteKey implements StatementKey {
+  private final class DeleteStatementKey implements StatementKey {
     private final CassandraTableName mTable;
     private boolean mHasFamily;
     private boolean mHashQualifier;
@@ -626,7 +750,7 @@ public class CQLStatementCache {
      * @param hasQualifier Whether the delete is for a specific qualifier.
      * @param hasVersion Whether the delete is for a specific version.
      */
-    private DeleteKey(
+    private DeleteStatementKey(
         final CassandraTableName table,
         final boolean hasFamily,
         final boolean hasQualifier,
@@ -666,7 +790,12 @@ public class CQLStatementCache {
     /** {@inheritDoc} */
     @Override
     public int hashCode() {
-      return Objects.hashCode(DeleteKey.class, mTable, mHasFamily, mHashQualifier, mHasVersion);
+      return Objects.hashCode(
+          this.getClass(),
+          mTable,
+          mHasFamily,
+          mHashQualifier,
+          mHasVersion);
     }
 
     /** {@inheritDoc} */
@@ -678,7 +807,7 @@ public class CQLStatementCache {
       if (obj == null || getClass() != obj.getClass()) {
         return false;
       }
-      final DeleteKey other = (DeleteKey) obj;
+      final DeleteStatementKey other = (DeleteStatementKey) obj;
       return Objects.equal(this.mTable, other.mTable)
           && Objects.equal(this.mHasFamily, other.mHasFamily)
           && Objects.equal(this.mHashQualifier, other.mHashQualifier)

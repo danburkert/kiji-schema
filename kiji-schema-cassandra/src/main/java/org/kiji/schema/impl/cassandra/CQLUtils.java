@@ -19,16 +19,9 @@
 
 package org.kiji.schema.impl.cassandra;
 
-import static com.datastax.driver.core.querybuilder.QueryBuilder.insertInto;
-import static com.datastax.driver.core.querybuilder.QueryBuilder.ttl;
-
-import java.nio.ByteBuffer;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
-import com.datastax.driver.core.Statement;
-import com.datastax.driver.core.querybuilder.Insert;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
@@ -36,11 +29,9 @@ import com.google.common.collect.Maps;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.kiji.schema.EntityId;
 import org.kiji.schema.avro.ComponentType;
 import org.kiji.schema.avro.RowKeyComponent;
 import org.kiji.schema.avro.RowKeyFormat2;
-import org.kiji.schema.cassandra.CassandraColumnName;
 import org.kiji.schema.cassandra.CassandraTableName;
 import org.kiji.schema.layout.KijiTableLayout;
 
@@ -176,43 +167,6 @@ public final class CQLUtils {
           String.format("Unknown row key encoding %s.", keyFormat.getEncoding()));
     }
     return columns;
-  }
-
-  /**
-   * Get a map of column name to value for a Cassandra table from a table layout and entity ID.
-   *
-   * @param layout The layout of the table.
-   * @param entityId The entity ID containing values.
-   * @return A map of column name to value.
-   */
-  private static LinkedHashMap<String, Object> getEntityIdColumnValues(
-      final KijiTableLayout layout,
-      final EntityId entityId
-  ) {
-    RowKeyFormat2 keyFormat = (RowKeyFormat2) layout.getDesc().getKeysFormat();
-    final LinkedHashMap<String, Object> columnValues = Maps.newLinkedHashMap();
-    switch (keyFormat.getEncoding()) {
-      case RAW: {
-        columnValues.put(RAW_KEY_COL, ByteBuffer.wrap(entityId.getHBaseRowKey()));
-        break;
-      }
-      case FORMATTED: {
-        final List<RowKeyComponent> components = keyFormat.getComponents();
-        final List<Object> values = entityId.getComponents();
-        Preconditions.checkArgument(components.size() == values.size(),
-            "Number of entity ID components (%s) must match the number of entity ID values (%s).",
-            components, values);
-        for (int i = 0; i < components.size(); i++) {
-          columnValues.put(
-              translateEntityIDComponentNameToColumnName(components.get(i).getName()),
-              values.get(i));
-        }
-        break;
-      }
-      default: throw new IllegalArgumentException(
-          String.format("Unknown row key encoding %s.", keyFormat.getEncoding()));
-    }
-    return columnValues;
   }
 
   /**
@@ -411,46 +365,5 @@ public final class CQLUtils {
    */
   public static String getDropTableStatement(CassandraTableName table) {
     return String.format("DROP TABLE IF EXISTS %s;", table);
-  }
-
-  /**
-   * Create a CQL statement that executes a Kiji put.
-   *
-   * @param layout table layout of table.
-   * @param table translated table name as known by Cassandra.
-   * @param entityId of row to select.
-   * @param column to insert into.
-   * @param version to write the value at.
-   * @param value to be written into column.
-   * @param ttl of value, or null if forever.
-   * @return a Statement which will execute the insert.
-   */
-  public static Statement getInsertStatement(
-      final KijiTableLayout layout,
-      final CassandraTableName table,
-      final EntityId entityId,
-      final CassandraColumnName column,
-      final Long version,
-      final ByteBuffer value,
-      final Integer ttl
-  ) {
-    final Insert insert = insertInto(table.getKeyspace(), table.getTable());
-
-    for (Map.Entry<String, Object> component
-        : getEntityIdColumnValues(layout, entityId).entrySet()) {
-      insert.value(component.getKey(), component.getValue());
-    }
-
-    insert
-        .value(FAMILY_COL, column.getFamilyBuffer())
-        .value(QUALIFIER_COL, column.getQualifierBuffer())
-        .value(VERSION_COL, version)
-        .value(VALUE_COL, value);
-
-    if (ttl != null && ttl < 630720000) { // 630720000 is the maximum Cassandra TTL
-      insert.using(ttl(ttl));
-    }
-
-    return insert;
   }
 }
