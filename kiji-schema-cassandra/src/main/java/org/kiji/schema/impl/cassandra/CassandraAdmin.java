@@ -206,11 +206,11 @@ public abstract class CassandraAdmin implements Closeable {
   /**
    * Retrieve the statement cache for a given Cassandra table.
    *
-   * @param table The table.
+   * @param rowKeyFormat The rowKeyFormat of the table.
    * @return The statement cache for the table.
    */
-  public CQLStatementCache getStatementCache(final CassandraKijiTable table) {
-    return mStatementCaches.getUnchecked(table.getRowKeyFormat());
+  public CQLStatementCache getStatementCache(final RowKeyFormat2 rowKeyFormat) {
+    return mStatementCaches.getUnchecked(rowKeyFormat);
   }
 
   // ----------------------------------------------------------------------------------------------
@@ -272,4 +272,3 @@ public abstract class CassandraAdmin implements Closeable {
     return mStatementCache.getPreparedStatement(query);
   }
 }
-

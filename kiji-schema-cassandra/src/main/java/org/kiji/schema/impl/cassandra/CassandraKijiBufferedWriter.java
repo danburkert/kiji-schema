@@ -54,7 +54,6 @@ import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout;
 import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
-import org.kiji.schema.layout.impl.ColumnId;
 import org.kiji.schema.util.DebugResourceTracker;
 
 /**
@@ -322,12 +321,10 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
       final KijiTableLayout layout = mCapsule.getLayout();
       final CassandraKijiTable tableURI = mTable;
       for (LocalityGroupLayout localityGroup : layout.getLocalityGroups()) {
-        final ColumnId localityGroupId = localityGroup.getId();
         final CassandraTableName table =
-            CassandraTableName.getLocalityGroupTableName(tableURI.getURI(), localityGroupId);
-
+            CassandraTableName.getLocalityGroupTableName(tableURI.getURI(), localityGroup.getId());
         final Statement delete =
-            CQLUtils.getLocalityGroupDeleteStatement(layout, table, entityId);
+            mTable.getStatementCache().createLocalityGroupDeleteStatement(table, entityId);
 
         mBufferedStatements.put(table, delete);
         mCurrentWriteBufferSize += 1;
@@ -391,7 +388,7 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
 
 
       final Statement delete =
-          CQLUtils.getColumnDeleteStatement(layout, table, entityId, column);
+          mTable.getStatementCache().createColumnDeleteStatement(table, entityId, column);
       mBufferedStatements.put(table, delete);
 
       mCurrentWriteBufferSize += 1;
@@ -431,7 +428,7 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
       final EntityId entityId,
       final String family,
       final String qualifier,
-      final long timestamp
+      final long version
   ) throws IOException {
 
     final KijiURI tableURI = mTable.getURI();
@@ -454,12 +451,7 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
               familyLayout.getLocalityGroup().getId());
 
       final Statement delete =
-          CQLUtils.getCellDeleteStatement(
-              layout,
-              table,
-              entityId,
-              column,
-              timestamp);
+          mTable.getStatementCache().createCellDeleteStatement(table, entityId, column, version);
       mBufferedStatements.put(table, delete);
 
       mCurrentWriteBufferSize += 1;

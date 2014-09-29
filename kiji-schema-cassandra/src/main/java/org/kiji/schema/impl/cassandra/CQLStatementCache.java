@@ -20,6 +20,7 @@
 package org.kiji.schema.impl.cassandra;
 
 import static com.datastax.driver.core.querybuilder.QueryBuilder.bindMarker;
+import static com.datastax.driver.core.querybuilder.QueryBuilder.delete;
 import static com.datastax.driver.core.querybuilder.QueryBuilder.eq;
 import static com.datastax.driver.core.querybuilder.QueryBuilder.gte;
 import static com.datastax.driver.core.querybuilder.QueryBuilder.lt;
@@ -33,6 +34,7 @@ import com.datastax.driver.core.PreparedStatement;
 import com.datastax.driver.core.RegularStatement;
 import com.datastax.driver.core.Session;
 import com.datastax.driver.core.Statement;
+import com.datastax.driver.core.querybuilder.Delete;
 import com.datastax.driver.core.querybuilder.Select;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
@@ -255,7 +257,7 @@ public class CQLStatementCache {
   }
 
   /**
-   * A key containing all of the information necessary to create a prepared statement for a get.
+   * A statement cache key containing all of the information necessary to create a get statement.
    */
   private final class GetStatementKey implements StatementKey {
     private final CassandraTableName mTable;
@@ -370,8 +372,16 @@ public class CQLStatementCache {
    * Entity ID Scan Statement
    ************************************************************************************************/
 
+  /**
+   * Create a CQL statement for selecting the columns that make up the Entity ID from a Cassandra
+   * Kiji Table.
+   *
+   * @param table The translated Cassandra table name.
+   * @param options The scan options optionally including start and stop tokens.
+   * @return a statement that will get the single column.
+   */
   public Statement createEntityIDScanStatement(
-      final CassandraTableName tableName,
+      final CassandraTableName table,
       final CassandraKijiScannerOptions options
   ) {
 
@@ -383,7 +393,7 @@ public class CQLStatementCache {
 
     final EntityIDScanKey key =
         new EntityIDScanKey(
-            tableName,
+            table,
             options.hasStartToken(),
             options.hasStopToken(),
             useDistinct);
@@ -405,6 +415,10 @@ public class CQLStatementCache {
     return statement.bind(values.toArray()).setFetchSize(CQLUtils.ENTITY_ID_BATCH_SIZE);
   }
 
+  /**
+   * A statement cache key containing all of the information necessary to create an entity ID scan
+   * statement.
+   */
   private final class EntityIDScanKey implements StatementKey {
     private final CassandraTableName mTable;
     private final boolean mHasStartToken;
@@ -417,6 +431,7 @@ public class CQLStatementCache {
      * @param table The Cassandra table name.
      * @param hasStartToken Whether the scan contains a start token.
      * @param hasStopToken Whether the scan contains a stop token.
+     * @param useDistinct Whether the scan can use the 'DISTINCT' clause optimization.
      */
     private EntityIDScanKey(
         final CassandraTableName table,
@@ -496,6 +511,178 @@ public class CQLStatementCache {
           && Objects.equal(this.mHasStartToken, other.mHasStartToken)
           && Objects.equal(this.mHasStopToken, other.mHasStopToken)
           && Objects.equal(this.mUseDistinct, other.mUseDistinct);
+    }
+  }
+
+  /*************************************************************************************************
+   * Delete Statement
+   ************************************************************************************************/
+
+  /**
+   * Create a CQL statement to delete a cell.
+   *
+   * @param table The name of the Cassandra table.
+   * @param entityID The entity ID of the row to delete.
+   * @param column The column to delete.
+   * @param version of cell.
+   * @return A CQL statement to delete a cell.
+   */
+  public Statement createCellDeleteStatement(
+      final CassandraTableName table,
+      final EntityId entityID,
+      final CassandraColumnName column,
+      final long version
+  ) {
+    Preconditions.checkArgument(column.containsQualifier());
+    return createDeleteStatement(table, entityID, column, version);
+  }
+
+  /**
+   * Create a CQL statement to delete a Kiji column from a row.
+   *
+   * @param table The name of the Cassandra table.
+   * @param entityID The entity ID of the row to delete.
+   * @param column The column to delete.
+   * @return A CQL statement to delete a column.
+   */
+  public Statement createColumnDeleteStatement(
+      final CassandraTableName table,
+      final EntityId entityID,
+      final CassandraColumnName column
+  ) {
+    return createDeleteStatement(table, entityID, column, null);
+  }
+
+  /**
+   * Create a CQL statement to delete all columns in a locality group from a row.
+   *
+   * @param table The name of the Cassandra table.
+   * @param entityID The entity ID of the row to delete.
+   * @return A CQL statement to delete a row.
+   */
+  public Statement createLocalityGroupDeleteStatement(
+      final CassandraTableName table,
+      final EntityId entityID
+  ) {
+    return createDeleteStatement(table, entityID, null, null);
+  }
+
+  /**
+   * Create a CQL statement for deleting from a locality group in a row of a Cassandra Kiji table.
+   *
+   * @param table The name of the Cassandra table.
+   * @param entityID The entity ID of the row to delete.
+   * @param column The column to delete.
+   * @param version The version of the cell to delete.
+   * @return A statement which will delete the column.
+   */
+  private Statement createDeleteStatement(
+      CassandraTableName table,
+      EntityId entityID,
+      CassandraColumnName column,
+      Long version
+  ) {
+    // Retrieve the prepared statement from the cache
+    final boolean hasFamily = column != null;
+    final boolean hasQualifier = hasFamily && column.containsQualifier();
+    final boolean hasVersion = hasQualifier && version != null;
+
+    final DeleteKey key = new DeleteKey(table, hasFamily, hasQualifier, hasVersion);
+    final PreparedStatement statement = mCache.getUnchecked(key);
+
+    // Bind the parameters to the prepared statement
+
+    // The extra 3 slots are for the family, qualifier, and version
+    final List<Object> values = Lists.newArrayListWithCapacity(mEntityIDColumns.size() + 3);
+
+    values.addAll(getEntityIDComponents(entityID));
+    if (hasFamily) {
+      values.add(column.getFamilyBuffer());
+      if (hasQualifier) {
+        values.add(column.getQualifierBuffer());
+        if (hasVersion) {
+          values.add(version);
+        }
+      }
+    }
+
+    return statement.bind(values.toArray());
+  }
+
+  /**
+   * A statement cache key containing all of the information necessary to create a delete statement.
+   */
+  private final class DeleteKey implements StatementKey {
+    private final CassandraTableName mTable;
+    private boolean mHasFamily;
+    private boolean mHashQualifier;
+    private boolean mHasVersion;
+
+    /**
+     * Create a new delete key.
+     *
+     * @param table The Cassandra Kiji table.
+     * @param hasFamily Whether the delete is for a specific family.
+     * @param hasQualifier Whether the delete is for a specific qualifier.
+     * @param hasVersion Whether the delete is for a specific version.
+     */
+    private DeleteKey(
+        final CassandraTableName table,
+        final boolean hasFamily,
+        final boolean hasQualifier,
+        final boolean hasVersion
+    ) {
+      mTable = table;
+      mHasFamily = hasFamily;
+      mHashQualifier = hasQualifier;
+      mHasVersion = hasVersion;
+
+      // preconditions are last so that the #toString is valid
+      Preconditions.checkArgument(hasFamily || !hasQualifier,
+          "Delete statement may not have a qualifier without a family. %s.", this);
+      Preconditions.checkArgument(hasQualifier || !hasVersion,
+          "Delete statement may not have a version without a qualifier. %s.", this);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public RegularStatement createUnpreparedStatement() {
+      final Delete delete = delete().all().from(mTable.getKeyspace(), mTable.getTable());
+      for (String column : mEntityIDColumns) {
+        delete.where(eq(column, bindMarker()));
+      }
+      if (mHasFamily) {
+        delete.where(eq(CQLUtils.FAMILY_COL, bindMarker()));
+        if (mHashQualifier) {
+          delete.where(eq(CQLUtils.QUALIFIER_COL, bindMarker()));
+          if (mHasVersion) {
+            delete.where(eq(CQLUtils.VERSION_COL, bindMarker()));
+          }
+        }
+      }
+      return delete;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public int hashCode() {
+      return Objects.hashCode(DeleteKey.class, mTable, mHasFamily, mHashQualifier, mHasVersion);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public boolean equals(final Object obj) {
+      if (this == obj) {
+        return true;
+      }
+      if (obj == null || getClass() != obj.getClass()) {
+        return false;
+      }
+      final DeleteKey other = (DeleteKey) obj;
+      return Objects.equal(this.mTable, other.mTable)
+          && Objects.equal(this.mHasFamily, other.mHasFamily)
+          && Objects.equal(this.mHashQualifier, other.mHashQualifier)
+          && Objects.equal(this.mHasVersion, other.mHasVersion);
     }
   }
 }

@@ -156,7 +156,7 @@ public class CassandraKijiResultScanner<T> implements KijiResultScanner<T> {
       final KijiTableLayout layout
   ) {
 
-    final CQLStatementCache statementCache = table.getAdmin().getStatementCache(table);
+    final CQLStatementCache statementCache = table.getStatementCache();
     final List<ResultSetFuture> localityGroupFutures =
         FluentIterable
             .from(tables)

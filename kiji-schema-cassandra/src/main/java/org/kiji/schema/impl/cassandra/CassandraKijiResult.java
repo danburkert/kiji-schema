@@ -245,7 +245,7 @@ public final class CassandraKijiResult {
     final CassandraTableName tableName =
         CassandraTableName.getLocalityGroupTableName(tableURI, localityGroupId);
 
-    final CQLStatementCache statementCache = table.getAdmin().getStatementCache(table);
+    final CQLStatementCache statementCache = table.getStatementCache();
 
     if (column.isFullyQualified()) {
       final Statement statement =

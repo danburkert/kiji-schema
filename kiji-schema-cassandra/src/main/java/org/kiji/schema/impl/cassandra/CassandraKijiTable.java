@@ -173,14 +173,12 @@ public final class CassandraKijiTable implements KijiTable {
   }
 
   /**
-   * Get the table's row key format.  Caller's should *not* modify the returned row key format.
-   * This method should only be used internal to kiji-schema-cassandra because of mutability
-   * concerns, so it is default (package private) visibility.
+   * Get the CQL statement cache for this Kiji Cassandra table.
    *
-   * @return The table's row key format.  Do no modify.
+   * @return The CQL statement cache for this Kiji Cassandra table.
    */
-  RowKeyFormat2 getRowKeyFormat() {
-    return mRowKeyFormat;
+  public CQLStatementCache getStatementCache() {
+    return mAdmin.getStatementCache(mRowKeyFormat);
   }
 
   /** {@inheritDoc} */
